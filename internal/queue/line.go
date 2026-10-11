@@ -118,3 +118,20 @@ func (r *Repo) CountAutomaticOpen() (int, error) {
 	}
 	return n, nil
 }
+
+// MoveToFront puts a waiting item first in the line, ahead of everything else
+// that waits, including what other people asked for by hand: it becomes a
+// person's download, and goes before the rest of its priority. It reports
+// false when the item is not waiting (running, paused or finished).
+func (r *Repo) MoveToFront(id int64) (bool, error) {
+	res, err := r.db.Exec(
+		`UPDATE download_queue SET priority = ?,
+		   line_seq = (SELECT COALESCE(MIN(line_seq), 1) - 1 FROM download_queue WHERE status = ? AND priority >= ?)
+		 WHERE id = ? AND status = ?`,
+		int(PriorityManual), string(StatusQueued), int(PriorityManual), id, string(StatusQueued))
+	if err != nil {
+		return false, fmt.Errorf("move queue item %d to the front: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}

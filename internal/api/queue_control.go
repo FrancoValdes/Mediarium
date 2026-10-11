@@ -783,3 +783,113 @@ func (s *Server) releaseAfterPause(item queue.Item) {
 	_ = s.QueueRepo.SetStatus(item.ID, queue.StatusStopped, "")
 	s.releaseTitleClaims(item)
 }
+
+// handleFrontQueueItem sends a waiting download to the front of the line.
+func (s *Server) handleFrontQueueItem(w http.ResponseWriter, r *http.Request) {
+	id, ok := queueID(w, r)
+	if !ok {
+		return
+	}
+	if _, ok := s.queueItemOr404(w, id); !ok {
+		return
+	}
+	queueControlMu.Lock()
+	defer queueControlMu.Unlock()
+	if err := s.frontItem(id); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.queueState(id))
+}
+
+// frontItem moves one waiting download first in line. The caller holds
+// queueControlMu.
+func (s *Server) frontItem(id int64) error {
+	moved, err := s.QueueRepo.MoveToFront(id)
+	if err != nil {
+		return err
+	}
+	if !moved {
+		return errors.New("Only a download that is waiting in line can be moved to the front.")
+	}
+	return nil
+}
+
+const bulkQueueMax = 200
+
+type bulkQueueRequest struct {
+	IDs         []int64 `json:"ids"`
+	Action      string  `json:"action"`
+	DeleteFiles bool    `json:"deleteFiles"`
+}
+
+type bulkQueueFailure struct {
+	ID    int64  `json:"id"`
+	Error string `json:"error"`
+}
+
+type bulkQueueResponse struct {
+	Done   int                `json:"done"`
+	Failed []bulkQueueFailure `json:"failed"`
+}
+
+// handleBulkQueue does one thing (pause, resume, stop, or send to the front)
+// to several downloads at once. Each one is tried on its own: one that can't
+// be done (say, pausing a finished download) is listed in "failed" and the
+// rest still go through.
+func (s *Server) handleBulkQueue(w http.ResponseWriter, r *http.Request) {
+	var req bulkQueueRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "Send the downloads and what to do with them.")
+		return
+	}
+	switch req.Action {
+	case "pause", "resume", "stop", "front":
+	default:
+		writeError(w, http.StatusBadRequest, `Choose "pause", "resume", "stop" or "front".`)
+		return
+	}
+	if len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "Pick at least one download.")
+		return
+	}
+	if len(req.IDs) > bulkQueueMax {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Pick at most %d downloads at a time.", bulkQueueMax))
+		return
+	}
+	ids := req.IDs
+	if req.Action == "front" {
+		// Each move goes to the very front, so go from the last pick to the
+		// first: the first one picked ends up first in line.
+		ids = make([]int64, len(req.IDs))
+		for i, id := range req.IDs {
+			ids[len(ids)-1-i] = id
+		}
+	}
+	resp := bulkQueueResponse{Failed: []bulkQueueFailure{}}
+	queueControlMu.Lock()
+	defer queueControlMu.Unlock()
+	for _, id := range ids {
+		item, err := s.QueueRepo.Get(id)
+		if err != nil {
+			resp.Failed = append(resp.Failed, bulkQueueFailure{ID: id, Error: "This download no longer exists."})
+			continue
+		}
+		switch req.Action {
+		case "pause":
+			err = s.pauseItem(item)
+		case "resume":
+			err = s.resumeItem(item)
+		case "stop":
+			err = s.stopItem(item, req.DeleteFiles)
+		case "front":
+			err = s.frontItem(id)
+		}
+		if err != nil {
+			resp.Failed = append(resp.Failed, bulkQueueFailure{ID: id, Error: err.Error()})
+			continue
+		}
+		resp.Done++
+	}
+	writeJSON(w, http.StatusOK, resp)
+}

@@ -87,8 +87,6 @@ type Outcome struct {
 	Health      Health
 }
 
-const perIndexerTimeout = 15 * time.Second
-
 // apostropheless drops the apostrophes and quote marks inside a name.
 var apostropheless = strings.NewReplacer("'", "", "’", "", "‘", "", "`", "", "´", "")
 
@@ -123,7 +121,7 @@ func SearchAll(ctx context.Context, instances []Instance, query string, categori
 		wg.Add(1)
 		go func(i int, inst Instance) {
 			defer wg.Done()
-			timeout := perIndexerTimeout
+			timeout := FeedWait(inst.BaseURL)
 			if inst.IsCardigann() {
 				timeout = cardigannTimeout
 			}

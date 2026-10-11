@@ -152,6 +152,7 @@ A download that has to wait shows **Waiting in line** with its place: **Next in 
 - A download keeps its place from the first byte until the file is repaired, unpacked and moved into your library. Then the next one starts. If it fails, it stays in **Failed** for you to retry, and the next one starts anyway.
 - A torrent that's only seeding doesn't hold a place.
 - **Pause** and **Stop** work on a waiting download too. A paused or stopped one is out of the line, and **Resume** puts it back at the front of its group. **Pause all** and **Resume all** keep the order.
+- **To the front** (on a waiting download, administrators): starts it before the others that are waiting, including ones you started by hand. A download that's already running or paused can't be moved; a paused one goes to the front of its group when you resume it.
 - A waiting download can't be removed until you stop it.
 
 ## Pause, resume and stop
@@ -166,6 +167,7 @@ Every download in progress, Usenet or torrent, has **Pause** and **Stop**. Only 
 | **Retry** | On a failed or stopped download: tries the same release again. If its files are still there (a partial download too), it carries on from them. |
 | **Remove** | Takes a completed, failed, stopped or paused download off the list. Removing a paused one stops it first, and asks whether to delete its partial files. |
 | **Pause all** / **Resume all** | Do the same for every download at once. |
+| **Pick** (the small box on a download's picture) | Pick several downloads, then use the bar that appears above the list: **To the front**, **Pause**, **Resume** or **Stop** for all of them, **Pick all**, or **Clear**. One that can't be changed (pausing a download that's already paused, say) is named in the message, and the rest still go through. Picked downloads keep the order they're shown in when you send them to the front. |
 
 A download that's unpacking or importing pauses or stops when the current step ends. The row says **Pausing…** or **Stopping…** until then.
 
@@ -185,7 +187,7 @@ Setting a title to **Leave what I have alone**, or stopping monitoring it, remov
 
 ### Routes
 
-All administrator-only: `POST /api/queue/{id}/pause`, `POST /api/queue/{id}/resume`, `POST /api/queue/{id}/stop` (body `{"deleteFiles": true}`), `POST /api/queue/pause-all`, `POST /api/queue/resume-all`, and `DELETE /api/queue/{id}?deleteFiles=1`. The full list is in the [API reference](reference/api.md).
+All administrator-only: `POST /api/queue/{id}/pause`, `POST /api/queue/{id}/resume`, `POST /api/queue/{id}/stop` (body `{"deleteFiles": true}`), `POST /api/queue/pause-all`, `POST /api/queue/resume-all`, `POST /api/queue/{id}/front` (send a waiting download to the front of the line), `POST /api/queue/bulk` (body `{"ids": [1, 2], "action": "pause|resume|stop|front", "deleteFiles": false}`; the answer lists `done` and the `failed` ones), and `DELETE /api/queue/{id}?deleteFiles=1`. The full list is in the [API reference](reference/api.md).
 
 In `GET /api/queue`, `status` can also be `paused` or `stopped`, and `queued` means waiting in line: such an item carries `queuePosition` (1 is next). A paused item may carry `interrupted: true` (nobody paused it), `pending` (`pausing` or `stopping` while it winds down) and `keptFiles`.
 

@@ -125,6 +125,10 @@ interface RowProps {
   act: (item: QueueItem, fn: () => Promise<unknown>, done: string, doing?: Doing) => Promise<void>
   stop: (item: QueueItem) => Promise<void>
   remove: (item: QueueItem) => Promise<void>
+  // Picking several downloads at once (administrators): whether this one is
+  // picked, and the way to change that. Left out where picking isn't offered.
+  picked?: boolean
+  onPick?: (id: number, on: boolean) => void
 }
 
 // One download. A separate component (not one made inside the page) so a
@@ -253,7 +257,7 @@ function QueueDetails({ q, admin }: { q: QueueItem; admin: boolean }) {
   )
 }
 
-function QueueRow({ q, admin, busy, act, stop, remove }: RowProps) {
+function QueueRow({ q, admin, busy, act, stop, remove, picked, onPick }: RowProps) {
   const me = useAuth().user
   const transfer = useTransferRate(q)
   const link = itemLink(q)
@@ -265,7 +269,14 @@ function QueueRow({ q, admin, busy, act, stop, remove }: RowProps) {
   const note = stateNote(q)
   return (
     <div className={`qrow st-${q.status}${q.status === 'failed' ? ' failed' : ''} kind-${q.bookId ? 'book' : q.albumId ? 'music' : q.seriesId ? 'tv' : 'movie'}`}>
-      <div className="qthumb">{q.albumId ? <Cover src={q.posterUrl} /> : q.posterUrl ? <img src={q.posterUrl} alt="" loading="lazy" /> : <PosterFallback />}</div>
+      <div className="qthumb">
+        {q.albumId ? <Cover src={q.posterUrl} /> : q.posterUrl ? <img src={q.posterUrl} alt="" loading="lazy" /> : <PosterFallback />}
+        {admin && onPick && (
+          <label className="qpick" title={t('Pick this download')}>
+            <input type="checkbox" checked={!!picked} onChange={(e) => onPick(q.id, e.target.checked)} aria-label={t('Pick {title}', { title: q.title })} />
+          </label>
+        )}
+      </div>
       <div className="qmain">
         <div className="qtitle">
           {link ? <Link to={link}>{q.title}</Link> : <span>{q.title}</span>}
@@ -339,6 +350,11 @@ function QueueRow({ q, admin, busy, act, stop, remove }: RowProps) {
               {t('Skip')}
             </button>
           </>
+        )}
+        {q.status === 'queued' && (q.queuePosition ?? 0) > 1 && admin && (
+          <button className="btn-sm btn-with-icon" disabled={working} title={t('Start this one before the others that are waiting')} onClick={() => void act(q, () => api.frontQueueItem(q.id), t('Moved to the front of the line.'))}>
+            <Icon name="chevron-up" size={15} /> {t('To the front')}
+          </button>
         )}
         {running && admin && (
           <>
@@ -415,6 +431,9 @@ export default function Queue() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<{ id: number; doing: Doing } | null>(null)
   const [bulkBusy, setBulkBusy] = useState<'pause' | 'resume' | null>(null)
+  // The downloads picked with the checkboxes, for doing one thing to all of them.
+  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set())
+  const [pickBusy, setPickBusy] = useState(false)
   const group = ui.group
   const setGroup = (v: string) => patchUi({ group: v })
   // Titles still waiting for a release, with why, so an empty queue explains itself.
@@ -601,8 +620,67 @@ export default function Queue() {
   const groups = useMemo(() => ['All', ...Array.from(new Set(Object.values(EVENT).map((e) => e.group)))], [])
   const shownActivity = activity.filter((a) => group === 'All' || (EVENT[a.eventType]?.group ?? 'Other') === group)
 
-  const rows = (list: QueueItem[]) =>
-    list.map((q) => <QueueRow key={q.id} q={q} admin={admin} busy={busy?.id === q.id ? busy.doing : null} act={act} stop={stop} remove={remove} />)
+  // What was picked and has since finished or left the list is simply not counted.
+  const livePicked = useMemo(() => {
+    if (picked.size === 0) return picked
+    const live = new Set(inProgress.map((q) => q.id))
+    return new Set([...picked].filter((id) => live.has(id)))
+  }, [picked, inProgress])
+
+  const pick = useCallback((id: number, on: boolean) => {
+    setPicked((cur) => {
+      const next = new Set(cur)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+  async function pickedDo(action: 'pause' | 'resume' | 'stop' | 'front') {
+    // In the order they are shown, so "to the front" keeps the line's own order.
+    const ids = inProgress.filter((q) => livePicked.has(q.id)).map((q) => q.id)
+    if (ids.length === 0 || pickBusy) return
+    let deleteFiles = false
+    if (action === 'stop') {
+      const anyFiles = inProgress.some((q) => livePicked.has(q.id) && (q.keptFiles || q.progressPct > 0))
+      const r = await confirm({
+        title: plural(ids.length, 'Stop this download?', 'Stop these {n} downloads?'),
+        body: <p>{t('They stop downloading and go back to waiting for a release. You can try them again from the list.')}</p>,
+        confirmLabel: t('Stop downloads'),
+        danger: true,
+        option: anyFiles ? { label: t('Also delete the partly downloaded files'), hint: t('Your library is not touched.'), defaultChecked: true } : undefined,
+      })
+      if (!r) return
+      deleteFiles = anyFiles && r.checked
+    }
+    setPickBusy(true)
+    try {
+      const r = await api.bulkQueue(ids, action, deleteFiles)
+      const failed = r.failed ?? []
+      if (failed.length > 0) toast.error(`${t('{done} done.', { done: r.done ?? 0 })} ${t('{n} could not be changed: {why}', { n: failed.length, why: failed[0].error })}`)
+      else toast.success(plural(r.done ?? ids.length, '{n} download changed.', '{n} downloads changed.'))
+      setPicked(new Set())
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setPickBusy(false)
+    }
+  }
+
+  const rows = (list: QueueItem[], pickable = false) =>
+    list.map((q) => (
+      <QueueRow
+        key={q.id}
+        q={q}
+        admin={admin}
+        busy={busy?.id === q.id ? busy.doing : null}
+        act={act}
+        stop={stop}
+        remove={remove}
+        picked={pickable ? livePicked.has(q.id) : undefined}
+        onPick={pickable ? pick : undefined}
+      />
+    ))
 
   return (
     <div className="activity-page">
@@ -729,7 +807,30 @@ export default function Queue() {
                   </span>
                 )}
               </div>
-              {rows(inProgress)}
+              {admin && livePicked.size > 0 && (
+                <div className="pick-bar" role="region" aria-label={t('Picked downloads')}>
+                  <strong>{plural(livePicked.size, '{n} picked', '{n} picked')}</strong>
+                  <button className="btn-sm" disabled={pickBusy} onClick={() => void pickedDo('front')}>
+                    {t('To the front')}
+                  </button>
+                  <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('pause')}>
+                    <Icon name="pause" size={14} /> {t('Pause')}
+                  </button>
+                  <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('resume')}>
+                    <Icon name="play" size={14} /> {t('Resume')}
+                  </button>
+                  <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('stop')}>
+                    <Icon name="stop" size={14} /> {t('Stop')}
+                  </button>
+                  <button className="btn-sm" disabled={pickBusy} onClick={() => setPicked(new Set(inProgress.map((q) => q.id)))}>
+                    {t('Pick all')}
+                  </button>
+                  <button className="btn-sm" disabled={pickBusy} onClick={() => setPicked(new Set())}>
+                    {t('Clear')}
+                  </button>
+                </div>
+              )}
+              {rows(inProgress, true)}
             </section>
           )}
 

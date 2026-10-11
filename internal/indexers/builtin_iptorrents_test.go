@@ -51,6 +51,7 @@ type iptSite struct {
 	lastUA      atomic.Value // User-Agent of the last request
 	withFiles   atomic.Bool
 	signedOutAt atomic.Bool // when set, the site no longer accepts the cookie
+	iconLogout  atomic.Bool // when set, the sign-out link is an icon with a tooltip, not the /lout.php address
 	downloads   atomic.Int32
 }
 
@@ -67,6 +68,9 @@ func newIPTSite(t *testing.T) *iptSite {
 		nav := `<a href="/login.php">Login</a>`
 		if signedIn(r) {
 			nav = `<a href="/lout.php">Logout</a>`
+			if s.iconLogout.Load() {
+				nav = `<a href="/account" class="tTipWrap"><i class="fa fa-power-off"></i><div class="tTip ttop">Log out</div></a>`
+			}
 		}
 		io.WriteString(w, `<html><body>`+nav+body+`</body></html>`)
 	}
@@ -356,5 +360,33 @@ func TestIPTorrentsCookieProblems(t *testing.T) {
 	_, err = m.Search(context.Background(), good, "Night Harbour", []int{2000})
 	if err == nil || !strings.Contains(err.Error(), "cookie was not accepted") {
 		t.Fatalf("expired cookie: err = %v", err)
+	}
+}
+
+// On the live site the sign-out link is an icon with a "Log out" tooltip, so
+// the sign-in check goes by the words as well as the address.
+func TestIPTorrentsSignInCheckAcceptsAnIconLogoutLink(t *testing.T) {
+	site := newIPTSite(t)
+	site.iconLogout.Store(true)
+	m := fixtureManager(t, "fixturepublic")
+	inst := iptInstance(m, site, map[string]string{"cookie": iptCookie})
+	inst.ID = 31
+	if _, err := m.Search(context.Background(), inst, "Night Harbour", []int{2000}); err != nil {
+		t.Fatalf("a signed-in page with an icon sign-out link should be accepted: %v", err)
+	}
+}
+
+// A rejected cookie says what the site answered with.
+func TestIPTorrentsRejectedCookieSaysWhatTheSiteShowed(t *testing.T) {
+	site := newIPTSite(t)
+	m := fixtureManager(t, "fixturepublic")
+	bad := iptInstance(m, site, map[string]string{"cookie": "uid=1; pass=nope"})
+	bad.ID = 32
+	_, err := m.Search(context.Background(), bad, "x", nil)
+	if err == nil || !strings.Contains(err.Error(), "cookie was not accepted") || !strings.Contains(err.Error(), "The site answered at /") {
+		t.Fatalf("the message should say what the site answered with, got %v", err)
+	}
+	if strings.Contains(err.Error(), "pass=nope") {
+		t.Fatalf("the message must never contain the cookie: %v", err)
 	}
 }

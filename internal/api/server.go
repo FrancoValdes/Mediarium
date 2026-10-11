@@ -760,6 +760,8 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("POST /api/queue/{id}/pause", s.handlePauseQueueItem)
 	admin.HandleFunc("POST /api/queue/{id}/resume", s.handleResumeQueueItem)
 	admin.HandleFunc("POST /api/queue/{id}/stop", s.handleStopQueueItem)
+	admin.HandleFunc("POST /api/queue/{id}/front", s.handleFrontQueueItem)
+	admin.HandleFunc("POST /api/queue/bulk", s.handleBulkQueue)
 	admin.HandleFunc("GET /api/queue/{id}/torrent", s.handleGetTorrentDetail)
 	admin.HandleFunc("PUT /api/queue/{id}/torrent", s.handlePutTorrentDetail)
 	admin.HandleFunc("PUT /api/queue/{id}/torrent/files", s.handlePutTorrentFiles)

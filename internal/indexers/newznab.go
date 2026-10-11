@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -55,8 +56,32 @@ func NewNewznabClient(name, baseURL, apiKey string) *NewznabClient {
 		Name:       name,
 		BaseURL:    newznabBase(baseURL),
 		APIKey:     apiKey,
-		httpClient: netproxy.Client(20*time.Second, netproxy.Indexers),
+		httpClient: netproxy.Client(FeedWait(baseURL)+5*time.Second, netproxy.Indexers),
 	}
+}
+
+// Waits for a Newznab or Torznab feed. A feed that Prowlarr or Jackett serves
+// for a site they scrape page by page can take 20 to 40 seconds to answer, so
+// those get a longer wait than an indexer's own API.
+const (
+	normalFeedWait = 15 * time.Second
+	slowFeedWait   = 60 * time.Second
+)
+
+var slowFeedPath = regexp.MustCompile(`^/(\d+|api/v2\.0/indexers/[^/]+/results/(torznab|newznab))(/|$)`)
+
+// FeedWait is how long to wait for the feed at baseURL: longer for the feeds
+// that Prowlarr (its own address and an indexer number, usually port 9696) or
+// Jackett (/api/v2.0/indexers/<name>/results/torznab) serve.
+func FeedWait(baseURL string) time.Duration {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return normalFeedWait
+	}
+	if slowFeedPath.MatchString(u.Path) || u.Port() == "9696" || u.Port() == "9117" {
+		return slowFeedWait
+	}
+	return normalFeedWait
 }
 
 // Search issues a t=search (or t=movie for an IMDb-id lookup) query.

@@ -2926,6 +2926,9 @@ export const api = {
   pauseQueueItem: (id: number) => post<{ status: string; pending?: string }>(`/queue/${id}/pause`),
   resumeQueueItem: (id: number) => post<{ status: string }>(`/queue/${id}/resume`),
   stopQueueItem: (id: number, deleteFiles: boolean) => post<{ status: string; pending?: string }>(`/queue/${id}/stop`, { deleteFiles }),
+  frontQueueItem: (id: number) => post<{ status: string }>(`/queue/${id}/front`),
+  bulkQueue: (ids: number[], action: 'pause' | 'resume' | 'stop' | 'front', deleteFiles = false) =>
+    post<{ done: number; failed: { id: number; error: string }[] }>('/queue/bulk', { ids, action, deleteFiles }),
   pauseAllQueue: (protocol?: 'usenet' | 'torrent') => post<{ paused: number }>(`/queue/pause-all${protocol ? `?protocol=${protocol}` : ''}`),
   resumeAllQueue: (protocol?: 'usenet' | 'torrent') => post<{ resumed: number; skipped: number; problem?: string }>(`/queue/resume-all${protocol ? `?protocol=${protocol}` : ''}`),
   clearFinishedQueue: () => del<{ removed: number }>('/queue'),

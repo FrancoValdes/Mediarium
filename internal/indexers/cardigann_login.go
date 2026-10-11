@@ -360,7 +360,7 @@ func (s *cgSession) testLogin(ctx context.Context, vars *tmplVars, cookieLogin b
 	}
 	if !ok {
 		if cookieLogin {
-			return fmt.Errorf("%s: login failed: the cookie was not accepted (it may have expired; copy a fresh one from your browser)", s.name)
+			return fmt.Errorf("%s: login failed: the cookie was not accepted (it may have expired; copy a fresh one from your browser)%s", s.name, cookiePageHint(resp, doc))
 		}
 		if msg, found, _ := s.findError(s.def.Login.Error, resp, vars); found {
 			return fmt.Errorf("%s: login failed: %s", s.name, msg)

@@ -239,3 +239,17 @@
 .qsteps li.warn { color: var(--warning); }
 .qsteps li.error { color: var(--error, #ff6b6b); }
 .qsteps time { font: 500 0.74rem var(--font-mono); margin-right: 6px; }
+
+/* ---- picking several downloads ----------------------------------------- */
+.activity-page .qthumb { position: relative; }
+.activity-page .qpick { position: absolute; top: 3px; left: 3px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: color-mix(in srgb, var(--bg, #0b0d18) 78%, transparent); cursor: pointer; }
+.activity-page .qpick input { margin: 0; width: 15px; height: 15px; cursor: pointer; }
+.activity-page .qrow .qpick { opacity: 0.55; transition: opacity 0.16s var(--act-ease); }
+.activity-page .qrow:hover .qpick, .activity-page .qpick:focus-within, .activity-page .pick-bar ~ .qrow .qpick { opacity: 1; }
+.activity-page .pick-bar {
+  position: sticky; top: 8px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 0 0 10px; padding: 8px 12px; border-radius: 12px;
+  background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom)); box-shadow: 0 0 0 1px var(--rim), 0 14px 28px -20px var(--lift);
+}
+.activity-page .pick-bar strong { margin-right: 6px; font-family: var(--font-mono); font-size: 0.85rem; }
+@media (prefers-reduced-motion: reduce) { .activity-page .qrow .qpick { transition: none; } }

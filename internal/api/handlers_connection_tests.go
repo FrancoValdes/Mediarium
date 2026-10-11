@@ -29,7 +29,7 @@ func testIndexer(ctx context.Context, name, baseURL, apiKey string) connTestResu
 	if baseURL == "" {
 		return connTestResult{Message: "Enter the indexer's address first."}
 	}
-	ctx, cancel := context.WithTimeout(ctx, connTestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, max(connTestTimeout, indexers.FeedWait(baseURL)))
 	defer cancel()
 	client := indexers.NewNewznabClient(name, baseURL, apiKey)
 	results, err := client.Search(ctx, "", []int{2000, 5000})

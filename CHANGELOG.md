@@ -8,6 +8,16 @@ under [Unreleased]. How releases are cut: [docs/RELEASING.md](docs/RELEASING.md)
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-10-11
+
+### Added
+- **Send a download to the front, and pick several downloads at once** (asked for by 12nick12 on GitHub, #49 and #51): in Activity, a waiting download has **To the front**, and the small box on each download's picture lets you pick several and **Pause**, **Resume**, **Stop** or send them to the front together. A download that can't be changed is named and the rest still go through.
+
+### Fixed
+- **IPTorrents sign-in now works with the site's real pages** (reported by xrandallx1 on GitHub, #28): the site's sign-out link is an icon with a "Log out" tooltip, not a plain /lout.php link, so a good cookie was refused. Mediarium now recognises the link by its words as well as its address.
+- **A rejected sign-in cookie now says what the site showed instead** (IPTorrents, reported by xrandallx1 on GitHub, #28): a browser check, its own sign-in page, or another page, so you can tell what to fix.
+- **Slow Prowlarr and Jackett feeds no longer time out** (reported by DFlexy on GitHub, #18): a feed that Prowlarr or Jackett serves for a site they read page by page can take 20 to 40 seconds to answer. Mediarium gave up after 15, so the Test button and searches failed even though the feed worked in Prowlarr. Those feeds now get up to 60 seconds; indexers' own APIs keep the short wait.
+
 ## [3.0.0] - 2026-10-11
 
 ### Requested features

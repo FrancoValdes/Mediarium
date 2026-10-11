@@ -527,10 +527,12 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 |---|---|---|---|
 | DELETE | `/api/queue` | admin | empties the list of completed and failed entries. |
 | GET | `/api/queue` | any account |  |
+| POST | `/api/queue/bulk` | admin | does one thing (pause, resume, stop, or send to the front) to several downloads at once. |
 | POST | `/api/queue/pause-all` | admin | pauses every download that is running or waiting, or only the Usenet or only the torrent ones with ?protocol=. |
 | POST | `/api/queue/resume-all` | admin | puts every paused download back in the download line (or only the Usenet or only the torrent ones with ?protocol=). |
 | DELETE | `/api/queue/{id}` | admin | removes a finished, failed, stopped, paused or parked entry from the list. |
 | POST | `/api/queue/{id}/blocklist` | admin | marks a release as bad and tries another: it blocklists the failed release, removes the entry and starts a fresh search for the same movie or show. |
+| POST | `/api/queue/{id}/front` | admin | sends a waiting download to the front of the line. |
 | POST | `/api/queue/{id}/pause` | admin | pauses one download. |
 | POST | `/api/queue/{id}/resolve-conflict` | admin | settles a download that is waiting because a file already exists (the "ask me" setting): a person decides, per item, whether the new file replaces the one al... |
 | POST | `/api/queue/{id}/resume` | admin | starts a paused download again. |
@@ -790,4 +792,4 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | PUT | `/api/watched/settings` | admin | PUT /api/watched/settings {"sync": true, "cleanup": {...}} |
 | POST | `/api/watched/sync` | admin | POST /api/watched/sync: read what's been watched now. |
 
-460 routes.
+462 routes.
