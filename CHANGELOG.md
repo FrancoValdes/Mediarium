@@ -8,6 +8,13 @@ under [Unreleased]. How releases are cut: [docs/RELEASING.md](docs/RELEASING.md)
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-10-11
+
+### Fixed
+- **The explanations in "Move from other apps" are in your language** (reported by DFlexy on GitHub, #17): lines such as "Mediarium's site list has no ..., so it stays on Prowlarr", "already in your library" or "switched off in Prowlarr" were always English. The common ones are now shown in Spanish, German, French and both Portuguese; any line the list doesn't know stays as the server wrote it.
+- **Two artists with the same name no longer get mixed up when you scan your music folder** (reported by barnetfan on Reddit): when the music database has two artists called the same (two bands named Blue Ruin), the one that has the albums found in your folder is now chosen, instead of whichever the search lists first. An artist already in your library counts too.
+- **An album you don't monitor no longer says its tracks are "missing"**: they say "not monitored" instead, and "missing" is kept for albums you want.
+
 ## [3.0.1] - 2026-10-11
 
 ### Added

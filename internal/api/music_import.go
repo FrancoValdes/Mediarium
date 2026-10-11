@@ -249,7 +249,7 @@ func scanNames(names ...string) []string {
 // resolveScanArtist looks a name up on MusicBrainz and returns the artist
 // in the library (adding it, with none of its albums monitored, when it is
 // new). Results are cached for the scan by name.
-func (s *Server) resolveScanArtist(ctx context.Context, cache map[string]*scanArtist, name string, userID int64) *scanArtist {
+func (s *Server) resolveScanArtist(ctx context.Context, cache map[string]*scanArtist, name string, userID int64, hints []string) *scanArtist {
 	key := music.NormalizeName(name)
 	if sa, ok := cache[key]; ok {
 		return sa
@@ -266,7 +266,9 @@ func (s *Server) resolveScanArtist(ctx context.Context, cache map[string]*scanAr
 	for i, f := range found {
 		cands[i] = music.NameCandidate{Name: f.Name, SortName: f.SortName, Score: f.Score}
 	}
-	idx := music.BestArtist(name, cands)
+	// Two artists can have the same name: the one that has the albums found
+	// on disk is the right one, whichever the search ranks first.
+	idx := music.BestArtistByAlbums(name, cands, hints, func(i int) []string { return s.albumTitlesOf(ctx, found[i].ID) })
 	if idx < 0 {
 		sa.err = "no artist called " + name + " in the music database"
 		return sa
@@ -298,6 +300,32 @@ func (s *Server) resolveScanArtist(ctx context.Context, cache map[string]*scanAr
 	return sa
 }
 
+// albumTitlesOf lists the album names of a MusicBrainz artist: from the
+// library when the artist is already in it, otherwise from the music
+// database. An artist that can't be listed has none.
+func (s *Server) albumTitlesOf(ctx context.Context, mbid string) []string {
+	if artist, ok, err := s.MusicRepo.GetArtistByMBID(mbid); err == nil && ok {
+		albums, err := s.MusicRepo.ListAlbums(artist.ID)
+		if err != nil {
+			return nil
+		}
+		titles := make([]string, len(albums))
+		for i, a := range albums {
+			titles[i] = a.Title
+		}
+		return titles
+	}
+	groups, err := s.MusicBrainz().ArtistReleaseGroups(ctx, mbid, nil, true)
+	if err != nil {
+		return nil
+	}
+	titles := make([]string, len(groups))
+	for i, g := range groups {
+		titles[i] = g.Title
+	}
+	return titles
+}
+
 // matchScannedArtist registers the album folders of one artist folder. The
 // tags of an album's files decide who and what it is (the artist, album and
 // year most of the files agree on); the folder names supply what the tags
@@ -307,18 +335,30 @@ func (s *Server) matchScannedArtist(ctx context.Context, job *musicScanJob, fold
 		job.add(musicScanResult{Artist: folder.Name, Folder: folder.Path, Files: len(folder.Loose), Status: musicResultUnmatched,
 			Message: "Audio files directly in the artist folder can't be matched. Put them in an album folder."})
 	}
-	for _, al := range folder.Albums {
+	// The album names found on disk (from the tags, and from the folder
+	// names) help to tell apart two artists that share a name.
+	scanned := make([][]music.FileInfo, len(folder.Albums))
+	var hints []string
+	for n, al := range folder.Albums {
 		infos := make([]music.FileInfo, len(al.Files))
 		for i, f := range al.Files {
 			infos[i] = music.IdentifyFile(f, musicTagReader)
 		}
+		scanned[n] = infos
+		hints = append(hints, al.Title)
+		if t := music.ConsensusOf(infos).Album; t != "" {
+			hints = append(hints, t)
+		}
+	}
+	for n, al := range folder.Albums {
+		infos := scanned[n]
 		tags := music.ConsensusOf(infos)
 		res := musicScanResult{Artist: folder.Name, Album: al.Title, Folder: al.Path, Files: len(al.Files)}
 
 		var sa *scanArtist
 		var errs []string
 		for _, name := range scanNames(tags.Artist, folder.Name) {
-			cand := s.resolveScanArtist(ctx, cache, name, userID)
+			cand := s.resolveScanArtist(ctx, cache, name, userID, hints)
 			if cand.err == "" {
 				sa = cand
 				break

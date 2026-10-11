@@ -185,3 +185,39 @@ func TestNaming(t *testing.T) {
 		t.Fatalf("empty artist: %s", got)
 	}
 }
+
+func TestBestArtistByAlbums(t *testing.T) {
+	cands := []NameCandidate{
+		{Name: "Blue Ruin", Score: 100},
+		{Name: "Blue Ruin", Score: 95},
+		{Name: "Blue Ruins", Score: 90},
+	}
+	albums := map[int][]string{
+		0: {"Fortune Teller", "Dragon"},
+		1: {"Hooligans Happy Hour", "Brain Dead"},
+		2: {"Hooligans Happy Hour"},
+	}
+	of := func(i int) []string { return albums[i] }
+	tests := []struct {
+		name  string
+		hints []string
+		want  int
+	}{
+		{"the album is on the second artist", []string{"Hooligans Happy Hour"}, 1},
+		{"the album is on the first artist", []string{"Dragon"}, 0},
+		{"no album known: highest score", nil, 0},
+		{"no artist has it: highest score", []string{"Unknown Album"}, 0},
+		{"most albums wins", []string{"Dragon", "Fortune Teller", "Hooligans Happy Hour"}, 0},
+		{"a different name is never picked", []string{"Hooligans Happy Hour"}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := BestArtistByAlbums("Blue Ruin", cands, tt.hints, of); got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
+	}
+	if got := BestArtistByAlbums("Nobody", cands, []string{"x"}, of); got != -1 {
+		t.Errorf("an unknown name picks nothing, got %d", got)
+	}
+}

@@ -594,9 +594,13 @@ function TracksPanel({ album }: { album: MusicAlbum }) {
                       <span className="state-tag st-downloaded" title={t('In your library')}>
                         <Icon name="check" size={12} /> <span className="tf-text">{t('in library')}</span>
                       </span>
-                    ) : (
-                      <span className="state-tag st-added" title={t('Missing')}>
+                    ) : full.monitored ? (
+                      <span className="state-tag st-searching" title={t('Missing')}>
                         <Icon name="x" size={12} /> <span className="tf-text">{t('missing')}</span>
+                      </span>
+                    ) : (
+                      <span className="state-tag st-added" title={t('Not monitored')}>
+                        <Icon name="eye-off" size={12} /> <span className="tf-text">{t('not monitored')}</span>
                       </span>
                     )}
                   </td>

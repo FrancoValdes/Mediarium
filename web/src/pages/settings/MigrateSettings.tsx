@@ -16,6 +16,7 @@ import Icon from '../../components/Icon'
 import Switch from '../../components/Switch'
 import { useToast } from '../../components/Toast'
 import { DOCS_URL } from '../../docs'
+import { importReason } from '../../importReasons'
 import { locale, plural, t, tx } from '../../i18n'
 import { FieldError, FormProblem, useValidation } from '../../useValidation'
 import { apiKey as apiKeyCheck, firstError, folderPath, required, url as urlCheck } from '../../validate'
@@ -382,7 +383,7 @@ export default function MigrateSettings() {
                     {p.items.map((i) => (
                       <li key={`${i.name}-${i.baseUrl ?? ''}`}>
                         <span className={`mig-act act-${i.action}`}>{ACTION_LABEL[i.action]}</span> {i.name} <small>{i.protocol}</small>
-                        {i.reason && <small> · {i.reason}</small>}
+                        {i.reason && <small> · {importReason(i.reason)}</small>}
                       </li>
                     ))}
                   </SimpleCard>
@@ -397,7 +398,7 @@ export default function MigrateSettings() {
                     {p.items.map((s) => (
                       <li key={`${s.host}-${s.username}`}>
                         <span className={`mig-act act-${s.action}`}>{ACTION_LABEL[s.action]}</span> {s.name || s.host} <small>{s.priority === 0 ? t('main') : t('backup {n}', { n: s.priority })}</small>
-                        {s.reason && <small> · {s.reason}</small>}
+                        {s.reason && <small> · {importReason(s.reason)}</small>}
                       </li>
                     ))}
                   </SimpleCard>
@@ -416,7 +417,7 @@ export default function MigrateSettings() {
                           {' '}
                           · {r.mediaType === 'movie' ? t('movie') : t('show')} · {r.status}
                           {r.requestedBy.length ? ' · ' + t('asked by {names}', { names: r.requestedBy.join(', ') }) : ''}
-                          {r.reason ? ` · ${r.reason}` : ''}
+                          {r.reason ? ` · ${importReason(r.reason)}` : ''}
                         </small>
                       </li>
                     ))}
@@ -527,7 +528,7 @@ function TitlesCard({ label, p, on, onToggle }: { label: string; p: MigrateTitle
                 {' '}
                 · {plural(i.files, '{n} file', '{n} files')}
                 {i.quality ? ` · ${i.quality}` : ''}
-                {i.reason ? ` · ${i.reason}` : ''}
+                {i.reason ? ` · ${importReason(i.reason)}` : ''}
               </small>
             </li>
           ))}

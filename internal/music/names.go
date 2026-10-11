@@ -103,6 +103,48 @@ func BestArtist(name string, candidates []NameCandidate) int {
 	return best
 }
 
+// maxSameNameLookups bounds how many artists with the same name have their
+// albums looked at; each look can be a request to the music database.
+const maxSameNameLookups = 4
+
+// BestArtistByAlbums is BestArtist for a name that more than one artist has
+// (two bands called Blue Ruin): the artist that has the albums found in the
+// folder wins, and the highest search score decides between equals. hints are
+// the album names found on disk; albumsOf lists the album names of the
+// candidate at that index.
+func BestArtistByAlbums(name string, candidates []NameCandidate, hints []string, albumsOf func(i int) []string) int {
+	best := BestArtist(name, candidates)
+	var same []int
+	for i, c := range candidates {
+		if SameArtist(name, c.Name) || SameArtist(name, c.SortName) {
+			same = append(same, i)
+		}
+	}
+	if len(same) < 2 || len(hints) == 0 {
+		return best
+	}
+	if len(same) > maxSameNameLookups {
+		same = same[:maxSameNameLookups]
+	}
+	pick, bestHits := best, 0
+	for _, i := range same {
+		titles := albumsOf(i)
+		hits := 0
+		for _, h := range hints {
+			for _, t := range titles {
+				if SameAlbum(h, t) {
+					hits++
+					break
+				}
+			}
+		}
+		if hits > bestHits {
+			pick, bestHits = i, hits
+		}
+	}
+	return pick
+}
+
 // AlbumCandidate is an album a folder might be (an artist's release group).
 type AlbumCandidate struct {
 	Title string
