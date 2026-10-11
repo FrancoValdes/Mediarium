@@ -10,6 +10,7 @@ test('reads that wait on an outside service are named', () => {
     ['/tmdb/movies/603', 'The movie database (TMDB)'],
     ['/music/discover?list=popular', 'MusicBrainz'],
     ['/music/albums/4/cover', 'The Cover Art Archive'],
+    ['/music/tracks/9/lyrics', 'LRCLIB'],
     ['/books/discover?list=trending', 'Open Library'],
     ['/books/search?q=dune', 'Open Library'],
     ['/book-authors/OL1A/works', 'Open Library'],

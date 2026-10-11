@@ -22,7 +22,7 @@ import (
 // at all. An empty episode list with a season means a season pack.
 func resolveTVTarget(releaseTitle string, hintSeason, hintEpisode int) (season int, episodes []int) {
 	rel := parser.Parse(releaseTitle)
-	if rel.Season > 0 {
+	if rel.Season > 0 || (rel.Special && len(rel.Episodes) > 0) {
 		return rel.Season, rel.Episodes
 	}
 	if hintEpisode > 0 {
@@ -44,19 +44,24 @@ func (s *Server) grabTVRelease(series library.Series, hintSeason, hintEpisode in
 // them again separately; an automatic grab is refused with
 // errAlreadyGrabbed when any of them is already being downloaded.
 func (s *Server) grabTV(series library.Series, hintSeason, hintEpisode int, releaseTitle, downloadURL string, sizeBytes int64, protocol indexers.Protocol, kind grabKind) (int64, error) {
-	if protocol == indexers.ProtocolTorrent && !s.torrentsEnabled() {
+	if protocol == indexers.ProtocolTorrent && !s.torrentReleasesOn() {
 		return 0, errTorrentsDisabled
 	}
 	season, episodes := resolveTVTarget(releaseTitle, hintSeason, hintEpisode)
 	// Anime and daily names carry no season marker: read them the way the
 	// show numbers its episodes ("[Group] Show - 14" is S02E01), so one
 	// episode isn't taken for a whole season.
-	if m := s.releaseMapper(series); m != nil && parser.Parse(releaseTitle).Season == 0 {
-		if rel := m(parser.Parse(releaseTitle)); rel.Season > 0 && len(rel.Episodes) > 0 {
+	raw := parser.Parse(releaseTitle)
+	if rel := s.releaseMapper(series)(raw); raw.Season == 0 && !raw.Special {
+		if (rel.Season > 0 || rel.Special) && len(rel.Episodes) > 0 {
 			season, episodes = rel.Season, rel.Episodes
 		}
+	} else if rel.Season != raw.Season || !equalInts(rel.Episodes, raw.Episodes) {
+		// Scene numbering ("Show S01E21" is S02E01 of the show): the name is
+		// read through the show's numbering.
+		season, episodes = rel.Season, rel.Episodes
 	}
-	if season == 0 {
+	if season == 0 && len(episodes) == 0 {
 		return 0, fmt.Errorf("can't tell which season %q is for. Its title has no season marker and none was given", releaseTitle)
 	}
 	firstEpisode := 0
@@ -106,6 +111,14 @@ func (s *Server) grabTV(series library.Series, hintSeason, hintEpisode int, rele
 		return 0, err
 	}
 	s.grabMu.Unlock()
+	// The release covers these episodes (or the whole season): whatever was
+	// being held for them no longer matters.
+	for _, ep := range targets {
+		s.forgetHeldEpisode(series.ID, ep.Season, ep.Episode)
+	}
+	if len(episodes) == 0 {
+		s.forgetHeldEpisode(series.ID, season, 0)
+	}
 
 	grabbed := s.grabbedMessage(releaseTitle, series.Title)
 	_ = s.QueueRepo.LogSeriesActivity(series.ID, "grabbed", grabbed)
@@ -157,6 +170,13 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 		if handled, err := s.settleInterrupted(queueID, run); handled {
 			return err // paused or stopped by a person: not a failure
 		}
+		if dup := asDuplicate(stepErr); dup != nil {
+			s.settleDuplicate(queueID, dup)
+			if !dup.holdsTitle() {
+				releaseTargets()
+			}
+			return stepErr
+		}
 		// The person reads this message; the raw error goes to the log only
 		// (noteDownloadFailure keeps it as the technical detail).
 		plain := plainerror.Message(stepErr)
@@ -192,7 +212,7 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 	release := parser.Parse(releaseTitle)
 	tier := quality.Classify(release)
 
-	sidecars := sidecarsIn(dir)
+	sidecars := s.sidecarsIn(dir)
 	if ctx.Err() != nil {
 		return fail(ctx.Err()) // cancelled: never import for a show that was removed
 	}
@@ -231,7 +251,7 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 		for i, ep := range eps {
 			earlierFiles[i] = ep.FilePath
 		}
-		result, err := organizer.Import(file, destPath, policy, isBetter)
+		result, err := s.importDownloaded(file, destPath, policy, isBetter)
 		if err != nil {
 			return fail(fmt.Errorf("import %s: %w", filepath.Base(file), err))
 		}
@@ -243,7 +263,10 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 			continue
 		}
 		for _, ep := range eps {
-			if err := s.MovieRepo.SetEpisodeStatus(ep.ID, library.StatusDownloaded, string(tier), result.DestPath); err != nil {
+			if err := s.MovieRepo.SetEpisodeStatus(ep.ID, library.StatusDownloaded, string(tier), result.DestPath); err == nil {
+				s.afterEpisodeImported(ep.ID, releaseTitle)
+				s.forgetHeldEpisode(ep.SeriesID, ep.Season, ep.Episode)
+			} else {
 				return fail(err)
 			}
 			handled[ep.ID] = true
@@ -254,7 +277,7 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 			// The new file has another name than the ones it replaces: they go,
 			// unless another episode still uses one of them.
 			for _, old := range earlierFiles {
-				s.removeReplacedFile(s.tvRoot(), old, result.DestPath, 0, series.ID, fmt.Sprintf("%s S%02dE%02d", series.Title, eps[0].Season, eps[0].Episode))
+				s.removeReplacedFile(s.seriesRootFor(series), old, result.DestPath, 0, series.ID, fmt.Sprintf("%s S%02dE%02d", series.Title, eps[0].Season, eps[0].Episode))
 			}
 		}
 		// Subtitles that came with the release go next to this episode. In a
@@ -299,6 +322,7 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 	s.autoSubtitlesFor(subtitleItems...)
 	message := fmt.Sprintf("%s: imported %s from %s", series.Title, plural(imported, "episode"), releaseTitle)
 	_ = s.QueueRepo.LogSeriesActivity(series.ID, "imported", message)
+	s.checkFinishedShowSoon(series.ID)
 	importedItem := seriesItemFor(series, season, importedEps)
 	importedItem.Quality, importedItem.SizeBytes, importedItem.Release = string(tier), fileSize(importedFiles...), releaseTitle
 	if len(importedFiles) == 1 {
@@ -359,16 +383,17 @@ func (s *Server) seasonEpisodes(seriesID int64, season int, skipDownloaded bool)
 // noise), for packs every non-sample video.
 func (s *Server) tvVideoFiles(dir string, singleEpisode bool) ([]string, error) {
 	if singleEpisode {
-		f, err := organizer.FindLargestVideoFile(dir)
+		f, err := largestVideoFile(dir)
 		if err != nil {
 			return nil, badRelease(fmt.Errorf("couldn't find the episode file in the finished download: %w", err))
 		}
 		return []string{f}, nil
 	}
-	files, err := organizer.FindVideoFiles(dir)
+	files, err := organizer.FindVideoFiles(dir, findOptions(dir)...)
 	if err != nil {
 		return nil, err
 	}
+	files = dropSkipped(dir, files, readSkipped(dir)) // files the torrent left out
 	if len(files) == 0 {
 		return nil, badRelease(fmt.Errorf("no video files found in the finished download"))
 	}
@@ -380,7 +405,7 @@ func (s *Server) tvVideoFiles(dir string, singleEpisode bool) ([]string, error) 
 // exactly one episode, that's the answer; otherwise the file is unknown.
 func (s *Server) tvFileEpisodes(file string, grabSeason int, targets []library.Episode, mapper func(parser.Release) parser.Release) (int, []int) {
 	rel := parseFor(mapper, filepath.Base(file))
-	if rel.Season > 0 && len(rel.Episodes) > 0 {
+	if (rel.Season > 0 || rel.Special) && len(rel.Episodes) > 0 {
 		return rel.Season, rel.Episodes
 	}
 	if len(targets) == 1 {
@@ -401,9 +426,12 @@ func (s *Server) tvRoot() string {
 // buildTVDestPath renders "<tv root>/Series (Year)/Season NN/<episode file>"
 // using the same naming preset and illegal-character handling as movies.
 func (s *Server) buildTVDestPath(series library.Series, ep library.Episode, release parser.Release, videoFile string) (string, error) {
-	root := s.tvRoot()
+	root := s.seriesRootFor(series)
+	if root == "" && series.CopyOf != 0 {
+		return "", fmt.Errorf("the folder for second copies isn't set. Choose one in Settings > Library > Folders")
+	}
 	if root == "" {
-		return "", fmt.Errorf("the TV folder isn't set. Choose one in Settings > Library > Folders and file names")
+		return "", fmt.Errorf("the TV folder isn't set. Choose one in Settings > Library > Folders")
 	}
 
 	preset, _ := s.Settings.Get(settings.KeyNamingPreset)

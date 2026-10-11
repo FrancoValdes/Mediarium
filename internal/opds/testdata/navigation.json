@@ -1,0 +1,42 @@
+{
+  "metadata": {
+    "title": "Mediarium books",
+    "modified": "2026-10-09T12:30:00Z"
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "/opds/",
+      "type": "application/atom+xml;profile=opds-catalog;kind=navigation"
+    },
+    {
+      "rel": "start",
+      "href": "/opds/",
+      "type": "application/atom+xml;profile=opds-catalog;kind=navigation"
+    },
+    {
+      "rel": "search",
+      "href": "/opds/opensearch.xml",
+      "type": "application/opensearchdescription+xml",
+      "title": "Search"
+    },
+    {
+      "rel": "search",
+      "href": "/opds/search?q={searchTerms}",
+      "type": "application/atom+xml;profile=opds-catalog;kind=acquisition",
+      "title": "Search"
+    }
+  ],
+  "navigation": [
+    {
+      "href": "/opds/new",
+      "type": "application/opds+json",
+      "title": "Recently added"
+    },
+    {
+      "href": "/opds/authors",
+      "type": "application/opds+json",
+      "title": "Authors & friends"
+    }
+  ]
+}

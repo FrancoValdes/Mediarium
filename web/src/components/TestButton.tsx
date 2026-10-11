@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import { t } from '../i18n'
 
 // A "Test" button that runs a connectivity check and shows the result
 // inline: green for ok, red with the reason otherwise.
 export default function TestButton({
   run,
-  label = 'Test',
+  label = t('Test'),
   disabled,
 }: {
   run: () => Promise<{ ok: boolean; message: string }>
@@ -29,7 +30,7 @@ export default function TestButton({
   return (
     <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       <button onClick={click} disabled={busy || disabled}>
-        {busy ? 'Testing…' : label}
+        {busy ? t('Testing…') : label}
       </button>
       {result && (
         <span className={result.ok ? 'badge downloaded' : 'error-text'} style={{ fontSize: '0.85rem' }}>

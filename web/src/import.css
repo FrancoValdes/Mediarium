@@ -1,0 +1,120 @@
+/* Import pages (library, by hand, music): the same panels as Settings, a
+   numbered strip showing where you are, the kind you import as its own
+   shape, and review tables as rows on the panel. Scoped to .import-page. */
+
+.import-page { --imp-panel: linear-gradient(180deg, var(--panel-top), var(--panel-bottom)); --imp-rim: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px var(--rim), 0 20px 34px -28px var(--lift); }
+.import-page .imp-title { margin: 0 0 6px; font-size: clamp(1.6rem, 2.4vw, 2.2rem); letter-spacing: -0.03em; }
+.import-page .imp-lede { margin: 0 0 20px; max-width: 78ch; color: var(--text-dim); line-height: 1.55; }
+
+/* where you are: four numbered steps on a dashed line */
+.imp-steps { list-style: none; margin: 0 0 22px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 0; }
+.imp-steps li { position: relative; display: flex; align-items: center; gap: 8px; padding: 0 18px 0 0; margin-right: 18px; font-size: 0.88rem; font-weight: 600; color: var(--text-faint); }
+.imp-steps li:not(:last-child)::after { content: ''; position: absolute; right: -14px; top: 50%; width: 20px; border-top: 1px dashed color-mix(in srgb, var(--text) 22%, transparent); }
+.imp-steps b { font-family: var(--font-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.06em; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 4px 9px 9px 9px; box-shadow: inset 0 0 0 1px var(--rim); }
+.imp-steps li.done { color: var(--text-dim); }
+.imp-steps li.done b { color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.imp-steps li.now { color: var(--text); }
+.imp-steps li.now b { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 14px -2px color-mix(in srgb, var(--accent) 70%, transparent); }
+
+/* panels */
+.import-page .card, .import-page .import-options, .import-page .import-set {
+  border: 0; border-radius: 22px 22px 22px 6px; background: var(--imp-panel); box-shadow: var(--imp-rim);
+}
+
+/* step one: the kind as two shapes, the folder next to them */
+.imp-start { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 22px 28px; align-items: start; padding: 22px; margin-bottom: 22px; }
+.imp-kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.imp-kinds button {
+  --kc: var(--c-movie);
+  display: grid; justify-items: start; gap: 12px; padding: 16px; min-height: 112px; text-align: left;
+  border: 0; border-radius: 4px 16px 16px 16px; font-weight: 700; font-size: 0.98rem; color: var(--text-dim);
+  background: color-mix(in srgb, var(--text) 3%, transparent); box-shadow: inset 0 0 0 1px var(--rim);
+  transition: box-shadow 0.16s var(--ease), background 0.16s var(--ease), color 0.16s var(--ease);
+}
+.imp-kinds button.k-tv { --kc: var(--c-tv); }
+.imp-kinds button .kind-glyph { color: var(--kc); filter: grayscale(0.8) brightness(0.8); opacity: 0.7; transition: filter 0.2s var(--ease), opacity 0.2s var(--ease), transform 0.32s var(--ease-out); }
+.imp-kinds button:hover { color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kc) 45%, var(--rim)); }
+.imp-kinds button.active { color: var(--text); background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--kc) 18%, transparent), transparent 70%); box-shadow: inset 0 0 0 1.5px var(--kc), 0 12px 26px -16px color-mix(in srgb, var(--kc) 60%, transparent); }
+.imp-kinds button.active .kind-glyph { filter: none; opacity: 1; transform: rotate(-6deg); }
+.imp-folder { display: grid; gap: 10px; align-content: start; }
+.imp-folder label { display: grid; gap: 6px; font-weight: 600; }
+.imp-folder input { font-family: var(--font-mono); font-size: 0.9rem; }
+.imp-folder > p { margin: 0; color: var(--text-dim); font-size: 0.85rem; }
+.imp-folder > button.primary { justify-self: start; padding-left: 22px; padding-right: 22px; }
+@media (max-width: 760px) { .imp-start { grid-template-columns: minmax(0, 1fr); } }
+
+/* scanning */
+.imp-working { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 14px; padding: 16px 18px; margin-bottom: 18px; border-radius: 4px 16px 16px 16px; background: color-mix(in srgb, var(--accent) 6%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
+.imp-working p { margin: 0; font-weight: 600; }
+.imp-working .bar { grid-column: 1 / -1; height: 4px; }
+.imp-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); animation: imp-spin 0.9s linear infinite; }
+@keyframes imp-spin { to { transform: rotate(360deg); } }
+
+/* review */
+.imp-found { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.imp-found strong { font-family: var(--font-display); font-size: 1.2rem; letter-spacing: -0.02em; margin-right: 6px; }
+.import-page .import-options { padding: 18px 20px; margin: 14px 0 16px; }
+.import-page .import-options .after { border-top-color: color-mix(in srgb, var(--text) 14%, transparent); }
+
+/* tables: rows on the page, mono details */
+.import-page .imp-table, .import-page .data-table { width: 100%; border-collapse: separate; border-spacing: 0 6px; }
+.import-page .imp-table th { text-align: left; font-family: var(--font-mono); font-size: 0.68rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); padding: 0 12px 2px; border: 0; background: none; }
+.import-page .imp-table td { padding: 12px; border: 0; background: color-mix(in srgb, var(--text) 3.5%, transparent); vertical-align: top; }
+.import-page .imp-table td:first-child { border-radius: 4px 0 0 12px; }
+.import-page .imp-table td:last-child { border-radius: 0 12px 12px 0; }
+.import-page .imp-table tr:hover > td { background: color-mix(in srgb, var(--text) 5.5%, transparent); }
+.import-page .imp-table td strong { font-family: var(--font-display); letter-spacing: -0.01em; }
+.import-page .imp-table .badge { font-family: var(--font-mono); font-size: 0.64rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 3px 8px 8px 8px; }
+.import-page .imp-table select { max-width: 320px; }
+
+/* the report */
+.import-page .import-progress { padding: 16px 18px; border-radius: 4px 16px 16px 16px; background: color-mix(in srgb, var(--c-activity) 6%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-activity) 25%, transparent); }
+.import-page .import-progress .bar { height: 6px; }
+.import-page .import-set { padding: 16px 18px; margin-bottom: 14px; }
+.import-page .import-total { font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-dim); }
+.import-page .import-note { font-size: 0.84rem; color: var(--text-faint); }
+
+/* by hand: one card per file, the shape of what you say it is */
+.import-page .manual-list { display: grid; gap: 10px; }
+.import-page .manual-row {
+  --kc: var(--c-movie);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; padding: 16px 18px; margin: 0;
+}
+.import-page .manual-row > .manual-shape { flex: none; }
+.import-page .manual-row > .manual-file { flex: 1 1 340px; }
+.import-page .manual-row > .manual-pick { flex: 0 1 auto; margin-left: auto; }
+.import-page .manual-row.k-tv { --kc: var(--c-tv); }
+.manual-shape { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 4px 14px 14px 14px; color: var(--kc); background: color-mix(in srgb, var(--kc) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kc) 30%, transparent); }
+.import-page .manual-file { display: grid; gap: 3px; min-width: 0; }
+.import-page .manual-file strong { font-family: var(--font-mono); font-weight: 500; font-size: 0.9rem; color: var(--text); overflow-wrap: anywhere; }
+.import-page .manual-file code { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-faint); background: none; padding: 0; overflow-wrap: anywhere; }
+.import-page .manual-file small { font-size: 0.8rem; color: var(--text-dim); }
+.import-page .manual-pick { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 0; }
+.import-page .manual-pick select { min-width: 200px; }
+
+
+@media (prefers-reduced-motion: reduce) { .imp-spin { animation-duration: 3s; } }
+
+/* music: a record that spins while the folder is read */
+.import-page.music-import .mi-start { grid-template-columns: auto minmax(0, 1fr) auto; padding: 22px 24px; }
+.mi-disc { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%; color: var(--c-music); background: radial-gradient(circle, color-mix(in srgb, var(--c-music) 16%, transparent), transparent 70%); }
+.mi-disc .kind-glyph { transition: transform 0.6s var(--ease-out); }
+.mi-start:hover .mi-disc .kind-glyph { transform: rotate(40deg); }
+.mi-disc.spinning .kind-glyph { animation: mi-spin 2.4s linear infinite; }
+@keyframes mi-spin { to { transform: rotate(360deg); } }
+.import-page.music-import .mi-start-text h2 { font-size: 1.3rem; letter-spacing: -0.02em; }
+.import-page.music-import .mi-folder-line code { font-family: var(--font-mono); font-size: 0.82rem; }
+.import-page.music-import .mi-progress { border-radius: 4px 16px 16px 16px; background: color-mix(in srgb, var(--c-music) 6%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-music) 25%, transparent); padding: 16px 18px; }
+.import-page.music-import .mi-progress .bar { height: 6px; }
+.import-page.music-import .mi-stat {
+  border: 0; border-radius: 4px 16px 16px 16px; padding: 14px 16px;
+  background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom)); box-shadow: inset 0 0 0 1px var(--rim);
+}
+.import-page.music-import .mi-stat b { font-family: var(--font-mono); font-weight: 500; font-size: 1.9rem; letter-spacing: -0.04em; color: var(--text-faint); }
+.import-page.music-import .mi-stat.good b { color: var(--success); }
+.import-page.music-import .mi-stat.warn b { color: var(--warning); }
+.import-page.music-import .mi-stat.bad b { color: var(--danger); }
+.import-page.music-import .mi-row { border: 0; border-radius: 4px 12px 12px 12px; background: color-mix(in srgb, var(--text) 3.5%, transparent); }
+.import-page.music-import .mi-folder { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-faint); }
+@media (max-width: 760px) { .import-page.music-import .mi-start { grid-template-columns: minmax(0, 1fr); } .mi-disc { width: 72px; height: 72px; } }
+@media (prefers-reduced-motion: reduce) { .mi-disc.spinning .kind-glyph { animation: none; } }

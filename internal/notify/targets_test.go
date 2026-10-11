@@ -212,7 +212,7 @@ func TestCatalogIsSelfConsistent(t *testing.T) {
 		}
 		for _, f := range typ.Fields {
 			switch f.Kind {
-			case "text", "password", "number", "select":
+			case "text", "password", "number", "select", "push":
 			default:
 				t.Errorf("%s.%s has unknown kind %q", typ.Type, f.Name, f.Kind)
 			}

@@ -102,6 +102,7 @@ type prowlarrCategory struct {
 }
 
 type prowlarrIndexer struct {
+	ID             int             `json:"id"`
 	Name           string          `json:"name"`
 	Implementation string          `json:"implementation"`
 	DefinitionName string          `json:"definitionName"`
@@ -231,7 +232,16 @@ func fetchSonarr(ctx context.Context, hc *http.Client, c Conn) (sonarrData, erro
 
 type prowlarrData struct {
 	Version  string
+	Base     string // Prowlarr's address as entered, no trailing slash
+	Key      string // its API key, used as the key of the feeds it serves
 	Indexers []prowlarrIndexer
+}
+
+// feedURL is Prowlarr's own Newznab/Torznab feed for one of its indexers,
+// without the trailing /api Mediarium adds itself. It works for every
+// indexer Prowlarr has, whether or not Mediarium knows the site.
+func (d prowlarrData) feedURL(id int) string {
+	return d.Base + "/" + strconv.Itoa(id)
 }
 
 func fetchProwlarr(ctx context.Context, hc *http.Client, c Conn) (prowlarrData, error) {
@@ -246,6 +256,10 @@ func fetchProwlarr(ctx context.Context, hc *http.Client, c Conn) (prowlarrData, 
 		return d, err
 	}
 	d.Version = st.Version
+	if base, err := c.baseURL(); err == nil {
+		d.Base = base.String()
+	}
+	d.Key = strings.TrimSpace(c.APIKey)
 	if err := get(ctx, hc, c, "/api/v1/indexer", nil, false, &d.Indexers); err != nil {
 		return d, fmt.Errorf("read indexers: %w", err)
 	}

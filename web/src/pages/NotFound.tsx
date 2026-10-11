@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import Icon from '../components/Icon'
+import { t, tx } from '../i18n'
 
 // Shown for an address the app does not have, instead of quietly jumping to
 // the dashboard.
@@ -8,17 +9,15 @@ export default function NotFound() {
   return (
     <div className="not-found">
       <Icon name="search" size={34} />
-      <h1>That page doesn&apos;t exist</h1>
-      <p>
-        Nothing lives at <code>{path}</code>. The link may be old, or the address has a typo.
-      </p>
+      <h1>{t("That page doesn't exist")}</h1>
+      <p>{tx('Nothing lives at {path}. The link may be old, or the address has a typo.', { path: <code>{path}</code> })}</p>
       <p className="not-found-links">
         <Link className="btn-primary" to="/">
-          Go to the dashboard
+          {t('Go to the dashboard')}
         </Link>
-        <Link to="/library">Library</Link>
-        <Link to="/discover">Discover</Link>
-        <Link to="/settings">Settings</Link>
+        <Link to="/library">{t('Library')}</Link>
+        <Link to="/discover">{t('Discover')}</Link>
+        <Link to="/settings">{t('Settings')}</Link>
       </p>
     </div>
   )

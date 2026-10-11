@@ -26,7 +26,10 @@ func (s *Server) mediaServersImported(kind mediaservers.MediaKind, files ...stri
 
 // movieImported and episodesImported are the pipeline's hooks into
 // mediaServersImported.
-func (s *Server) movieImported(file string) { s.mediaServersImported(mediaservers.MediaMovie, file) }
+func (s *Server) movieImported(file string) {
+	s.metaFilesAfterMovie(file) // the NFO and pictures first, so the media server finds them when it scans
+	s.mediaServersImported(mediaservers.MediaMovie, file)
+}
 
 // musicImported tells the media servers an album was imported: their music
 // libraries scan the album folder (Plex sections of type artist, Jellyfin and
@@ -42,6 +45,7 @@ func (s *Server) booksImported(files ...string) {
 }
 
 func (s *Server) episodesImported(files ...string) {
+	s.metaFilesAfterEpisodes(files)
 	s.mediaServersImported(mediaservers.MediaTV, files...)
 }
 
@@ -108,7 +112,7 @@ func buildMediaServer(req mediaServerRequest, base mediaservers.Server) (mediase
 	if strings.TrimSpace(req.Kind) != "" {
 		kind, ok := mediaservers.ParseKind(req.Kind)
 		if !ok {
-			return out, fmt.Errorf("Unknown media server type %q. Use Plex, Jellyfin, Emby, Audiobookshelf or Kavita.", req.Kind)
+			return out, fmt.Errorf("Unknown media server type %q. Use Plex, Jellyfin, Emby, Silo, Audiobookshelf, Kavita or Webhook.", req.Kind)
 		}
 		out.Kind = kind
 	}
@@ -442,6 +446,9 @@ func (s *Server) mediaServerHealth() []healthItem {
 		impact := "New downloads may not show up there until it rescans on its own, and \"Watch in " + m.Kind.Label() + "\" links can be missing."
 		if m.Kind.BookServer() {
 			impact = "New books may not show up there until it rescans on its own, and the links to it on book pages can be missing."
+		}
+		if m.Kind == mediaservers.KindWebhook {
+			impact = "It isn't told about new downloads."
 		}
 		items = append(items, healthItem{
 			ID:     fmt.Sprintf("media-server-failed-%d", m.ID),

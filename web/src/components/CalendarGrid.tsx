@@ -1,10 +1,24 @@
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { CalendarEntry } from '../api'
 import { useModules } from '../ModulesContext'
 import Icon from './Icon'
+import KindGlyph, { type GlyphKind } from './KindGlyph'
+import { locale, plural, t } from '../i18n'
+import { useUrlState } from '../useUrlState'
+import '../calendar.css'
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+// The calendar reads like a cinema's programme: the month in big type, a
+// grid of days where each release is a small poster in its kind's frame, or
+// a list of days with a ticket stub for the date. Status follows the rest of
+// the app: solid when you have it, a bright line while it downloads, a
+// dashed outline in the kind's colour while it's still wanted.
+
+// The width (in pixels) up to which calendar.css shows only the list of days.
+const NARROW_PANEL = 640
+
+type View = 'month' | 'agenda' | 'posters'
+const VIEW_KEY = 'mediarium.calendar.view'
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
@@ -16,37 +30,97 @@ function entryLink(e: CalendarEntry): string | undefined {
   return undefined
 }
 
-// One badge per kind of media, told apart by shape of the symbol and by
-// colour (movies teal, shows violet, music orange, books green, the same
-// everywhere in the app).
-const KIND = {
-  movie: { icon: 'film', label: 'Movie', cls: 'movie' },
-  episode: { icon: 'tv', label: 'TV episode', cls: 'tv' },
-  album: { icon: 'music', label: 'Album', cls: 'music' },
-  book: { icon: 'book', label: 'Book', cls: 'book' },
-} as const
+// A book entry is an audiobook when that's the only format wanted; the
+// server ends the subtitle with the formats ("Audiobook", "Ebook and audiobook").
+function glyphOf(kind: CalendarEntry['kind'], subtitle?: string): GlyphKind {
+  if (kind === 'episode') return 'tv'
+  if (kind === 'album') return 'music'
+  if (kind === 'book') return subtitle && /(^|· )Audiobook$/.test(subtitle) ? 'audiobook' : 'book'
+  return 'movie'
+}
 
-const STATUS_LABEL: Record<CalendarEntry['status'], string> = { downloaded: 'Have it', downloading: 'Downloading', missing: 'Waiting' }
+const KIND_LABEL: Record<GlyphKind, string> = { movie: t('Movie'), tv: t('TV episode'), music: t('Album'), book: t('Book'), audiobook: t('Audiobook') }
+const LEGEND_LABEL: Record<GlyphKind, string> = { movie: t('Movies'), tv: t('TV'), music: t('Music'), book: t('Books'), audiobook: t('Audiobooks') }
+const STATUS_LABEL: Record<CalendarEntry['status'], string> = { downloaded: t('Have it'), downloading: t('Downloading'), missing: t('Waiting') }
 
-export function KindBadge({ kind }: { kind: CalendarEntry['kind'] }) {
-  const k = KIND[kind] ?? KIND.movie
+// "S03E09 · Second Service" splits into the code and the episode's name.
+function splitSubtitle(e: CalendarEntry): { code?: string; rest?: string } {
+  const m = e.subtitle?.match(/^(S\d+E\d+)(?: · (.*))?$/)
+  if (m) return { code: m[1], rest: m[2] }
+  if (e.season && e.episode) return { code: `S${String(e.season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}`, rest: e.subtitle }
+  return { rest: e.subtitle }
+}
+
+// The kind's glyph on a small tile of its colour (the dashboard's list uses
+// it too).
+export function KindBadge({ kind, subtitle }: { kind: CalendarEntry['kind']; subtitle?: string }) {
+  const g = glyphOf(kind, subtitle)
   return (
-    <span className={`cal-kind kind-${k.cls}`} role="img" aria-label={k.label} title={k.label}>
-      <Icon name={k.icon} size={13} />
+    <span className={`prog-badge k-${g}`} role="img" aria-label={KIND_LABEL[g]} title={KIND_LABEL[g]}>
+      <KindGlyph kind={g} size={16} />
     </span>
   )
 }
 
-function Chip({ e }: { e: CalendarEntry }) {
-  const k = KIND[e.kind] ?? KIND.movie
-  const body = (
+// A small poster in the frame of its kind: a ticket with notches, a CRT
+// screen, a sleeve with its record, a book with a spine, a cover wearing
+// headphones. Without a picture the frame holds the kind's glyph.
+function Thumb({ e, g }: { e: CalendarEntry; g: GlyphKind }) {
+  const [brokenSrc, setBrokenSrc] = useState<string | undefined>()
+  return (
+    <span className={`prog-thumb f-${g}`} aria-hidden="true">
+      {e.posterUrl && brokenSrc !== e.posterUrl ? (
+        <img src={e.posterUrl} alt="" loading="lazy" decoding="async" onError={() => setBrokenSrc(e.posterUrl)} />
+      ) : (
+        <span className="prog-thumb-blank">
+          <KindGlyph kind={g} size={18} />
+        </span>
+      )}
+    </span>
+  )
+}
+
+function Entry({ e, past, card }: { e: CalendarEntry; past: boolean; card?: boolean }) {
+  const g = glyphOf(e.kind, e.subtitle)
+  const { code, rest } = splitSubtitle(e)
+  const late = past && e.status === 'missing'
+  const cls = `${card ? 'prog-card' : 'prog-slot'} k-${g} s-${e.status}${late ? ' late' : ''}`
+  const tip = `${e.title}${e.subtitle ? ` · ${e.subtitle}` : ''} (${STATUS_LABEL[e.status] ?? e.status})`
+  const body = card ? (
     <>
-      <KindBadge kind={e.kind} />
-      <span className="cal-chip-title">{e.title}</span>
+      <Thumb e={e} g={g} />
+      <span className="prog-card-text">
+        <span className="prog-card-title">{e.title}</span>
+        {(code || rest) && (
+          <span className="prog-card-sub">
+            {code && <span className="prog-code">{code}</span>}
+            {rest && <span className="prog-rest">{rest}</span>}
+          </span>
+        )}
+        <span className="prog-card-foot">
+          <span className="prog-kind">
+            <KindGlyph kind={g} size={14} />
+            {KIND_LABEL[g]}
+          </span>
+          <span className="prog-state">{STATUS_LABEL[e.status] ?? e.status}</span>
+        </span>
+      </span>
+    </>
+  ) : (
+    <>
+      <Thumb e={e} g={g} />
+      <span className="prog-slot-text">
+        <span className="prog-slot-title">{e.title}</span>
+        <span className="prog-slot-meta">
+          <KindGlyph kind={g} size={12} />
+          {code ?? KIND_LABEL[g]}
+        </span>
+      </span>
+      <span className="sr-only">
+        {KIND_LABEL[g]}, {STATUS_LABEL[e.status] ?? e.status}
+      </span>
     </>
   )
-  const cls = `cal-chip st-${e.status} kind-${k.cls}`
-  const tip = `${e.title}${e.subtitle ? ` - ${e.subtitle}` : ''} (${STATUS_LABEL[e.status] ?? e.status})`
   const to = entryLink(e)
   return to ? (
     <Link to={to} className={cls} title={tip}>
@@ -59,15 +133,86 @@ function Chip({ e }: { e: CalendarEntry }) {
   )
 }
 
-// Month grid on wide screens, agenda list on phones. Each entry has a stripe
-// for its status (waiting, downloading, have it) and a badge for its kind.
+// One release as a big poster with its name in a frosted bubble: the Posters view of the calendar.
+function PosterTile({ e, past }: { e: CalendarEntry; past: boolean }) {
+  const g = glyphOf(e.kind, e.subtitle)
+  const { code, rest } = splitSubtitle(e)
+  const [brokenSrc, setBrokenSrc] = useState<string | undefined>()
+  const late = past && e.status === 'missing'
+  const cls = `pt k-${g} s-${e.status}${late ? ' late' : ''}`
+  const tip = `${e.title}${e.subtitle ? ` · ${e.subtitle}` : ''} (${STATUS_LABEL[e.status] ?? e.status})`
+  const body = (
+    <>
+      {e.posterUrl && brokenSrc !== e.posterUrl ? (
+        <img src={e.posterUrl} alt="" loading="lazy" decoding="async" onError={() => setBrokenSrc(e.posterUrl)} />
+      ) : (
+        <span className="pt-blank" aria-hidden="true">
+          <KindGlyph kind={g} size={34} />
+        </span>
+      )}
+      <span className="pt-bubble">
+        <span className="pt-title">{e.title}</span>
+        <span className="pt-meta">
+          <KindGlyph kind={g} size={12} />
+          {code ?? rest ?? KIND_LABEL[g]}
+          <span className="pt-state">{STATUS_LABEL[e.status] ?? e.status}</span>
+        </span>
+      </span>
+    </>
+  )
+  const to = entryLink(e)
+  return to ? (
+    <Link to={to} className={cls} title={tip}>
+      {body}
+    </Link>
+  ) : (
+    <span className={cls} title={tip}>
+      {body}
+    </span>
+  )
+}
+
+function storedView(): View {
+  try {
+    const v = localStorage.getItem(VIEW_KEY)
+    return v === 'agenda' || v === 'posters' ? v : 'month'
+  } catch {
+    return 'month'
+  }
+}
+
 export default function CalendarGrid({ entries, compact }: { entries: CalendarEntry[]; compact?: boolean }) {
+  const { on } = useModules()
+  // The list of days is only built while it can be seen: when it is the chosen view, or when the panel is too narrow
+  // for the month grid (calendar.css then always shows the list). A month of releases is hundreds of cards.
+  const root = useRef<HTMLDivElement>(null)
+  const [narrow, setNarrow] = useState(false)
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!el) return
+    const measure = () => setNarrow(el.clientWidth <= NARROW_PANEL + 48) // a little extra for the panel's padding
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const watch = new ResizeObserver(measure)
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [])
   const [openDay, setOpenDay] = useState<string | null>(null)
-  const musicOn = useModules().on('music')
-  const [cursor, setCursor] = useState(() => {
+  const [view, setView] = useState<View>(storedView)
+  const [slide, setSlide] = useState<'next' | 'prev' | ''>('')
+  // On the Calendar page the month is in the address (?month=2026-10), so Back returns to it; the small
+  // calendar on the dashboard keeps it to itself.
+  const [ui, patchUi] = useUrlState({ month: '' })
+  const [own, setOwn] = useState(() => {
     const d = new Date()
     return new Date(d.getFullYear(), d.getMonth(), 1)
   })
+  const picked = !compact && /^\d{4}-\d{2}$/.test(ui.month) ? new Date(Number(ui.month.slice(0, 4)), Number(ui.month.slice(5)) - 1, 1) : null
+  const cursor = picked ?? own
+  const setCursor = (d: Date) => {
+    setOwn(d)
+    if (!compact) patchUi({ month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` })
+  }
 
   const byDay = useMemo(() => {
     const m = new Map<string, CalendarEntry[]>()
@@ -92,99 +237,207 @@ export default function CalendarGrid({ entries, compact }: { entries: CalendarEn
     })
   }, [cursor])
 
-  const today = iso(new Date())
-  const monthLabel = cursor.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+  // Weekday names in the reader's language, Monday first (1 Jan 2024 was a Monday).
+  const weekdays = useMemo(() => Array.from({ length: 7 }, (_, i) => new Date(2024, 0, 1 + i).toLocaleString(locale(), { weekday: 'short' })), [])
+
+  const now = new Date()
+  const today = iso(now)
+  const monthKey = `${cursor.getFullYear()}-${cursor.getMonth()}`
+  const monthName = cursor.toLocaleString(locale(), { month: 'long' })
   const monthDays = cells.filter((d) => d.getMonth() === cursor.getMonth() && (byDay.get(iso(d))?.length ?? 0) > 0)
-  const shift = (n: number) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1))
+  const monthCount = monthDays.reduce((n, d) => n + (byDay.get(iso(d))?.length ?? 0), 0)
+  // The list keeps today in it, even on a quiet day, so you can see where you are.
+  const agendaDays = cells.filter((d) => d.getMonth() === cursor.getMonth() && ((byDay.get(iso(d))?.length ?? 0) > 0 || iso(d) === today))
   const cap = compact ? 2 : 3
 
+  const shift = (n: number) => {
+    setSlide(n > 0 ? 'next' : 'prev')
+    setOpenDay(null)
+    setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1))
+  }
+  const goToday = () => {
+    const target = new Date(now.getFullYear(), now.getMonth(), 1)
+    if (target.getTime() === cursor.getTime()) return
+    setSlide(target > cursor ? 'next' : 'prev')
+    setOpenDay(null)
+    setCursor(target)
+  }
+  const pickView = (v: View) => {
+    setView(v)
+    try {
+      localStorage.setItem(VIEW_KEY, v)
+    } catch {
+      // A private window may refuse; the choice just isn't remembered.
+    }
+  }
+
+  // The legend shows the kinds that are switched on, plus any kind that has
+  // an entry this month.
+  const present = new Set(entries.map((e) => glyphOf(e.kind, e.subtitle)))
+  const legendKinds = (['movie', 'tv', 'music', 'book', 'audiobook'] as const).filter(
+    (k) => present.has(k) || (k === 'movie' && on('movies')) || (k === 'tv' && on('tv')) || (k === 'music' && on('music')) || (k === 'book' && on('ebooks')) || (k === 'audiobook' && on('audiobooks')),
+  )
+
+  const Heading = compact ? 'h3' : 'h2'
+  const fullDate = (d: Date) => d.toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' })
+
   return (
-    <div className="cal">
-      <div className="cal-head">
-        <button className="icon-btn" onClick={() => shift(-1)} aria-label="Previous month">
-          <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}>
-            <Icon name="open" size={16} />
-          </span>
-        </button>
-        <h3>{monthLabel}</h3>
-        <button className="icon-btn" onClick={() => shift(1)} aria-label="Next month">
-          <Icon name="open" size={16} />
-        </button>
-        <button className="btn-sm" onClick={() => setCursor(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>
-          Today
-        </button>
-        <div className="cal-legend" aria-label="Legend">
-          <div className="cal-legend-group">
-            {(['downloaded', 'downloading', 'missing'] as const).map((st) => (
-              <span key={st} className="cal-legend-item">
-                <i className={`cal-dot st-${st}`} /> {STATUS_LABEL[st]}
+    <div ref={root} className={`prog${compact ? ' compact' : ''}`} data-view={view}>
+      <div className="prog-head">
+        <div className="prog-title">
+          <Heading className="prog-month">
+            {monthName} <span className="prog-year">{cursor.getFullYear()}</span>
+          </Heading>
+          <p className="prog-count">{monthCount === 0 ? t('Nothing scheduled this month.') : plural(monthCount, '{n} release this month', '{n} releases this month')}</p>
+        </div>
+        <div className="prog-controls">
+          <div className="prog-console">
+            <button type="button" className="prog-round" onClick={() => shift(-1)} aria-label={t('Previous month')}>
+              <span className="prog-back">
+                <Icon name="open" size={16} />
               </span>
-            ))}
+            </button>
+            <button type="button" className="prog-today" onClick={goToday}>
+              {t('Today')}
+            </button>
+            <button type="button" className="prog-round" onClick={() => shift(1)} aria-label={t('Next month')}>
+              <Icon name="open" size={16} />
+            </button>
           </div>
-          <div className="cal-legend-group">
-            <span className="cal-legend-item">
-              <KindBadge kind="movie" /> Movie
-            </span>
-            <span className="cal-legend-item">
-              <KindBadge kind="episode" /> TV episode
-            </span>
-            {musicOn && (
-              <span className="cal-legend-item">
-                <KindBadge kind="album" /> Album
-              </span>
-            )}
+          <div className="seg prog-views" role="group" aria-label={t('Calendar view')}>
+            <button type="button" className={view === 'month' ? 'active' : ''} aria-pressed={view === 'month'} onClick={() => pickView('month')}>
+              {t('Month')}
+            </button>
+            <button type="button" className={view === 'posters' ? 'active' : ''} aria-pressed={view === 'posters'} onClick={() => pickView('posters')}>
+              {t('Posters')}
+            </button>
+            <button type="button" className={view === 'agenda' ? 'active' : ''} aria-pressed={view === 'agenda'} onClick={() => pickView('agenda')}>
+              {t('Agenda')}
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="cal-grid" role="grid" aria-label={monthLabel}>
-        {WEEKDAYS.map((w) => (
-          <div key={w} className="cal-dow">
-            {w}
-          </div>
-        ))}
-        {cells.map((d) => {
-          const key = iso(d)
-          const list = byDay.get(key) ?? []
-          const out = d.getMonth() !== cursor.getMonth()
-          return (
-            <div key={key} className={`cal-cell${out ? ' out' : ''}${key === today ? ' today' : ''}${list.length ? ' has' : ''}`}>
-              <span className="cal-num">{d.getDate()}</span>
-              {(openDay === key ? list : list.slice(0, cap)).map((e) => (
-                <Chip key={`${e.kind}-${e.id}`} e={e} />
-              ))}
-              {list.length > cap && (
-                <button className="cal-more" onClick={() => setOpenDay(openDay === key ? null : key)} aria-expanded={openDay === key}>
-                  {openDay === key ? 'Show less' : `+${list.length - cap} more`}
-                </button>
-              )}
-            </div>
-          )
-        })}
+      <div className="prog-board">
+        <div className="prog-dows" aria-hidden="true">
+          {weekdays.map((w, i) => (
+            <span key={w} className={i >= 5 ? 'wkend' : ''}>
+              {w}
+            </span>
+          ))}
+        </div>
+        <div key={monthKey} className={`prog-grid${view === 'posters' ? ' posters' : ''}${slide ? ` slide-${slide}` : ''}`}>
+          {cells.map((d, i) => {
+            const key = iso(d)
+            const list = byDay.get(key) ?? []
+            const out = d.getMonth() !== cursor.getMonth()
+            const past = key < today
+            const open = openDay === key
+            const cls = ['prog-cell', out && 'out', past && 'past', key === today && 'today', i % 7 >= 5 && 'wkend', list.length > 0 && 'has'].filter(Boolean).join(' ')
+            return (
+              <div key={key} className={cls}>
+                <div className="prog-cell-head">
+                  <span className="prog-num" aria-hidden="true">
+                    {d.getDate()}
+                  </span>
+                  {key === today && <span className="prog-lamp" aria-hidden="true" />}
+                  <span className="sr-only">
+                    {fullDate(d)}
+                    {key === today ? `, ${t('Today')}` : ''}
+                  </span>
+                </div>
+                {view === 'posters' && list.length > 0 && (
+                  <div className="pt-day">
+                    <PosterTile e={list[0]} past={past} />
+                    {list.length > 1 && (
+                      <button type="button" className="pt-more" onClick={() => setOpenDay(open ? null : key)} aria-expanded={open}>
+                        {t('+{n} more', { n: list.length - 1 })}
+                      </button>
+                    )}
+                    {open && list.length > 1 && (
+                      <div className={`pt-pop${i % 7 <= 1 ? ' at-start' : i % 7 >= 5 ? ' at-end' : ''}${Math.floor(i / 7) >= 3 ? ' up' : ''}`} role="dialog" aria-label={fullDate(d)}>
+                        <div className="pt-pop-head">
+                          <strong>{fullDate(d)}</strong>
+                          <button type="button" className="icon-btn" aria-label={t('Close')} onClick={() => setOpenDay(null)}>
+                            ×
+                          </button>
+                        </div>
+                        <div className="pt-pop-grid">
+                          {list.map((e) => (
+                            <PosterTile key={`${e.kind}-${e.id}`} e={e} past={past} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {view !== 'posters' && list.length > 0 && (
+                  <div className="prog-slots">
+                    {(open ? list : list.slice(0, cap)).map((e) => (
+                      <Entry key={`${e.kind}-${e.id}`} e={e} past={past} />
+                    ))}
+                  </div>
+                )}
+                {view !== 'posters' && list.length > cap && (
+                  <button type="button" className="prog-more" onClick={() => setOpenDay(open ? null : key)} aria-expanded={open}>
+                    {open ? t('Show less') : t('+{n} more', { n: list.length - cap })}
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
-      <ul className="cal-agenda">
-        {monthDays.length === 0 && <li className="empty-inline">Nothing scheduled this month.</li>}
-        {monthDays.map((d) => {
+      {(view === 'agenda' || narrow) && (
+      <ol key={`a-${monthKey}`} className={`prog-agenda${slide ? ` slide-${slide}` : ''}`}>
+        {agendaDays.map((d) => {
           const key = iso(d)
+          const past = key < today
+          const list = byDay.get(key) ?? []
           return (
-            <li key={key} className={key === today ? 'today' : ''}>
-              <span className="date-chip">
-                <b>{d.getDate()}</b>
-                {d.toLocaleString(undefined, { weekday: 'short' })}
-              </span>
-              <div className="cal-agenda-items">
-                {(byDay.get(key) ?? []).map((e) => (
-                  <div key={`${e.kind}-${e.id}`} className="cal-agenda-row">
-                    <Chip e={e} />
-                    {e.subtitle && <small>{e.subtitle}</small>}
-                  </div>
-                ))}
+            <li key={key} className={`prog-day${key === today ? ' today' : ''}${past ? ' past' : ''}`}>
+              <div className="prog-stub">
+                <span className="prog-stub-num">{d.getDate()}</span>
+                <span className="prog-stub-wd">{key === today ? t('Today') : d.toLocaleString(locale(), { weekday: 'short' })}</span>
+                <span className="prog-stub-mon">{d.toLocaleString(locale(), { month: 'short' })}</span>
+                <span className="sr-only">{fullDate(d)}</span>
               </div>
+              {list.length === 0 ? (
+                <p className="prog-quiet">{t('Nothing comes out today.')}</p>
+              ) : (
+                <ul className="prog-cards">
+                  {list.map((e) => (
+                    <li key={`${e.kind}-${e.id}`}>
+                      <Entry e={e} past={past} card />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           )
         })}
-      </ul>
+      </ol>
+      )}
+
+      <div className="prog-legend" role="group" aria-label={t('Legend')}>
+        <ul className="prog-legend-kinds">
+          {legendKinds.map((k) => (
+            <li key={k} className={`k-${k}`}>
+              <KindGlyph kind={k} size={18} />
+              {LEGEND_LABEL[k]}
+            </li>
+          ))}
+        </ul>
+        <ul className="prog-legend-states">
+          {(['downloaded', 'downloading', 'missing'] as const).map((st) => (
+            <li key={st}>
+              <i className={`prog-swatch s-${st}`} aria-hidden="true" />
+              {STATUS_LABEL[st]}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }

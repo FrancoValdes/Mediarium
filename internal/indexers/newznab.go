@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rdborg/mediarium/internal/netguard"
+	"github.com/rdborg/mediarium/internal/netproxy"
 )
 
 // Result is a single normalized search result, regardless of which
@@ -30,6 +31,10 @@ type Result struct {
 	Peers       int    // torrent-only (Torznab attr), 0 for usenet results
 	InfoHash    string // torrent-only, when the indexer reports it
 	Priority    int    // the indexer's priority (1 preferred, 2 normal, 3 last resort); set by the engine
+	// Cached is set by the search code (never by an indexer) when the debrid
+	// service in use already has this torrent. False means "not cached or not
+	// known".
+	Cached bool
 	// Torrent is true when the feed itself says this result is a torrent
 	// (a torrent enclosure, an info hash, a magnet link). It wins over the
 	// protocol the indexer was added with: a Torznab feed from Prowlarr that
@@ -50,7 +55,7 @@ func NewNewznabClient(name, baseURL, apiKey string) *NewznabClient {
 		Name:       name,
 		BaseURL:    newznabBase(baseURL),
 		APIKey:     apiKey,
-		httpClient: netguard.Client(20 * time.Second),
+		httpClient: netproxy.Client(20*time.Second, netproxy.Indexers),
 	}
 }
 
@@ -78,6 +83,7 @@ func (c *NewznabClient) Search(ctx context.Context, query string, categories []i
 	if err != nil {
 		return nil, fmt.Errorf("build newznab request: %w", netguard.CleanError(err))
 	}
+	req.Header.Set("User-Agent", UserAgent)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		// net/http's error carries the full request URL, which holds the API
@@ -98,10 +104,16 @@ func (c *NewznabClient) Search(ctx context.Context, query string, categories []i
 		return nil, fmt.Errorf("newznab request to %s: the reply is larger than %d MB", c.Name, maxNewznabBytes>>20)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("newznab request to %s: unexpected status %d: %s", c.Name, resp.StatusCode, c.mask(truncate(string(body), 200)))
+		return nil, NewStatusError(resp.StatusCode, resp.Header,
+			fmt.Sprintf("newznab request to %s: unexpected status %d: %s", c.Name, resp.StatusCode, c.mask(truncate(string(body), 200))), time.Now())
 	}
 	return parseNewznabFeed(body, c.Name, c.APIKey)
 }
+
+// UserAgent is what Mediarium calls itself when it asks an indexer for a
+// search or an NZB. Go's own default ("Go-http-client") is on the block lists
+// of many sites' Cloudflare rules, which answer it with a 403 page.
+const UserAgent = "Mediarium (+https://github.com/rdborg/Mediarium)"
 
 // maxNewznabBytes is the largest search reply that is read. A page of a
 // hundred results is well under a megabyte.

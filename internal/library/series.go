@@ -30,6 +30,23 @@ type Series struct {
 	// SeriesType is how release names number the episodes: SeriesStandard,
 	// SeriesAnime or SeriesDaily.
 	SeriesType string
+	// CopyOf is the main show's id when this row is a second copy of it,
+	// with its own episodes, kept in another quality; 0 for the main show.
+	CopyOf int64
+	// TVDBID and IMDBID are the show's ids elsewhere, from TMDB (0 / "" until
+	// the show is next refreshed).
+	TVDBID int
+	IMDBID string
+	// TMDBStatus is TMDB's status for the show ("Returning Series", "Ended",
+	// "Canceled"…), "" until the show is next refreshed.
+	TMDBStatus string
+	// RootPath is the library folder the show's files go to (one of the TV
+	// folders in Settings); "" = the default folder.
+	RootPath string
+
+	// Aliases are other names the show is known by, found with its numbering
+	// (see aliases.go); release names that use one are taken for the show.
+	Aliases []string
 
 	// Populated by GetSeries/ListSeries only, for the library views.
 	EpisodeCount    int
@@ -50,6 +67,8 @@ type Episode struct {
 	Quality   string
 	FilePath  string
 	Monitored bool
+	// ReleaseTitle is the release the file came from ("" when unknown).
+	ReleaseTitle string
 }
 
 const seriesSelect = `
@@ -57,7 +76,8 @@ const seriesSelect = `
 	       COALESCE(s.first_air_date, ''), s.monitored,
 	       (SELECT COUNT(*) FROM episodes e WHERE e.series_id = s.id AND (e.season > 0 OR e.monitored = 1 OR e.status = 'downloaded')),
 	       (SELECT COUNT(*) FROM episodes e WHERE e.series_id = s.id AND e.status = 'downloaded'),
-	       COALESCE(s.profile_id, 0), s.source_pref, COALESCE(s.added_by, 0), s.genres, s.no_upgrade, s.details_state, s.details_note, s.series_type
+	       COALESCE(s.profile_id, 0), s.source_pref, COALESCE(s.added_by, 0), s.genres, s.no_upgrade, s.details_state, s.details_note, s.series_type,
+	       COALESCE(s.copy_of, 0), s.tvdb_id, s.imdb_id, s.tmdb_status, s.root_path
 	FROM series s`
 
 func scanSeries(scan func(dest ...any) error) (Series, error) {
@@ -65,7 +85,7 @@ func scanSeries(scan func(dest ...any) error) (Series, error) {
 		s      Series
 		genres sql.NullString
 	)
-	if err := scan(&s.ID, &s.TMDBID, &s.Title, &s.Year, &s.Overview, &s.PosterPath, &s.FirstAirDate, &s.Monitored, &s.EpisodeCount, &s.DownloadedCount, &s.ProfileID, &s.SourcePref, &s.AddedBy, &genres, &s.NoUpgrade, &s.DetailsState, &s.DetailsNote, &s.SeriesType); err != nil {
+	if err := scan(&s.ID, &s.TMDBID, &s.Title, &s.Year, &s.Overview, &s.PosterPath, &s.FirstAirDate, &s.Monitored, &s.EpisodeCount, &s.DownloadedCount, &s.ProfileID, &s.SourcePref, &s.AddedBy, &genres, &s.NoUpgrade, &s.DetailsState, &s.DetailsNote, &s.SeriesType, &s.CopyOf, &s.TVDBID, &s.IMDBID, &s.TMDBStatus, &s.RootPath); err != nil {
 		return Series{}, fmt.Errorf("scan series: %w", err)
 	}
 	s.Genres = decodeGenres(genres)
@@ -87,8 +107,8 @@ func (r *Repo) AddSeries(s Series, episodes []Episode) (Series, error) {
 		return Series{}, err
 	}
 	res, err := tx.Exec(
-		`INSERT INTO series (tmdb_id, title, year, overview, poster_path, first_air_date, monitored, added_by, genres, no_upgrade, series_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.TMDBID, s.Title, s.Year, s.Overview, s.PosterPath, s.FirstAirDate, s.Monitored, nullID(s.AddedBy), genres, s.NoUpgrade, ValidSeriesType(s.SeriesType),
+		`INSERT INTO series (tmdb_id, title, year, overview, poster_path, first_air_date, monitored, added_by, genres, no_upgrade, series_type, root_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.TMDBID, s.Title, s.Year, s.Overview, s.PosterPath, s.FirstAirDate, s.Monitored, nullID(s.AddedBy), genres, s.NoUpgrade, ValidSeriesType(s.SeriesType), s.RootPath,
 	)
 	if err != nil {
 		return Series{}, fmt.Errorf("insert series: %w", err)
@@ -143,23 +163,87 @@ func upsertEpisodes(tx *sql.Tx, seriesID int64, episodes []Episode, monitorNew b
 }
 
 func (r *Repo) GetSeries(id int64) (Series, error) {
-	return scanSeries(r.db.QueryRow(seriesSelect+` WHERE s.id = ?`, id).Scan)
+	s, err := scanSeries(r.db.QueryRow(seriesSelect+` WHERE s.id = ?`, id).Scan)
+	if err == nil {
+		r.loadAliases(&s)
+	}
+	return s, err
 }
 
 // GetSeriesByTMDBID reports whether a TMDB show is already in the library.
 func (r *Repo) GetSeriesByTMDBID(tmdbID int) (Series, bool, error) {
-	s, err := scanSeries(r.db.QueryRow(seriesSelect+` WHERE s.tmdb_id = ?`, tmdbID).Scan)
+	s, err := scanSeries(r.db.QueryRow(seriesSelect+` WHERE s.tmdb_id = ? AND s.copy_of IS NULL`, tmdbID).Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Series{}, false, nil
 		}
 		return Series{}, false, err
 	}
+	r.loadAliases(&s)
 	return s, true, nil
 }
 
+// ListSeries lists the library's shows, second copies left out.
 func (r *Repo) ListSeries() ([]Series, error) {
-	rows, err := r.db.Query(seriesSelect + ` ORDER BY s.added_at DESC`)
+	return r.listSeries(` WHERE s.copy_of IS NULL ORDER BY s.added_at DESC`)
+}
+
+// ListSeriesWithCopies lists every show row, second copies included.
+func (r *Repo) ListSeriesWithCopies() ([]Series, error) {
+	return r.listSeries(` ORDER BY s.added_at DESC`)
+}
+
+// ListSeriesCopies lists the second copies of a show, oldest first.
+func (r *Repo) ListSeriesCopies(mainID int64) ([]Series, error) {
+	return r.listSeries(` WHERE s.copy_of = ? ORDER BY s.id`, mainID)
+}
+
+// AddSeriesCopy adds a second copy of a show in another quality profile,
+// with the same episodes (missing, monitored as on the main show), to be
+// downloaded into the copies folder.
+func (r *Repo) AddSeriesCopy(mainID, profileID int64) (Series, error) {
+	main, err := r.GetSeries(mainID)
+	if err != nil {
+		return Series{}, err
+	}
+	if main.CopyOf != 0 {
+		return Series{}, errors.New("that is already a second copy")
+	}
+	if main.ProfileID == profileID {
+		return Series{}, ErrCopySameProfile
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return Series{}, fmt.Errorf("begin adding a copy: %w", err)
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(
+		`INSERT INTO series (tmdb_id, title, year, overview, poster_path, first_air_date, monitored, profile_id, source_pref, added_by, genres, series_type, copy_of)
+		 SELECT tmdb_id, title, year, overview, poster_path, first_air_date, monitored, ?, source_pref, added_by, genres, series_type, id FROM series WHERE id = ?
+		 AND NOT EXISTS (SELECT 1 FROM series WHERE copy_of = ? AND profile_id = ?)`, profileID, mainID, mainID, profileID)
+	if err != nil {
+		return Series{}, fmt.Errorf("add a second copy: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Series{}, ErrCopyExists
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Series{}, fmt.Errorf("get the copy's id: %w", err)
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO episodes (series_id, season, episode, title, overview, air_date, monitored)
+		 SELECT ?, season, episode, title, overview, air_date, monitored FROM episodes WHERE series_id = ?`, id, mainID); err != nil {
+		return Series{}, fmt.Errorf("copy the episode list: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Series{}, fmt.Errorf("add a second copy: %w", err)
+	}
+	return r.GetSeries(id)
+}
+
+func (r *Repo) listSeries(where string, args ...any) ([]Series, error) {
+	rows, err := r.db.Query(seriesSelect+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list series: %w", err)
 	}
@@ -172,7 +256,11 @@ func (r *Repo) ListSeries() ([]Series, error) {
 		}
 		out = append(out, s)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	r.loadAllAliases(out)
+	return out, nil
 }
 
 // SetSeriesMonitored turns automatic searching for a whole series on or off.
@@ -262,13 +350,13 @@ func (r *Repo) DeleteSeries(id int64) error {
 
 const episodeSelect = `
 	SELECT id, series_id, season, episode, COALESCE(title, ''), COALESCE(overview, ''), COALESCE(air_date, ''),
-	       status, COALESCE(quality, ''), COALESCE(file_path, ''), monitored
+	       status, COALESCE(quality, ''), COALESCE(file_path, ''), monitored, release_title
 	FROM episodes`
 
 func scanEpisode(scan func(dest ...any) error) (Episode, error) {
 	var e Episode
 	var status string
-	if err := scan(&e.ID, &e.SeriesID, &e.Season, &e.Episode, &e.Title, &e.Overview, &e.AirDate, &status, &e.Quality, &e.FilePath, &e.Monitored); err != nil {
+	if err := scan(&e.ID, &e.SeriesID, &e.Season, &e.Episode, &e.Title, &e.Overview, &e.AirDate, &status, &e.Quality, &e.FilePath, &e.Monitored, &e.ReleaseTitle); err != nil {
 		return Episode{}, fmt.Errorf("scan episode: %w", err)
 	}
 	e.Status = Status(status)
@@ -321,6 +409,55 @@ func (r *Repo) SetEpisodeStatus(id int64, status Status, quality, filePath strin
 	)
 	if err != nil {
 		return fmt.Errorf("update episode %d status: %w", id, err)
+	}
+	return nil
+}
+
+// SetEpisodeReleaseTitle records the release an episode's file came from.
+func (r *Repo) SetEpisodeReleaseTitle(id int64, release string) error {
+	if _, err := r.db.Exec(`UPDATE episodes SET release_title = ? WHERE id = ?`, release, id); err != nil {
+		return fmt.Errorf("set episode %d release: %w", id, err)
+	}
+	return nil
+}
+
+// EpisodeFilesBySeries lists each show's episode files, every file once
+// (a file holding two episodes is listed once).
+func (r *Repo) EpisodeFilesBySeries() (map[int64][]string, error) {
+	rows, err := r.db.Query(`SELECT DISTINCT series_id, file_path FROM episodes WHERE file_path IS NOT NULL AND file_path != ''`)
+	if err != nil {
+		return nil, fmt.Errorf("list episode files: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64][]string{}
+	for rows.Next() {
+		var id int64
+		var path string
+		if err := rows.Scan(&id, &path); err != nil {
+			return nil, fmt.Errorf("scan episode file: %w", err)
+		}
+		out[id] = append(out[id], path)
+	}
+	return out, rows.Err()
+}
+
+// SetSeriesExternalIDs stores a show's TheTVDB and IMDb ids and TMDB status.
+// A zero or empty value leaves the saved one alone.
+func (r *Repo) SetSeriesExternalIDs(id int64, tvdbID int, imdbID, status string) error {
+	if _, err := r.db.Exec(`UPDATE series SET tvdb_id = CASE WHEN ? > 0 THEN ? ELSE tvdb_id END, imdb_id = CASE WHEN ? != '' THEN ? ELSE imdb_id END,
+		tmdb_status = CASE WHEN ? != '' THEN ? ELSE tmdb_status END WHERE id = ?`,
+		tvdbID, tvdbID, imdbID, imdbID, status, status, id); err != nil {
+		return fmt.Errorf("set series external ids: %w", err)
+	}
+	return nil
+}
+
+// SetSeriesRoot chooses the library folder a show's next files go to ("" = the
+// default folder). Files already there stay where they are.
+func (r *Repo) SetSeriesRoot(id int64, root string) error {
+	_, err := r.db.Exec(`UPDATE series SET root_path = ? WHERE id = ?`, root, id)
+	if err != nil {
+		return fmt.Errorf("set series %d folder: %w", id, err)
 	}
 	return nil
 }

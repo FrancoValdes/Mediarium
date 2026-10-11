@@ -35,6 +35,11 @@ type searchResultPayload struct {
 	Seeders     int    `json:"seeders,omitempty"`
 	Peers       int    `json:"peers,omitempty"`
 	InfoHash    string `json:"infoHash,omitempty"` // torrents, when the indexer reports it
+	// Cached is true when the debrid service in use already has this torrent,
+	// so it starts at once. Left out when it has not or it is not known
+	// (debrid_cache.go).
+	Cached bool   `json:"cached,omitempty"`
+	hash   string // the info hash from the indexer or the magnet link, for the cache check
 	// Season/Episodes are set for TV releases (Episodes empty = a season
 	// pack), so the unified search UI can label them and route the grab.
 	Season   int   `json:"season,omitempty"`
@@ -46,6 +51,11 @@ type searchResultPayload struct {
 	// not allowed by the profile, not an upgrade...). A manual grab is still
 	// allowed.
 	Rejections []string `json:"rejections,omitempty"`
+	// FormatScore is the release's custom-format score in the item's
+	// profile, and Formats the formats it matched; left out when the profile
+	// scores no formats.
+	FormatScore *int     `json:"formatScore,omitempty"`
+	Formats     []string `json:"formats,omitempty"`
 	// AcceptedBy names the profile that accepts this release: the item's own
 	// profile, or one of its fallbacks (fallback true). Left out when none
 	// does. Only set for a search on a library item.
@@ -78,6 +88,8 @@ func (s *Server) toSearchResultPayload(res indexers.Result) searchResultPayload 
 		Seeders:     res.Seeders,
 		Peers:       res.Peers,
 		InfoHash:    res.InfoHash,
+		Cached:      res.Cached,
+		hash:        releaseHash(res),
 		Season:      release.Season,
 		Episodes:    release.Episodes,
 	}
@@ -96,6 +108,11 @@ func (s *Server) toSearchResultPayload(res indexers.Result) searchResultPayload 
 		payload.LanguageFit = "mixed"
 	case fit.Label != "":
 		payload.LanguageFit = "ok"
+	}
+	// A Usenet post older than the retention is shown with the reason; the
+	// automatic searches leave it out.
+	if why := s.retentionRejection(res); why != "" {
+		payload.Rejections = append(payload.Rejections, why)
 	}
 	return payload
 }
@@ -128,6 +145,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		out[i] = s.toSearchResultPayload(res)
 		out[i].Blocklisted = blocked[blocklist.Key(res.Title)]
 	}
+	s.markCachedPayloads(r.Context(), out)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -147,12 +165,23 @@ type moviePayload struct {
 	Genres    []string `json:"genres"`  // TMDB genre names; empty until fetched
 	Tags      []string `json:"tags"`    // the person's own tags ("Kids", "4K")
 	AddedBy   *userRef `json:"addedBy"` // null when unknown
+	// For sorting the Library: the release date ("2024-03-01", "" when
+	// unknown) and the size of the file on disk (0 when there is none).
+	ReleaseDate string `json:"releaseDate,omitempty"`
+	SizeBytes   int64  `json:"sizeBytes,omitempty"`
 	// NoUpgrade: automation leaves this movie alone once it is downloaded.
 	NoUpgrade bool `json:"noUpgrade"`
 	// DetailsState is "pending" while an import is still fetching details and
 	// "problem" when that failed (DetailsNote says why); empty otherwise.
 	DetailsState string `json:"detailsState,omitempty"`
 	DetailsNote  string `json:"detailsNote,omitempty"`
+	// CopyOf is the main movie's id when this is a second copy; Copies is how
+	// many second copies a main movie has.
+	CopyOf int64 `json:"copyOf,omitempty"`
+	Copies int   `json:"copies,omitempty"`
+	// RootPath is the library folder chosen for the movie ("" = the main
+	// movies folder).
+	RootPath string `json:"rootPath,omitempty"`
 }
 
 // toMoviePayload builds a library movie's JSON; who resolves the account
@@ -166,11 +195,15 @@ func toMoviePayload(m library.Movie, who func(int64) *userRef) moviePayload {
 		ID: m.ID, TMDBID: m.TMDBID, Title: m.Title, Year: m.Year, Overview: m.Overview,
 		PosterURL: metadata.PosterURL(m.PosterPath), Status: string(m.Status), Quality: m.Quality, FilePath: m.FilePath, ProfileID: m.ProfileID, Monitored: m.Monitored, Sources: m.SourcePref,
 		Genres: genres, Tags: []string{}, AddedBy: who(m.AddedBy),
-		NoUpgrade: m.NoUpgrade, DetailsState: m.DetailsState, DetailsNote: m.DetailsNote,
+		NoUpgrade: m.NoUpgrade, DetailsState: m.DetailsState, DetailsNote: m.DetailsNote, ReleaseDate: m.ReleaseDate,
+		CopyOf: m.CopyOf, RootPath: m.RootPath,
 	}
 }
 
+// handleListMovies lists the library. With ?brief=1 each movie's overview is
+// left out: it is most of the answer, and drawing the Library does not use it.
 func (s *Server) handleListMovies(w http.ResponseWriter, r *http.Request) {
+	brief := r.URL.Query().Get("brief") == "1"
 	list, err := s.MovieRepo.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -178,9 +211,16 @@ func (s *Server) handleListMovies(w http.ResponseWriter, r *http.Request) {
 	}
 	who := s.accountNames()
 	tags, _ := s.MovieRepo.AllTitleTags(library.TagMovie)
+	copies, _ := s.MovieRepo.CopyCounts("movies")
 	out := make([]moviePayload, len(list))
+	now := time.Now()
 	for i, m := range list {
 		out[i] = toMoviePayload(m, who)
+		if brief {
+			out[i].Overview = ""
+		}
+		out[i].SizeBytes = cachedFileSize(m.FilePath, now)
+		out[i].Copies = copies[m.ID]
 		if t := tags[m.ID]; t != nil {
 			out[i].Tags = t
 		}
@@ -240,6 +280,18 @@ func (s *Server) removeMovie(id int64, deleteFiles bool) (string, error) {
 	if err != nil {
 		return "", &removeProblem{http.StatusInternalServerError, err.Error()}
 	}
+	// A main movie's second copies go first, the same way.
+	if m.CopyOf == 0 {
+		copies, err := s.MovieRepo.ListCopies(m.ID)
+		if err != nil {
+			return m.Title, &removeProblem{http.StatusInternalServerError, err.Error()}
+		}
+		for _, c := range copies {
+			if _, err := s.removeMovie(c.ID, deleteFiles); err != nil {
+				return m.Title, err
+			}
+		}
+	}
 	wantFiles := deleteFiles
 	deleteFiles = deleteFiles && m.FilePath != ""
 	tracked := 0
@@ -248,7 +300,7 @@ func (s *Server) removeMovie(id int64, deleteFiles bool) (string, error) {
 	}
 	var deleted removedFiles
 	if deleteFiles {
-		if err := checkRemovable(s.moviesRoot(), []string{m.FilePath}); err != nil {
+		if err := checkRemovable(s.movieRootFor(m), []string{m.FilePath}); err != nil {
 			return m.Title, &removeProblem{http.StatusConflict, err.Error()}
 		}
 	}
@@ -262,7 +314,7 @@ func (s *Server) removeMovie(id int64, deleteFiles bool) (string, error) {
 		m = now
 		if wantFiles && m.FilePath != "" {
 			deleteFiles, tracked = true, 1
-			if err := checkRemovable(s.moviesRoot(), []string{m.FilePath}); err != nil {
+			if err := checkRemovable(s.movieRootFor(m), []string{m.FilePath}); err != nil {
 				return m.Title, &removeProblem{http.StatusConflict, err.Error()}
 			}
 		}
@@ -276,6 +328,7 @@ func (s *Server) removeMovie(id int64, deleteFiles bool) (string, error) {
 	if err := s.MovieRepo.Delete(id); err != nil {
 		return m.Title, &removeProblem{http.StatusInternalServerError, err.Error()}
 	}
+	s.forgetHeldMovie(id)
 	_ = s.QueueRepo.LogActivity(0, "removed", removedLogLine(m.Title, deleteFiles, deleted, tracked))
 	return m.Title, nil
 }
@@ -294,6 +347,8 @@ type addMovieRequest struct {
 	// swapped for a better version later. On when left out: better versions
 	// are something the person asks for.
 	NoUpgrade *bool `json:"noUpgrade"`
+	// RootPath is the movie folder to keep it in; left out = the main one.
+	RootPath string `json:"rootPath"`
 }
 
 // handleAddMovie adds a movie to the library as missing, from a search result
@@ -313,7 +368,7 @@ func (s *Server) handleAddMovie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.TMDB().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie info and lists).")
+		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie and show info).")
 		return
 	}
 	if !validSourcePref(req.Sources) {
@@ -337,16 +392,23 @@ func (s *Server) handleAddMovie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	monitored := req.Monitored == nil || *req.Monitored
+	rootPath, problem := s.checkFolderChoice(req.RootPath, s.movieFolders(), "movie")
+	if problem != "" {
+		writeError(w, http.StatusBadRequest, problem)
+		return
+	}
 	userID, byline := requester(r)
 	created, err := s.MovieRepo.Add(library.Movie{
 		TMDBID: tmdbMovie.TMDBID, Title: tmdbMovie.Title, Year: tmdbMovie.Year(),
 		Overview: tmdbMovie.Overview, PosterPath: tmdbMovie.PosterPath, Monitored: monitored, ReleaseDate: tmdbMovie.ReleaseDate,
 		NoUpgrade: boolOr(req.NoUpgrade, true), AddedBy: userID, Genres: s.TMDB().MovieGenres(r.Context(), *tmdbMovie),
+		RootPath: rootPath,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.noteMovieCollection(created.ID, tmdbMovie)
 	if req.ProfileID != 0 {
 		if err := s.MovieRepo.SetProfile(created.ID, req.ProfileID); err == nil {
 			created.ProfileID = req.ProfileID
@@ -417,7 +479,7 @@ func isoDate(d string) string {
 func (s *Server) movieDiscover(ctx context.Context, m metadata.Movie) discoverPayload {
 	return discoverPayload{
 		TMDBID: m.TMDBID, MediaType: "movie", Title: m.Title, Year: m.Year(), ReleaseDate: isoDate(m.ReleaseDate),
-		Overview: m.Overview, PosterURL: metadata.PosterURL(m.PosterPath), Genres: s.TMDB().MovieGenres(ctx, m),
+		Overview: m.Overview, PosterURL: metadata.PosterURL(m.PosterPath), Genres: s.displayTMDB().MovieGenres(ctx, m),
 		Rating: metadata.RoundRating(m.VoteAverage), VoteCount: m.VoteCount,
 	}
 }
@@ -426,17 +488,17 @@ func (s *Server) movieDiscover(ctx context.Context, m metadata.Movie) discoverPa
 func (s *Server) showDiscover(ctx context.Context, sh metadata.Show) discoverPayload {
 	return discoverPayload{
 		TMDBID: sh.TMDBID, MediaType: "tv", Title: sh.Name, Year: sh.Year(), ReleaseDate: isoDate(sh.FirstAirDate),
-		Overview: sh.Overview, PosterURL: metadata.PosterURL(sh.PosterPath), Genres: s.TMDB().ShowGenres(ctx, sh),
+		Overview: sh.Overview, PosterURL: metadata.PosterURL(sh.PosterPath), Genres: s.displayTMDB().ShowGenres(ctx, sh),
 		Rating: metadata.RoundRating(sh.VoteAverage), VoteCount: sh.VoteCount,
 	}
 }
 
 func (s *Server) handleTrending(w http.ResponseWriter, r *http.Request) {
-	s.discoverList(w, r, s.TMDB().TrendingMovies)
+	s.discoverList(w, r, s.displayTMDB().TrendingMovies)
 }
 
 func (s *Server) handlePopular(w http.ResponseWriter, r *http.Request) {
-	s.discoverList(w, r, s.TMDB().PopularMovies)
+	s.discoverList(w, r, s.displayTMDB().PopularMovies)
 }
 
 // handleSimilarMovies lists movies like one in the library, for the "because
@@ -460,7 +522,7 @@ func (s *Server) handleSimilarMovies(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []discoverPayload{})
 		return
 	}
-	similar, err := s.TMDB().SimilarMovies(r.Context(), movie.TMDBID)
+	similar, err := s.displayTMDB().SimilarMovies(r.Context(), movie.TMDBID)
 	if err != nil {
 		writeUpstreamError(w, "load similar movies", err)
 		return
@@ -506,7 +568,7 @@ func (s *Server) handleImportList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.Trakt().HasClientID() {
-		writeError(w, http.StatusPreconditionFailed, "Add your Trakt client ID first (Settings > Info, lists and subtitles > Movie info and lists).")
+		writeError(w, http.StatusPreconditionFailed, "Add your Trakt client ID first (Settings > Info, lists and subtitles > Import lists).")
 		return
 	}
 	user, listID, err := trakt.ParseListURL(listURL)

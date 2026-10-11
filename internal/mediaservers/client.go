@@ -24,6 +24,9 @@ type Client struct {
 	Version string // Mediarium's version, sent to Jellyfin in its auth header
 	// MaxBytes is the most of an answer that is read; 0 means maxAnswerBytes.
 	MaxBytes int64
+	// SeriesIDs gives a show's TheTVDB and IMDb ids from its TMDB id, for
+	// servers that file shows under those (Silo). Nil means unknown.
+	SeriesIDs func(tmdbID int) (tvdbID int, imdbID string)
 }
 
 // maxAnswerBytes is the most read of a media server's answer (a library
@@ -183,6 +186,10 @@ func (c *Client) authorize(req *http.Request, s Server) {
 		if s.Token != "" {
 			req.Header.Set("X-Emby-Token", s.Token)
 		}
+	case KindSilo:
+		if s.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+s.Token)
+		}
 	case KindAudiobookshelf, KindKavita:
 		// Kavita's token here is the bearer token kavitaAuth got for the API key.
 		if s.Token != "" {
@@ -254,10 +261,14 @@ func (c *Client) Test(ctx context.Context, s Server) (TestResult, error) {
 		return c.plexTest(ctx, s)
 	case KindJellyfin, KindEmby:
 		return c.embyTest(ctx, s)
+	case KindSilo:
+		return c.siloTest(ctx, s)
 	case KindAudiobookshelf:
 		return c.absTest(ctx, s)
 	case KindKavita:
 		return c.kavitaTest(ctx, s)
+	case KindWebhook:
+		return c.webhookTest(ctx, s)
 	}
 	return TestResult{}, userErr(nil, "Unknown server type %q.", s.Kind)
 }
@@ -269,6 +280,11 @@ func (c *Client) RefreshAll(ctx context.Context, s Server) error {
 		return c.plexRefreshAll(ctx, s)
 	case KindJellyfin, KindEmby:
 		return explain(s, c.do(ctx, s, http.MethodPost, "/Library/Refresh", nil, nil, nil))
+	case KindSilo:
+		return c.siloRefreshAll(ctx, s)
+	case KindWebhook:
+		_, err := c.webhookRefresh(ctx, s, "", nil)
+		return err
 	case KindAudiobookshelf, KindKavita:
 		var libs []Library
 		var err error
@@ -300,6 +316,12 @@ func (c *Client) RefreshAll(ctx context.Context, s Server) error {
 // sees them; the server's path mapping is applied here). It returns a short
 // description of each scan it started, for the log.
 func (c *Client) RefreshFolders(ctx context.Context, s Server, kind MediaKind, folders []string) ([]string, error) {
+	if s.Kind == KindWebhook {
+		return c.webhookRefresh(ctx, s, kind, folders)
+	}
+	if s.Kind == KindSilo {
+		return c.siloRefreshFolders(ctx, s, kind, folders)
+	}
 	if s.Kind.BookServer() {
 		// Book servers only keep books.
 		if kind != MediaBook {
@@ -357,8 +379,12 @@ func (c *Client) Find(ctx context.Context, s Server, kind MediaKind, tmdbID int)
 		return c.plexFind(ctx, s, kind, tmdbID, nil)
 	case KindJellyfin, KindEmby:
 		return c.embyFind(ctx, s, kind, tmdbID)
+	case KindSilo:
+		return c.siloFind(ctx, s, kind, tmdbID)
 	case KindAudiobookshelf, KindKavita:
 		return Item{}, false, nil // books are found by title (FindBook)
+	case KindWebhook:
+		return Item{}, false, nil // a webhook has no titles to find
 	}
 	return Item{}, false, userErr(nil, "Unknown server type %q.", s.Kind)
 }

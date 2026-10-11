@@ -50,6 +50,13 @@ func DefaultPermissions() Permissions {
 	return Permissions{AddDirect: true, Movies: true, TV: true, Music: true, Books: true, Releases: true, Manage: true, Retry: true, Subtitles: true, Play: true}
 }
 
+// ViewerPermissions is all a viewer account has: watching, reading and
+// listening to what is already there. Everything that adds, changes or
+// searches is off, whatever is stored for the account.
+func ViewerPermissions() Permissions {
+	return Permissions{Play: true}
+}
+
 // Allows reports whether p includes the named permission.
 func (p Permissions) Allows(name string) bool {
 	switch name {
@@ -90,8 +97,8 @@ func parsePermissions(s string) Permissions {
 // PermissionsOf returns an account's permissions. Administrators get all.
 func (s *Service) PermissionsOf(userID int64) (Permissions, error) {
 	var raw string
-	var isAdmin bool
-	err := s.db.QueryRow(`SELECT permissions, is_admin FROM users WHERE id = ?`, userID).Scan(&raw, &isAdmin)
+	var isAdmin, viewer bool
+	err := s.db.QueryRow(`SELECT permissions, is_admin, is_viewer FROM users WHERE id = ?`, userID).Scan(&raw, &isAdmin, &viewer)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Permissions{}, ErrUserNotFound
 	}
@@ -100,6 +107,9 @@ func (s *Service) PermissionsOf(userID int64) (Permissions, error) {
 	}
 	if isAdmin {
 		return DefaultPermissions(), nil
+	}
+	if viewer {
+		return ViewerPermissions(), nil
 	}
 	return parsePermissions(raw), nil
 }

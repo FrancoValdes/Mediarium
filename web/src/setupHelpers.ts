@@ -1,7 +1,8 @@
 // Small pure helpers for the setup wizard: which folders to ask for, the
 // docker-compose line to add for a folder that is not mapped, and which file
-// naming style matches the media player someone uses. No imports, so the
-// node test runner can load it (see setupHelpers.test.ts).
+// naming style matches the media player someone uses. Only the translation
+// helper is imported, so the node test runner can load it (see setupHelpers.test.ts).
+import { t } from './i18n.ts'
 
 export type FolderKind = 'movies' | 'tv' | 'music' | 'ebooks' | 'audiobooks' | 'downloads'
 
@@ -16,12 +17,12 @@ export interface FolderInfo {
 }
 
 export const FOLDER_INFO: Record<FolderKind, FolderInfo> = {
-  movies: { label: 'Movies folder', envVar: 'MOVIES_DIR', fallback: '/movies', hostExample: '/volume1/Media/Movies' },
-  tv: { label: 'TV shows folder', envVar: 'TV_DIR', fallback: '/tv', hostExample: '/volume1/Media/tv' },
-  music: { label: 'Music folder', envVar: 'MUSIC_DIR', fallback: '/music', hostExample: '/volume1/Media/Music' },
-  ebooks: { label: 'Ebooks folder', envVar: 'EBOOKS_DIR', fallback: '/ebooks', hostExample: '/volume1/Media/Ebooks' },
-  audiobooks: { label: 'Audiobooks folder', envVar: 'AUDIOBOOKS_DIR', fallback: '/audiobooks', hostExample: '/volume1/Media/Audiobooks' },
-  downloads: { label: 'Downloads folder', envVar: 'DOWNLOADS_DIR', fallback: '/downloads', hostExample: '/volume1/Media/downloads' },
+  movies: { label: t('Movies folder'), envVar: 'MOVIES_DIR', fallback: '/movies', hostExample: '/volume1/Media/Movies' },
+  tv: { label: t('TV shows folder'), envVar: 'TV_DIR', fallback: '/tv', hostExample: '/volume1/Media/tv' },
+  music: { label: t('Music folder'), envVar: 'MUSIC_DIR', fallback: '/music', hostExample: '/volume1/Media/Music' },
+  ebooks: { label: t('Ebooks folder'), envVar: 'EBOOKS_DIR', fallback: '/ebooks', hostExample: '/volume1/Media/Ebooks' },
+  audiobooks: { label: t('Audiobooks folder'), envVar: 'AUDIOBOOKS_DIR', fallback: '/audiobooks', hostExample: '/volume1/Media/Audiobooks' },
+  downloads: { label: t('Downloads folder'), envVar: 'DOWNLOADS_DIR', fallback: '/downloads', hostExample: '/volume1/Media/downloads' },
 }
 
 /** The line to add under `volumes:` in a compose file, for example `- /volume1/Media/Music:/music`. */
@@ -113,20 +114,20 @@ export function foldersToAsk(c: Chosen): FolderKind[] {
 /** "movies", "movies and TV shows", "movies, TV shows and music", "music". */
 export function mediaPhrase(c: Chosen): string {
   const parts: string[] = []
-  if (c.movies) parts.push('movies')
-  if (c.tv) parts.push('TV shows')
-  if (c.music) parts.push('music')
-  if (c.ebooks) parts.push('ebooks')
-  if (c.audiobooks) parts.push('audiobooks')
+  if (c.movies) parts.push(t('movies'))
+  if (c.tv) parts.push(t('TV shows'))
+  if (c.music) parts.push(t('music'))
+  if (c.ebooks) parts.push(t('ebooks'))
+  if (c.audiobooks) parts.push(t('audiobooks'))
   if (parts.length <= 1) return parts[0] ?? ''
-  return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]
+  return t('{items} and {last}', { items: parts.slice(0, -1).join(', '), last: parts[parts.length - 1] })
 }
 
 /** What the default quality applies to: "every movie", "every movie and show". Video only. */
 export function qualityPhrase(c: Chosen): string {
-  if (c.movies && c.tv) return 'every movie and show'
-  if (c.movies) return 'every movie'
-  if (c.tv) return 'every show'
+  if (c.movies && c.tv) return t('every movie and show')
+  if (c.movies) return t('every movie')
+  if (c.tv) return t('every show')
   return ''
 }
 
@@ -139,7 +140,7 @@ export const MEDIA_PLAYERS: { id: MediaPlayer; label: string }[] = [
   { id: 'jellyfin', label: 'Jellyfin' },
   { id: 'emby', label: 'Emby' },
   { id: 'kodi', label: 'Kodi' },
-  { id: 'other', label: 'Something else, or none' },
+  { id: 'other', label: t('Something else, or none') },
 ]
 
 /**

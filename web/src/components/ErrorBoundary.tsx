@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import BrandMark from './BrandMark'
+import { t } from '../i18n'
 
 // Catches a page that crashes while it draws, so the person sees a short
 // message and a way forward instead of a blank white screen. `resetKey`
@@ -27,14 +28,14 @@ export default class ErrorBoundary extends Component<{ children: ReactNode; rese
         <div className="splash-mark">
           <BrandMark className="splash-logo" />
         </div>
-        <div className="splash-name">Something went wrong</div>
-        <p className="splash-hint">This page couldn't be shown. Reloading usually fixes it. If it keeps happening, report it on the Mediarium GitHub page and say what you were doing.</p>
+        <div className="splash-name">{t('Something went wrong')}</div>
+        <p className="splash-hint">{t("This page couldn't be shown. Reloading usually fixes it. If it keeps happening, report it on the Mediarium GitHub page and say what you were doing.")}</p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
           <button type="button" className="primary" onClick={() => window.location.reload()}>
-            Reload the page
+            {t('Reload the page')}
           </button>
           <a className="btn-link" href="/">
-            Go to the dashboard
+            {t('Go to the dashboard')}
           </a>
         </div>
       </div>

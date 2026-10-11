@@ -1,17 +1,19 @@
+import { t } from '../i18n.ts'
+
 // What kind of act MusicBrainz says an artist is, in plain words.
 export function artistKind(type?: string): string {
   switch ((type ?? '').toLowerCase()) {
     case 'group':
-      return 'Band'
+      return t('Band')
     case 'person':
-      return 'Solo artist'
+      return t('Solo artist')
     case 'orchestra':
-      return 'Orchestra'
+      return t('Orchestra')
     case 'choir':
-      return 'Choir'
+      return t('Choir')
     case 'character':
-      return 'Character'
+      return t('Character')
     default:
-      return 'Artist'
+      return t('Artist')
   }
 }

@@ -1,6 +1,6 @@
 services:
   mediarium:
-    image: ghcr.io/rdborg/mediarium:2.1.0
+    image: ghcr.io/rdborg/mediarium:3.0.0
     environment:
       - TZ=${TZ}
       - PUID=1000
@@ -11,7 +11,9 @@ services:
       - MOVIES_DIR=/data/movies
       - TV_DIR=/data/tv
       # Optional folders: MUSIC_DIR, EBOOKS_DIR and AUDIOBOOKS_DIR (for example /data/music).
-      # Music works today; ebooks and audiobooks are on the way. See docs/INSTALL.md.
+      # Leave them out if you do not use music, ebooks or audiobooks. See docs/INSTALL.md.
+      # Optional: the permissions new files get, for example 022 or 002. Empty keeps the default.
+      - UMASK=
     volumes:
       - ${APP_DATA_DIR}/data/config:/config
       - ${RUNTIPI_MEDIA_DIR}:/data

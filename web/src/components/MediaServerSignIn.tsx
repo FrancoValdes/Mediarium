@@ -5,17 +5,18 @@ import { MEDIA_SERVER_BRAND, MediaServerMark } from './mediaServerBrand'
 import { useToast } from './Toast'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
 import { required } from '../validate'
+import { t, tx } from '../i18n'
 
 // The networks to search, typed as 192.168.1 or 192.168.1.0/24, separated by spaces or commas.
 function subnetsProblem(value: string): string | null {
   const list = value.split(/[\s,]+/).filter(Boolean)
-  const bad = 'Enter your network like 192.168.1 or 192.168.1.0/24. Use spaces or commas between several.'
-  if (list.length > 8) return 'That is a lot of networks. Search at most 8 at a time.'
+  const bad = t('Enter your network like 192.168.1 or 192.168.1.0/24. Use spaces or commas between several.')
+  if (list.length > 8) return t('That is a lot of networks. Search at most 8 at a time.')
   for (const item of list) {
     const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\.(\d{1,3}))?(?:\/(\d{1,2}))?$/.exec(item)
     if (!m) return bad
     if ([m[1], m[2], m[3], m[4]].some((o) => o !== undefined && Number(o) > 255)) return bad
-    if (m[5] !== undefined && (Number(m[5]) < 24 || Number(m[5]) > 32)) return 'Networks can be a /24 or smaller, for example 192.168.1.0/24.'
+    if (m[5] !== undefined && (Number(m[5]) < 24 || Number(m[5]) > 32)) return t('Networks can be a /24 or smaller, for example 192.168.1.0/24.')
   }
   return null
 }
@@ -45,7 +46,7 @@ export function FindServers({ onPick, onManual }: { onPick: (s: FoundMediaServer
         .map((s) => (/^\d+\.\d+\.\d+$/.test(s) ? `${s}.0/24` : s))
       const r = await api.discoverMediaServers(nets)
       setFound(r.found)
-      setNote(r.note ?? (r.found.length === 0 ? `Nothing found on ${r.scanned.join(', ')}. If your server is on another network, type it above (for example 10.0.0), or add the server by its address.` : ''))
+      setNote(r.note ?? (r.found.length === 0 ? t('Nothing found on {networks}. If your server is on another network, type it above (for example 10.0.0), or add the server by its address.', { networks: r.scanned.join(', ') }) : ''))
     } catch (e) {
       setError(errText(e))
     } finally {
@@ -57,12 +58,12 @@ export function FindServers({ onPick, onManual }: { onPick: (s: FoundMediaServer
     <div className="ms-find">
       <div className="ms-find-row">
         <button className="btn-with-icon" onClick={() => void search()} disabled={busy}>
-          <Icon name="search" size={15} /> {busy ? 'Searching your network…' : 'Find my media servers'}
+          <Icon name="search" size={15} /> {busy ? t('Searching your network…') : t('Find my media servers')}
         </button>
-        <input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder="Your network, optional (e.g. 192.168.1)" aria-label="Your home network" {...v.bind('subnet', subnet, setSubnet)} />
+        <input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder={t('Your network, optional (e.g. 192.168.1)')} aria-label={t('Your home network')} {...v.bind('subnet', subnet, setSubnet)} />
       </div>
       <FieldError v={v} name="subnet" />
-      {busy && <small className="ms-find-hint">This takes up to about 10 seconds.</small>}
+      {busy && <small className="ms-find-hint">{t('This takes up to about 10 seconds.')}</small>}
       {error && <p className="error-text" style={{ margin: 0 }}>{error}</p>}
       {found && found.length > 0 && (
         <ul className="ms-found">
@@ -77,10 +78,10 @@ export function FindServers({ onPick, onManual }: { onPick: (s: FoundMediaServer
                 </small>
               </span>
               {f.alreadyAdded ? (
-                <span className="badge downloaded">Added</span>
+                <span className="badge downloaded">{t('Added')}</span>
               ) : (
                 <button className="btn-sm primary" onClick={() => onPick(f)}>
-                  Connect
+                  {t('Connect')}
                 </button>
               )}
             </li>
@@ -91,7 +92,7 @@ export function FindServers({ onPick, onManual }: { onPick: (s: FoundMediaServer
       {found && found.length === 0 && onManual && (
         <div>
           <button className="btn-sm" onClick={onManual}>
-            Add one by its address
+            {t('Add one by its address')}
           </button>
         </div>
       )}
@@ -131,7 +132,7 @@ export function PlexSignIn({ onAdded }: { onAdded: () => void }) {
           } else if (st.expired) {
             clearInterval(timer.current)
             setPin(null)
-            setError(st.error ?? 'The sign-in expired. Try again.')
+            setError(st.error ?? t('The sign-in expired. Try again.'))
           }
         } catch (e) {
           clearInterval(timer.current)
@@ -151,7 +152,7 @@ export function PlexSignIn({ onAdded }: { onAdded: () => void }) {
     setAdding(s.machineIdentifier)
     try {
       await api.plexPinAdd(pin.pinId, s.machineIdentifier)
-      toast.success(`${s.name} added. New downloads will show up in Plex on their own.`)
+      toast.success(t('{name} added. New downloads will show up in {server} on their own.', { name: s.name, server: 'Plex' }))
       onAdded()
     } catch (e) {
       toast.error(errText(e))
@@ -164,9 +165,9 @@ export function PlexSignIn({ onAdded }: { onAdded: () => void }) {
     return (
       <div className="ms-signin">
         <p className="ms-signin-ok">
-          <Icon name="check" size={15} /> Signed in to Plex. Pick the server that holds your library:
+          <Icon name="check" size={15} /> {t('Signed in to Plex. Pick the server that holds your library:')}
         </p>
-        {servers.length === 0 && <p style={{ margin: 0 }}>This Plex account has no servers.</p>}
+        {servers.length === 0 && <p style={{ margin: 0 }}>{t('This Plex account has no servers.')}</p>}
         <ul className="ms-found">
           {servers.map((s) => (
             <li key={s.machineIdentifier}>
@@ -174,15 +175,15 @@ export function PlexSignIn({ onAdded }: { onAdded: () => void }) {
               <span className="ms-found-name">
                 <strong>{s.name}</strong>
                 <small>
-                  {s.owned ? 'Your server' : 'Shared with you'}
+                  {s.owned ? t('Your server') : t('Shared with you')}
                   {s.version ? ` · ${s.version}` : ''} · {s.connections.find((c) => c.local)?.uri ?? s.connections[0]?.uri ?? ''}
                 </small>
               </span>
               {s.alreadyAdded ? (
-                <span className="badge downloaded">Added</span>
+                <span className="badge downloaded">{t('Added')}</span>
               ) : (
                 <button className="btn-sm primary" onClick={() => void add(s)} disabled={!!adding}>
-                  {adding === s.machineIdentifier ? 'Adding…' : 'Add'}
+                  {adding === s.machineIdentifier ? t('Adding…') : t('Add')}
                 </button>
               )}
             </li>
@@ -195,18 +196,21 @@ export function PlexSignIn({ onAdded }: { onAdded: () => void }) {
   return (
     <div className="ms-signin">
       <button className="ms-plex-btn" onClick={() => void start()} disabled={!!pin}>
-        <MediaServerMark kind="plex" size={22} /> {pin ? 'Waiting for you to approve in the Plex window…' : 'Sign in with Plex'}
+        <MediaServerMark kind="plex" size={22} /> {pin ? t('Waiting for you to approve in the Plex window…') : t('Sign in with Plex')}
       </button>
       {pin && (
         <small className="ms-find-hint">
-          A plex.tv window opened. Sign in there and approve Mediarium. No window?{' '}
-          <a href={pin.authUrl} target="_blank" rel="noreferrer">
-            Open it here
-          </a>{' '}
-          (code {pin.code}).
+          {tx('A plex.tv window opened. Sign in there and approve Mediarium. No window? {link} (code {code}).', {
+            link: (
+              <a href={pin.authUrl} target="_blank" rel="noreferrer">
+                {t('Open it here')}
+              </a>
+            ),
+            code: pin.code,
+          })}
         </small>
       )}
-      {!pin && <small className="ms-find-hint">This is the easiest way. There's no token to find or copy, and Mediarium lists your Plex servers for you.</small>}
+      {!pin && <small className="ms-find-hint">{t("This is the easiest way. There's no token to find or copy, and Mediarium lists your Plex servers for you.")}</small>}
       {error && <p className="error-text" style={{ margin: 0 }}>{error}</p>}
     </div>
   )
@@ -226,7 +230,7 @@ export function JellyfinEmbySignIn({ kind, baseUrl, checkAddress, onAdded }: { k
   const [error, setError] = useState('')
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const label = MEDIA_SERVER_BRAND[kind].label
-  const v = useValidation({ username: required(username, `Add the username of a ${label} administrator.`) })
+  const v = useValidation({ username: required(username, t('Add the username of a {server} administrator.', { server: label })) })
 
   useEffect(() => () => clearInterval(timer.current), [])
   useEffect(() => {
@@ -248,12 +252,12 @@ export function JellyfinEmbySignIn({ kind, baseUrl, checkAddress, onAdded }: { k
           if (st.done) {
             clearInterval(timer.current)
             setQc(null)
-            toast.success(`${st.server.name} added. New downloads will show up in Jellyfin on their own.`)
+            toast.success(t('{name} added. New downloads will show up in {server} on their own.', { name: st.server.name, server: 'Jellyfin' }))
             onAdded()
           } else if (st.expired) {
             clearInterval(timer.current)
             setQc(null)
-            setError(st.error ?? 'The code expired. Try again.')
+            setError(st.error ?? t('The code expired. Try again.'))
           }
         } catch (e) {
           clearInterval(timer.current)
@@ -274,7 +278,7 @@ export function JellyfinEmbySignIn({ kind, baseUrl, checkAddress, onAdded }: { k
     try {
       const s = await api.mediaServerLogin({ kind, baseUrl: baseUrl.trim(), username: username.trim(), password })
       setPassword('')
-      toast.success(`${s.name} added. New downloads will show up in ${label} on their own.`)
+      toast.success(t('{name} added. New downloads will show up in {server} on their own.', { name: s.name, server: label }))
       onAdded()
     } catch (e) {
       setError(errText(e))
@@ -288,50 +292,50 @@ export function JellyfinEmbySignIn({ kind, baseUrl, checkAddress, onAdded }: { k
       {kind === 'jellyfin' && (
         <>
           <div className="ms-way">
-            <strong className="ms-way-title">Option 1: Quick Connect <span className="ms-way-tag">easiest, no password</span></strong>
+            <strong className="ms-way-title">{t('Option 1: Quick Connect')} <span className="ms-way-tag">{t('easiest, no password')}</span></strong>
             <ol className="ms-way-steps">
-              <li>Type the address of your Jellyfin server above.</li>
-              <li>Press <strong>Use Quick Connect</strong>. A 6-digit code shows up here.</li>
-              <li>Open Jellyfin in your browser, click your profile picture (top right), choose <strong>Quick Connect</strong>, type the code and confirm. Mediarium is added by itself a few seconds later.</li>
+              <li>{t('Type the address of your Jellyfin server above.')}</li>
+              <li>{tx('Press {button}. A 6-digit code shows up here.', { button: <strong>{t('Use Quick Connect')}</strong> })}</li>
+              <li>{tx('Open Jellyfin in your browser, click your profile picture (top right), choose {qc}, type the code and confirm. Mediarium is added by itself a few seconds later.', { qc: <strong>Quick Connect</strong> })}</li>
             </ol>
             <button className="primary btn-with-icon" onClick={() => void quickConnect()} disabled={!!qc}>
-              <Icon name="key" size={15} /> {qc ? 'Waiting for approval…' : 'Use Quick Connect'}
+              <Icon name="key" size={15} /> {qc ? t('Waiting for approval…') : t('Use Quick Connect')}
             </button>
             {qc && (
               <div className="ms-qc">
-                <span>Now type this code in Jellyfin, under your profile picture → <strong>Quick Connect</strong>:</span>
+                <span>{tx('Now type this code in Jellyfin, under your profile picture → {qc}:', { qc: <strong>Quick Connect</strong> })}</span>
                 <strong className="ms-qc-code">{qc.code}</strong>
               </div>
             )}
           </div>
-          <div className="ms-or">or, if Quick Connect is switched off on your server</div>
-          <strong className="ms-way-title">Option 2: Sign in with an administrator account</strong>
-          <small className="ms-find-hint">Use the username and password you log into Jellyfin with, as long as that account is an administrator. It is only used once, to get a key.</small>
+          <div className="ms-or">{t('or, if Quick Connect is switched off on your server')}</div>
+          <strong className="ms-way-title">{t('Option 2: Sign in with an administrator account')}</strong>
+          <small className="ms-find-hint">{t('Use the username and password you log into Jellyfin with, as long as that account is an administrator. It is only used once, to get a key.')}</small>
         </>
       )}
       {kind === 'emby' && (
-        <strong className="ms-way-title">Sign in with an administrator account <span className="ms-way-tag">use the login you use for Emby</span></strong>
+        <strong className="ms-way-title">{t('Sign in with an administrator account')} <span className="ms-way-tag">{t('use the login you use for Emby')}</span></strong>
       )}
       <div className="form-cols">
         <label>
-          {label} username
+          {t('{server} username', { server: label })}
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" {...v.bind('username', username, setUsername)} />
           <FieldError v={v} name="username" />
         </label>
         <label>
-          Password
+          {t('Password')}
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
         </label>
       </div>
       <div>
         <button className={kind === 'emby' ? 'primary' : ''} onClick={() => void login()} disabled={busy}>
-          {busy ? 'Signing in…' : `Sign in to ${label}`}
+          {busy ? t('Signing in…') : t('Sign in to {server}', { server: label })}
         </button>
         <small className="ms-find-hint" style={{ display: 'block', marginTop: 6 }}>
-          Used once to get a key for Mediarium. The password isn't stored.
+          {t("Used once to get a key for Mediarium. The password isn't stored.")}
         </small>
       </div>
-      <FormProblem v={v} verb="sign in" />
+      <FormProblem v={v} verb={t('sign in')} />
       {error && <p className="error-text" style={{ margin: 0 }}>{error}</p>}
     </div>
   )

@@ -1,8 +1,75 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type Settings as SettingsData } from '../../api'
 import HardcoverCard from '../../components/HardcoverCard'
+import InfoLanguageCard from '../../components/InfoLanguageCard'
 import ServiceKeyCard from '../../components/ServiceKeyCard'
-import { TMDB_COPY, TRAKT_COPY } from '../../components/serviceCopy'
+import { TMDB_COPY } from '../../components/serviceCopy'
+import Switch from '../../components/Switch'
+import { t } from '../../i18n'
+import { useAutosaveSetting } from '../../useAutosave'
+import { useModules } from '../../ModulesContext'
+import TipLabel from '../../components/TipLabel'
+
+// The trailer behind movie and show pages, for everyone. A browser can still choose for itself with the button on the page.
+function TrailerCard() {
+  const { refresh } = useModules()
+  const trailer = useAutosaveSetting<boolean>(
+    (s) => s.trailerBackground ?? true,
+    (v) => ({ trailerBackground: v }),
+    (saved) => (saved ? t('Saved: the trailer plays behind movie and show pages.') : t('Saved: the trailer stays off unless a browser switches it on.')),
+    true,
+  )
+  const sound = useAutosaveSetting<boolean>(
+    (s) => s.trailerSound ?? false,
+    (v) => ({ trailerSound: v }),
+    (saved) => (saved ? t('Saved: the trailer starts with its sound on.') : t('Saved: the trailer starts muted.')),
+    false,
+  )
+  return (
+    <section className="card">
+      <h2>{t('Trailers')}</h2>
+      <Switch
+        checked={trailer.value}
+        onChange={(v) => void trailer.change(v).then(refresh)}
+        disabled={!trailer.loaded || trailer.saving}
+        label={t('Play the trailer behind movie and show pages')}
+        description={t('The first trailer plays muted in place of the still picture on a title page, and the picture comes back when it ends. The video comes from YouTube, so YouTube sees every title page that is opened with this on; switch it off if you would rather not. Each browser can still switch it off or on for itself with the button on the page.')}
+        showState
+      />
+      <Switch
+        checked={sound.value}
+        onChange={(v) => void sound.change(v).then(refresh)}
+        disabled={!sound.loaded || sound.saving || !trailer.value}
+        label={t('Start the trailer with its sound on')}
+        description={t('Browsers only let a page play sound after you have clicked something on it, so the trailer may still start muted when a page is opened straight from a link. The small sound button on the page changes it for that browser.')}
+        showState
+      />
+    </section>
+  )
+}
+
+// Anime and scene numbering: where the other numbering of a show comes from.
+function NumberingCard() {
+  const sw = useAutosaveSetting<boolean>(
+    (s) => s.numberingLookup ?? true,
+    (v) => ({ numberingLookup: v }),
+    (saved) => (saved ? t('Saved: anime numbering is looked up.') : t('Saved: anime numbering is not looked up on its own.')),
+    true,
+  )
+  return (
+    <section className="card">
+      <h2><TipLabel help="library#scene-and-anime-numbering">{t('Anime numbering')}</TipLabel></h2>
+      <Switch
+        checked={sw.value}
+        onChange={(v) => void sw.change(v)}
+        disabled={!sw.loaded || sw.saving}
+        label={t('Look up how anime and scene releases number their episodes')}
+        description={t("When you add an anime, Mediarium asks TheXEM, the anime lists on GitHub and AniList how its releases are numbered and what other names it has, so releases named in romaji or by the part of a season are found. TheXEM is asked with the show's TheTVDB id and AniList with the AniList ids of its seasons; GitHub only hands out a list. Shows that are not anime are left out unless you press Refresh mapping on the show's page. Switching this off keeps what was found and stops new lookups; the button still works.")}
+        showState
+      />
+    </section>
+  )
+}
 
 export default function MetadataSettings() {
   const [s, setS] = useState<SettingsData | null>(null)
@@ -22,16 +89,18 @@ export default function MetadataSettings() {
     return error ? (
       <div>
         <p className="error-text">{error}</p>
-        <button onClick={load}>Try again</button>
+        <button onClick={load}>{t('Try again')}</button>
       </div>
     ) : (
-      <p>Loading…</p>
+      <p>{t('Loading…')}</p>
     )
   }
   return (
     <div className="settings-stack">
       <ServiceKeyCard service="tmdb" {...TMDB_COPY} builtIn={!!s.tmdbKeyBuiltIn} configured={s.hasTmdbApiKey} onSaved={load} />
-      <ServiceKeyCard service="trakt" {...TRAKT_COPY} builtIn={!!s.traktClientIdBuiltIn} configured={s.hasTraktClientId} onSaved={load} allowOverride usingOwnKey={!!s.traktUsingOwnKey} />
+      <InfoLanguageCard />
+      <NumberingCard />
+      <TrailerCard />
       <HardcoverCard />
     </div>
   )

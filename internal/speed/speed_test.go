@@ -2,6 +2,7 @@ package speed
 
 import (
 	"context"
+	"golang.org/x/time/rate"
 	"testing"
 	"time"
 )
@@ -45,5 +46,27 @@ func TestWaitStopsWithTheContext(t *testing.T) {
 	}
 	if Current() != 1 {
 		t.Fatalf("current = %d", Current())
+	}
+}
+
+func TestUploadLimitIsSeparateFromTheDownloadLimit(t *testing.T) {
+	Set(5 << 20)
+	t.Cleanup(func() { Set(0); SetUpload(0) })
+	if CurrentUpload() != 0 {
+		t.Fatalf("the upload limit should start unset, is %d", CurrentUpload())
+	}
+	SetUpload(100 << 10)
+	if CurrentUpload() != 100<<10 || Current() != 5<<20 {
+		t.Fatalf("upload %d, download %d", CurrentUpload(), Current())
+	}
+	if got := UploadLimiter().Limit(); got != 100<<10 {
+		t.Fatalf("the upload limiter is at %v", got)
+	}
+	if UploadLimiter() == Limiter() {
+		t.Fatal("the two limiters must be different")
+	}
+	SetUpload(0)
+	if CurrentUpload() != 0 || UploadLimiter().Limit() != rate.Inf {
+		t.Fatal("0 should remove the upload limit")
 	}
 }

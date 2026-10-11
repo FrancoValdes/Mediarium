@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rdborg/mediarium/internal/library"
+	"github.com/rdborg/mediarium/internal/parser"
 	"github.com/rdborg/mediarium/internal/quality"
 	"github.com/rdborg/mediarium/internal/queue"
 )
@@ -66,6 +67,17 @@ func (s *Server) homeReleaseHold(ctx context.Context, m library.Movie, profile q
 		return fmt.Sprintf("Waiting for the digital or disc release. TMDB hasn't listed a date yet, so Mediarium waits until about %s (90 days after it reached cinemas), because what is posted before then is mostly recordings made in the cinema. Search now looks anyway.", when), true
 	}
 	return fmt.Sprintf("Waiting for the digital or disc release, due %s, because what is posted before then is mostly recordings made in the cinema. Search now looks anyway.", when), true
+}
+
+// cinemaCopyWarning is shown beside a release that claims to be a web or disc
+// copy of a film that has not come out at home yet: the name can't be trusted.
+const cinemaCopyWarning = "The film isn't out digitally or on disc yet, so this may be a recording made in a cinema even though its name says otherwise"
+
+// looksLikeHomeCopy reports whether a release name claims to be a normal home
+// copy (WEB-DL, WEBRip, HDRip, Blu-ray, or no source at all). A name that is
+// already known as a cinema recording needs no extra warning.
+func looksLikeHomeCopy(title string) bool {
+	return !parser.IsPreRelease(parser.Parse(title).Source)
 }
 
 var homeNoted sync.Map // movie id -> the note already written, so the history gets it once

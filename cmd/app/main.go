@@ -88,10 +88,29 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "reset-two-step" {
+		if err := resetTwoStep(os.Args[2:]); err != nil {
+			log.Fatalf("mediarium: %v", err)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Fatalf("mediarium: %v", err)
 	}
+	// After an update, a restore or the Restart button, start the next program
+	// in this same process: the container keeps running, so Docker never has
+	// to set up its published ports again (some NAS versions fail at that).
+	// If that can't be done, exiting lets the restart policy start it.
+	if restartWanted != nil && restartWanted() {
+		restartInPlace(restartUpdateDir)
+	}
 }
+
+// Set by run: whether the app stopped to start again, and its update folder.
+var (
+	restartWanted    func() bool
+	restartUpdateDir string
+)
 
 func run() error {
 	// The log also goes into a small in-memory buffer (secrets taken out), so
@@ -101,6 +120,15 @@ func run() error {
 	log.SetOutput(io.MultiWriter(logbuf.ScrubWriter{W: os.Stderr}, logbuf.Default))
 
 	cfg := config.Load()
+	for _, problem := range config.Problems() {
+		log.Print("warning: " + problem)
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if cfg.URLBase != "" {
+		log.Printf("Serving under %s (URL_BASE)", cfg.URLBase)
+	}
 	if _, err := httpsec.ParseProxies(cfg.TrustedProxies); err != nil {
 		return err
 	}
@@ -111,6 +139,7 @@ func run() error {
 	// "Restart with automation paused" leaves a note that applies to this start
 	// only, like MEDIARIUM_PAUSE_AUTOMATION=1 for one run.
 	updateDir := selfupdate.Dir(cfg.ConfigDir)
+	restartUpdateDir = updateDir
 	if selfupdate.TakeSafeOnce(updateDir) {
 		cfg.PauseAutomation = true
 		log.Print("Started once in safe mode because a restart with automation paused was asked for.")
@@ -150,6 +179,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize server: %w", err)
 	}
+	restartWanted = server.RestartWanted
 	// Download addresses queued by older versions were kept in plain text.
 	if n, err := server.QueueRepo.EncryptStoredURLs(); err != nil {
 		log.Printf("warning: could not encrypt the saved download addresses: %v", err)
@@ -183,8 +213,14 @@ func run() error {
 	stopMonitor := server.StartMonitor()
 	defer stopMonitor()
 
+	stopAnnounce := server.StartAnnounce()
+	defer stopAnnounce()
+
 	stopUpdates := server.StartUpdates()
 	defer stopUpdates()
+
+	stopUsageStats := server.StartUsageStats()
+	defer stopUsageStats()
 
 	stopWatchdog := server.StartWatchdog()
 	defer stopWatchdog()
@@ -227,8 +263,28 @@ func run() error {
 		return nil
 	case <-ctx.Done():
 		log.Println("Mediarium shutting down...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return httpServer.Shutdown(shutdownCtx)
+		stopServing(httpServer, shutdownGrace)
+		return nil
+	}
+}
+
+// shutdownGrace is how long requests that are still running may take to
+// finish when the program is asked to stop. Docker waits 10 seconds after the
+// stop signal before it kills a container, and the database still has to be
+// closed after this.
+const shutdownGrace = 5 * time.Second
+
+// stopServing stops taking requests and gives the running ones up to grace to
+// finish. A video stream or a big upload can go on for hours, so whatever is
+// still open after that is cut off: the program is stopping anyway, and
+// waiting longer would only get it killed in the middle of closing the database.
+func stopServing(srv *http.Server, grace time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("Closing the connections that were still open after %s: %v", grace, err)
+		if err := srv.Close(); err != nil {
+			log.Printf("warning: could not close the remaining connections: %v", err)
+		}
 	}
 }

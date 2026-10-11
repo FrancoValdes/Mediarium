@@ -352,3 +352,51 @@ func TestOldInstallPresetsUpgradedOnStart(t *testing.T) {
 		t.Fatalf("settings should expose defaultProfileId %d, got %+v", oldDefault, s["defaultProfileId"])
 	}
 }
+
+// Putting a movie with a 1080p file on the stock 4K profile (upgrades off)
+// looks for a 4K release straight away, even when the movie was set to
+// leave what it has alone (as library imports are).
+func TestProfileChangeToHigherQualitySearchesNow(t *testing.T) {
+	server, httpSrv, client := newHuntTestServer(t)
+	postJSON[map[string]any](t, client, httpSrv.URL+"/api/onboarding/admin", map[string]string{
+		"username": "ryan", "password": "correct-horse-battery-staple", "firstName": "Ryan", "lastName": "Tester",
+	}, http.StatusCreated)
+	postJSON[map[string]any](t, client, httpSrv.URL+"/api/indexers", map[string]any{
+		"name": "Idx", "definitionId": "fixture",
+		"baseUrl": newTVIndexerWith(t, []string{"Some.Movie.2001.2160p.WEB-DL.DDP5.1.H.265-GRP"}).URL, "apiKey": "k",
+	}, http.StatusCreated)
+	list := getJSON[map[string]any](t, client, httpSrv.URL+"/api/quality-profiles")
+	fourK := profileIDByName(t, list, "4K & over")
+
+	m, err := server.MovieRepo.Add(library.Movie{TMDBID: 1, Title: "Some Movie", Year: 2001, Monitored: true, NoUpgrade: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = server.MovieRepo.SetStatus(m.ID, library.StatusDownloaded, "WEBDL-1080p", "/movies/x.mkv")
+
+	res := putJSONStatus(t, client, fmt.Sprintf("%s/api/movies/%d/profile", httpSrv.URL, m.ID), map[string]any{"profileId": fourK}, http.StatusOK)
+	if res["searching"] != true {
+		t.Fatalf("expected a search to start, got %+v", res)
+	}
+	if got, _ := server.MovieRepo.Get(m.ID); got.NoUpgrade {
+		t.Fatal("choosing a higher profile should switch on looking for better versions")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if q := getJSON[[]map[string]any](t, client, httpSrv.URL+"/api/queue"); len(q) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the 2160p release was not grabbed")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Back to 1080p: a 4K file is kept, nothing is searched.
+	hd := profileIDByName(t, list, "1080p")
+	_ = server.MovieRepo.SetStatus(m.ID, library.StatusDownloaded, "WEBDL-2160p", "/movies/x.mkv")
+	res = putJSONStatus(t, client, fmt.Sprintf("%s/api/movies/%d/profile", httpSrv.URL, m.ID), map[string]any{"profileId": hd}, http.StatusOK)
+	if res["searching"] != false {
+		t.Fatalf("a 4K file on a 1080p profile must be left alone, got %+v", res)
+	}
+}

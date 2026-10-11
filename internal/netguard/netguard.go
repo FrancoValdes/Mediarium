@@ -118,6 +118,45 @@ func Control(network, address string, _ syscall.RawConn) error {
 	return nil
 }
 
+// cgnat is the shared address space (100.64.0.0/10) providers use inside their networks.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// ControlPublic is Control for places that only ever talk to the public
+// internet (a browser's push service, for example): private, loopback and
+// shared addresses are refused as well, so an address a person typed in can't
+// make the server call something on the home network.
+func ControlPublic(network, address string, c syscall.RawConn) error {
+	if err := Control(network, address, c); err != nil {
+		return err
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return nil
+	}
+	if NotPublic(addr) {
+		return fmt.Errorf("%w: %s is not a public address", ErrBlocked, addr.Unmap())
+	}
+	return nil
+}
+
+// NotPublic reports whether addr is a private, loopback or shared-space
+// address: somewhere on the home network or the machine itself.
+func NotPublic(addr netip.Addr) bool {
+	addr = addr.Unmap().WithZone("")
+	return addr.IsPrivate() || addr.IsLoopback() || cgnat.Contains(addr)
+}
+
+// PublicClient is Client for public-internet-only destinations.
+func PublicClient(timeout time.Duration) *http.Client {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: ControlPublic}).DialContext
+	return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: checkRedirect}
+}
+
 // Dialer is a net.Dialer with the address check.
 func Dialer(timeout time.Duration) *net.Dialer {
 	return &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second, Control: Control}

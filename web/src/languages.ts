@@ -1,36 +1,39 @@
+import { t } from './i18n.ts'
+
 // Subtitle languages offered in the UI, as OpenSubtitles language codes.
 export const SUBTITLE_LANGUAGES: { code: string; name: string }[] = [
-  { code: 'en', name: 'English' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'it', name: 'Italian' },
-  { code: 'pt-PT', name: 'Portuguese (Portugal)' },
-  { code: 'pt-BR', name: 'Portuguese (Brazil)' },
-  { code: 'nl', name: 'Dutch' },
-  { code: 'sv', name: 'Swedish' },
-  { code: 'da', name: 'Danish' },
-  { code: 'fi', name: 'Finnish' },
-  { code: 'no', name: 'Norwegian' },
-  { code: 'pl', name: 'Polish' },
-  { code: 'cs', name: 'Czech' },
-  { code: 'hu', name: 'Hungarian' },
-  { code: 'ro', name: 'Romanian' },
-  { code: 'el', name: 'Greek' },
-  { code: 'tr', name: 'Turkish' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'he', name: 'Hebrew' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'zh-CN', name: 'Chinese (Simplified)' },
-  { code: 'zh-TW', name: 'Chinese (Traditional)' },
+  { code: 'en', name: t('English') },
+  { code: 'es', name: t('Spanish') },
+  { code: 'fr', name: t('French') },
+  { code: 'de', name: t('German') },
+  { code: 'it', name: t('Italian') },
+  { code: 'pt-PT', name: t('Portuguese (Portugal)') },
+  { code: 'pt-BR', name: t('Portuguese (Brazil)') },
+  { code: 'nl', name: t('Dutch') },
+  { code: 'sv', name: t('Swedish') },
+  { code: 'da', name: t('Danish') },
+  { code: 'fi', name: t('Finnish') },
+  { code: 'no', name: t('Norwegian') },
+  { code: 'pl', name: t('Polish') },
+  { code: 'cs', name: t('Czech') },
+  { code: 'hu', name: t('Hungarian') },
+  { code: 'ro', name: t('Romanian') },
+  { code: 'el', name: t('Greek') },
+  { code: 'tr', name: t('Turkish') },
+  { code: 'ru', name: t('Russian') },
+  { code: 'ar', name: t('Arabic') },
+  { code: 'he', name: t('Hebrew') },
+  { code: 'ja', name: t('Japanese') },
+  { code: 'ko', name: t('Korean') },
+  { code: 'zh-CN', name: t('Chinese (Simplified)') },
+  { code: 'zh-TW', name: t('Chinese (Traditional)') },
 ]
 
 export const languageName = (code: string) => SUBTITLE_LANGUAGES.find((l) => l.code === code)?.name ?? code
 
 // Audio languages a release can be in, by the names the server uses for the
-// "Preferred audio language" setting (English first).
+// "Preferred audio language" setting (English first). These are the values
+// the server stores, so they stay in English.
 export const AUDIO_LANGUAGES: string[] = [
   'English', 'Arabic', 'Chinese', 'Czech', 'Danish', 'Dutch', 'Finnish', 'French', 'German', 'Greek', 'Hebrew', 'Hindi',
   'Hungarian', 'Italian', 'Japanese', 'Korean', 'Nordic', 'Norwegian', 'Polish', 'Portuguese', 'Romanian', 'Russian',

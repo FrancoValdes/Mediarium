@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rdborg/mediarium/internal/books"
+	"github.com/rdborg/mediarium/internal/metadata"
 )
 
 type calendarEntryPayload struct {
@@ -24,6 +25,7 @@ type calendarEntryPayload struct {
 	Subtitle    string `json:"subtitle,omitempty"`
 	ReleaseDate string `json:"releaseDate"`
 	Status      string `json:"status"`
+	PosterURL   string `json:"posterUrl,omitempty"` // the poster or cover the calendar shows next to the title
 }
 
 const (
@@ -75,18 +77,15 @@ func (s *Server) bookCalendarEntries() ([]calendarEntryPayload, error) {
 	if !s.booksEnabled() {
 		return nil, nil
 	}
-	list, err := s.BookRepo.List()
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now().UTC()
 	from := now.Add(-calendarEpisodeLookback).Format("2006-01-02")
 	to := now.Add(calendarEpisodeLookahead).Format("2006-01-02")
+	list, err := s.BookRepo.ListReleasing(from, to)
+	if err != nil {
+		return nil, err
+	}
 	var out []calendarEntryPayload
 	for _, b := range list {
-		if len(b.ReleaseDate) != len("2006-01-02") || b.ReleaseDate < from || b.ReleaseDate > to || (!b.WantEbook && !b.WantAudiobook) {
-			continue
-		}
 		subtitle := bookFormatsLabel(b)
 		if b.SeriesName != "" && b.SeriesPosition != "" {
 			subtitle = fmt.Sprintf("Book %s of %s · %s", b.SeriesPosition, b.SeriesName, subtitle)
@@ -95,7 +94,7 @@ func (s *Server) bookCalendarEntries() ([]calendarEntryPayload, error) {
 		if b.Author != "" {
 			title = b.Author + " — " + b.Title
 		}
-		out = append(out, calendarEntryPayload{Kind: "book", ID: b.ID, BookID: b.ID, Title: title, Subtitle: subtitle, ReleaseDate: b.ReleaseDate, Status: bookCalendarStatus(b)})
+		out = append(out, calendarEntryPayload{Kind: "book", ID: b.ID, BookID: b.ID, Title: title, Subtitle: subtitle, ReleaseDate: b.ReleaseDate, Status: bookCalendarStatus(b), PosterURL: books.LocalCoverURL(b.CoverID, "M")})
 	}
 	return out, nil
 }
@@ -145,27 +144,16 @@ func (s *Server) albumCalendarEntries() ([]calendarEntryPayload, error) {
 	if !s.musicEnabled() {
 		return nil, nil
 	}
-	artists, err := s.MusicRepo.ListArtists()
-	if err != nil {
-		return nil, err
-	}
-	albums, err := s.MusicRepo.ListAllAlbums()
-	if err != nil {
-		return nil, err
-	}
-	monitored := map[int64]string{}
-	for _, a := range artists {
-		monitored[a.ID] = a.Name
-	}
 	now := time.Now().UTC()
 	from := now.Add(-calendarEpisodeLookback).Format("2006-01-02")
 	to := now.Add(calendarEpisodeLookahead).Format("2006-01-02")
+	albums, err := s.MusicRepo.ListMonitoredReleasing(from, to)
+	if err != nil {
+		return nil, err
+	}
 	var out []calendarEntryPayload
 	for _, al := range albums {
-		name, ok := monitored[al.ArtistID]
-		if !ok || !al.Monitored || len(al.ReleaseDate) != len("2006-01-02") || al.ReleaseDate < from || al.ReleaseDate > to {
-			continue
-		}
+		name := al.ArtistName
 		subtitle := "Album"
 		switch al.Type {
 		case "ep":
@@ -175,7 +163,7 @@ func (s *Server) albumCalendarEntries() ([]calendarEntryPayload, error) {
 		}
 		out = append(out, calendarEntryPayload{
 			Kind: "album", ID: al.ID, AlbumID: al.ID, ArtistID: al.ArtistID, Title: name + " — " + al.Title, Subtitle: subtitle,
-			ReleaseDate: al.ReleaseDate, Status: string(al.Status),
+			ReleaseDate: al.ReleaseDate, Status: string(al.Status), PosterURL: albumCoverURL(al.ID),
 		})
 	}
 	return out, nil
@@ -184,49 +172,47 @@ func (s *Server) albumCalendarEntries() ([]calendarEntryPayload, error) {
 // calendarEntries builds the merged, date-ordered movie-release and
 // episode-air list shared by the calendar page and the dashboard.
 func (s *Server) calendarEntries() ([]calendarEntryPayload, error) {
-	movies, err := s.MovieRepo.List()
+	return s.calendarEntriesSince("")
+}
+
+// calendarEntriesSince is calendarEntries with everything before the date
+// since ("YYYY-MM-DD", or "" for no limit) left out. The dashboard only wants
+// what is still to come, and asking the database for just that is much
+// cheaper than building the whole list and cutting it down.
+func (s *Server) calendarEntriesSince(since string) ([]calendarEntryPayload, error) {
+	movies, err := s.MovieRepo.CalendarMovies(since)
 	if err != nil {
 		return nil, err
 	}
 
-	entries := []calendarEntryPayload{} // never nil: a nil slice encodes as JSON null, which the frontend would confuse with "still loading"
+	entries := make([]calendarEntryPayload, 0, len(movies)) // never nil: a nil slice encodes as JSON null, which the frontend would confuse with "still loading"
 	for _, m := range movies {
-		if !m.Monitored || m.ReleaseDate == "" {
-			continue
-		}
 		entries = append(entries, calendarEntryPayload{
 			Kind: "movie", ID: m.ID, MovieID: m.ID, TMDBID: m.TMDBID, Title: m.Title, ReleaseDate: m.ReleaseDate, Status: string(m.Status),
+			PosterURL: metadata.PosterURL(m.PosterPath),
 		})
 	}
 
-	seriesList, err := s.MovieRepo.ListSeries()
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now().UTC()
 	from := now.Add(-calendarEpisodeLookback).Format("2006-01-02")
 	to := now.Add(calendarEpisodeLookahead).Format("2006-01-02")
-	for _, sr := range seriesList {
-		if !sr.Monitored {
-			continue
+	if since > from {
+		from = since
+	}
+	eps, err := s.MovieRepo.CalendarEpisodes(from, to)
+	if err != nil {
+		return nil, err
+	}
+	for _, ep := range eps {
+		label := fmt.Sprintf("S%02dE%02d", ep.Season, ep.Episode)
+		if ep.Title != "" {
+			label += " · " + ep.Title
 		}
-		eps, err := s.MovieRepo.ListEpisodes(sr.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, ep := range eps {
-			if !ep.Monitored || ep.AirDate == "" || ep.AirDate < from || ep.AirDate > to {
-				continue
-			}
-			label := fmt.Sprintf("S%02dE%02d", ep.Season, ep.Episode)
-			if ep.Title != "" {
-				label += " · " + ep.Title
-			}
-			entries = append(entries, calendarEntryPayload{
-				Kind: "episode", ID: ep.ID, SeriesID: sr.ID, Season: ep.Season, Episode: ep.Episode,
-				Title: sr.Title, Subtitle: label, ReleaseDate: ep.AirDate, Status: string(ep.Status),
-			})
-		}
+		entries = append(entries, calendarEntryPayload{
+			Kind: "episode", ID: ep.ID, SeriesID: ep.SeriesID, Season: ep.Season, Episode: ep.Episode,
+			Title: ep.SeriesName, Subtitle: label, ReleaseDate: ep.AirDate, Status: string(ep.Status),
+			PosterURL: metadata.PosterURL(ep.PosterPath),
+		})
 	}
 
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].ReleaseDate < entries[j].ReleaseDate })

@@ -11,6 +11,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io/fs"
@@ -165,21 +166,75 @@ func migrate(conn *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", name, err)
 		}
-		tx, err := conn.Begin()
+		if err := applyMigration(conn, name, version, string(sqlBytes)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// brokenLinks counts the rows whose foreign key points at nothing.
+func brokenLinks(tx *sql.Tx) (int, error) {
+	var n int
+	err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&n)
+	return n, err
+}
+
+// rebuildMarker starts a migration that rebuilds a table (create the new
+// one, copy, drop the old, rename). Those run with foreign keys off, as
+// SQLite asks, so dropping the old table doesn't delete or empty the rows
+// that point at it; the keys are checked before the change is kept.
+const rebuildMarker = "-- mediarium:rebuild"
+
+func applyMigration(db *sql.DB, name, version, body string) error {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx) // the pragma is per connection: keep this one
+	if err != nil {
+		return fmt.Errorf("connect for %s: %w", name, err)
+	}
+	defer conn.Close()
+	rebuild := strings.HasPrefix(body, rebuildMarker)
+	if rebuild {
+		if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+			return fmt.Errorf("prepare %s: %w", name, err)
+		}
+		defer func() { _, _ = conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`) }()
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for %s: %w", name, err)
+	}
+	// A rebuild must not leave a row pointing at nothing. An old database can
+	// already have such rows somewhere else; those don't stop the upgrade,
+	// only new ones do.
+	brokenBefore := 0
+	if rebuild {
+		if brokenBefore, err = brokenLinks(tx); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("check before %s: %w", name, err)
+		}
+	}
+	if _, err := tx.Exec(body); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("apply %s: %w", name, err)
+	}
+	if rebuild {
+		after, err := brokenLinks(tx)
 		if err != nil {
-			return fmt.Errorf("begin tx for %s: %w", name, err)
-		}
-		if _, err := tx.Exec(string(sqlBytes)); err != nil {
 			tx.Rollback()
-			return fmt.Errorf("apply %s: %w", name, err)
+			return fmt.Errorf("check %s: %w", name, err)
 		}
-		if _, err := tx.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
+		if after > brokenBefore {
 			tx.Rollback()
-			return fmt.Errorf("record %s: %w", name, err)
+			return fmt.Errorf("apply %s: it would leave rows pointing at nothing", name)
 		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit %s: %w", name, err)
-		}
+	}
+	if _, err := tx.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("record %s: %w", name, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit %s: %w", name, err)
 	}
 	return nil
 }

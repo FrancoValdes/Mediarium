@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -125,6 +127,62 @@ func TestStuckDatabaseGivesAClearBusyAnswer(t *testing.T) {
 	if resp, err := client.Get(base + "/api/queue"); err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/queue after the database recovered: %v %v", resp, err)
 	}
+}
+
+// The calendar feed's address is the key to the feed. When a request for it
+// gives up waiting, the log says so without the key.
+func TestCalendarFeedKeyIsNotWrittenToTheLog(t *testing.T) {
+	defer api.SetReadDeadlineForTest(100 * time.Millisecond)()
+	db, base, client := newServerWithDB(t)
+
+	var logs syncBuffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(old)
+
+	feed := postJSON[struct{ Path string }](t, client, base+"/api/calendar/feed", nil, http.StatusOK)
+	secret := strings.TrimSuffix(strings.TrimPrefix(feed.Path, "/api/calendar/feed/"), ".ics")
+	if len(secret) < 16 || strings.ContainsAny(secret, "/.") {
+		t.Fatalf("feed address %q", feed.Path)
+	}
+	release := holdConnections(t, db)
+	resp, err := client.Get(base + feed.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	release()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, want 503 so the log line is written", resp.StatusCode)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "request gave up waiting") {
+		t.Fatalf("no log line was written: %q", out)
+	}
+	if strings.Contains(out, secret) {
+		t.Fatalf("the feed key is in the log: %s", out)
+	}
+	if !strings.Contains(out, "/api/calendar/feed/…") {
+		t.Errorf("the log should still say which page it was: %s", out)
+	}
+}
+
+// syncBuffer is a log destination that can be read while the server writes.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // Pages that talk to other services are not cut short: only the ones that

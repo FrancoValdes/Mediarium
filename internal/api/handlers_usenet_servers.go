@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -277,7 +279,12 @@ type downloadsStatusPayload struct {
 	Torrent struct {
 		// State is "disabled" (switched off in Settings), "blocked" (on, but the
 		// VPN kill switch or a VPN that isn't up is holding it back) or "ready".
-		State        string `json:"state"`
+		State string `json:"state"`
+		// Via is where torrents go: "builtin" (Mediarium's own client),
+		// "client" (a qBittorrent-style client you connected) or "debrid".
+		// ViaLabel names the client or the service in the last two cases.
+		Via          string `json:"via"`
+		ViaLabel     string `json:"viaLabel,omitempty"`
 		Enabled      bool   `json:"enabled"`
 		Ready        bool   `json:"ready"`
 		ListenPort   int    `json:"listenPort"`
@@ -337,6 +344,7 @@ func (s *Server) handleDownloadsStatus(w http.ResponseWriter, r *http.Request) {
 	// on with no VPN, or a VPN is switched on but not up yet.
 	_, tunnelErr := s.torrentTunnel()
 	out.Torrent.BlockedByVPN = tunnelErr != nil
+	out.Torrent.Via, out.Torrent.ViaLabel = s.torrentRoute()
 	out.Torrent.Enabled = s.torrentsEnabled()
 	out.Torrent.Ready = out.Torrent.Enabled && !out.Torrent.BlockedByVPN
 	switch {
@@ -348,6 +356,59 @@ func (s *Server) handleDownloadsStatus(w http.ResponseWriter, r *http.Request) {
 		out.Torrent.State = "blocked"
 	default:
 		out.Torrent.State = "ready"
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// probeResultPayload is the answer to "find the right number of connections".
+type probeResultPayload struct {
+	Accepted  int    `json:"accepted"`
+	Requested int    `json:"requested"`
+	Refused   bool   `json:"refused"`
+	Message   string `json:"message"`
+}
+
+// handleProbeUsenetServer opens connections to a saved server one after
+// another, up to the number set for it, to find how many the provider lets
+// this login have at once.
+func (s *Server) handleProbeUsenetServer(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "That isn't a valid server ID.")
+		return
+	}
+	sc, err := s.ClientRepo.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "That server no longer exists.")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	res, err := download.ProbeConnections(ctx, sc.Config, sc.Config.Connections)
+	switch {
+	case errors.Is(err, download.ErrServerBusy):
+		writeError(w, http.StatusConflict, "A download is using this server right now, which would change the answer. Try again when it has finished.")
+		return
+	case err != nil:
+		msg := err.Error()
+		if friendly, ok := download.FriendlyError(err); ok {
+			msg = friendly
+		}
+		writeJSON(w, http.StatusOK, probeResultPayload{Requested: res.Requested, Message: "The test couldn't finish: " + msg})
+		return
+	}
+	out := probeResultPayload{Accepted: res.Accepted, Requested: res.Requested, Refused: res.Refused}
+	switch {
+	case res.Refused && res.Accepted == 0:
+		out.Message = "Your provider refused even the first connection, saying this login has too many open. Something else is holding them: another program using the same login (a downloader, an old *arr app, a second Mediarium), or Mediarium itself a few minutes ago, since providers take a little while to notice a closed connection. Stop the other programs, wait about ten minutes and test again."
+	case res.Refused:
+		out.Message = fmt.Sprintf("Your provider let in %d connections at once, and %d are set. Use %d so downloads don't keep being refused. If other programs share this login, their connections count too.", res.Accepted, res.Requested, res.Accepted)
+	default:
+		out.Message = fmt.Sprintf("All %d connections were accepted. The number you set works.", res.Accepted)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

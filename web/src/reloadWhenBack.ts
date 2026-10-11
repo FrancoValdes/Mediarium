@@ -1,11 +1,12 @@
 import { waitForApp } from './updateSteps'
+import { withBase } from './base'
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 // The running version, or null while Mediarium does not answer (restarting).
 async function fetchVersion(): Promise<string | null> {
   try {
-    const r = await fetch('/api/version', { cache: 'no-store' })
+    const r = await fetch(withBase('/api/version'), { cache: 'no-store' })
     if (!r.ok) return null
     const body = (await r.json()) as { version?: string }
     return body.version ?? null

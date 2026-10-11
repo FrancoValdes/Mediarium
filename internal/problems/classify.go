@@ -28,6 +28,8 @@ func CodeFor(err error, fallback string) string {
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
+	case hasAny(msg, "contains programs or scripts"):
+		return CodeDownloadUnsafe
 	case errors.Is(err, fs.ErrPermission), hasAny(msg, "permission denied", "access is denied", "operation not permitted", "read-only file system"):
 		return CodeFolderPermission
 	case errors.Is(err, syscall.ENOSPC), hasAny(msg, "no space left", "not enough free disk space", "not enough space", "disk full", "disk quota exceeded"):
@@ -42,7 +44,7 @@ func CodeFor(err error, fallback string) string {
 		return CodeUsenetAuthRefused
 	case hasAny(msg, "the download failed") && hasAny(msg, "dial tcp", "no such host", "connection refused", "i/o timeout"):
 		return CodeUsenetUnreachable
-	case hasAny(msg, "couldn't be found on your usenet servers"):
+	case hasAny(msg, "couldn't be found on your usenet servers", "not on your usenet servers"):
 		return CodeUsenetMissingParts
 	case hasAny(msg, "password protected", "needs a password"):
 		return CodeUnpackPassword
@@ -74,6 +76,8 @@ func IndexerCode(err error) string {
 	switch {
 	case hasAny(msg, "429", "rate limit", "rate-limit", "too many requests", "limit reached", "limit exceeded", "api limit", "daily limit", "request limit"):
 		return CodeIndexerRateLimited
+	case strings.Contains(msg, "403") && hasAny(msg, "<!doctype html", "<html", "cloudflare", "just a moment", "attention required"):
+		return CodeIndexerBlocked
 	case hasAny(msg, "401", "403", "unauthorized", "forbidden", "incorrect user credentials", "invalid api key", "invalid apikey", "wrong api key", "api key", "apikey", "login failed", "invalid login"):
 		return CodeIndexerAuthRefused
 	case hasAny(msg, "timeout", "timed out", "deadline exceeded", "no such host", "connection refused", "connection reset", "unreachable", "network is down", "unexpected eof", ": eof", "dial ", "tls:", "certificate"):

@@ -431,6 +431,10 @@
     grid-template-rows: repeat(3, auto);
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  /* With the one-time code there are seven cells: four rows keep them in two columns instead of making a third. */
+  .wizard .form-cols.admin-cols:has(> .setup-code) {
+    grid-template-rows: repeat(4, auto);
+  }
 }
 
 /* The service cards are not buttons. Lifting one on hover made it look a few

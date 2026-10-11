@@ -266,8 +266,18 @@ func TestDashboardSummarisesLibraryFoldersAndRecentActivity(t *testing.T) {
 	}
 
 	folders := d["folders"].([]any)
-	if len(folders) != 3 {
-		t.Fatalf("expected movies, tv and downloads folders, got %+v", folders)
+	// Every media type has a folder, the switched-off ones (music and books
+	// here) marked off, then Downloads.
+	if len(folders) != 6 || folders[5].(map[string]any)["key"] != "downloads" {
+		t.Fatalf("expected a folder for each media type and downloads, got %+v", folders)
+	}
+	for _, f := range folders[2:5] {
+		if f.(map[string]any)["off"] != true {
+			t.Fatalf("a switched-off media type should be marked off: %+v", f)
+		}
+	}
+	if folders[0].(map[string]any)["off"] != nil {
+		t.Fatalf("movies is on: %+v", folders[0])
 	}
 	if first := folders[0].(map[string]any); first["key"] != "movies" || first["libraryBytes"] != float64(2048) || first["items"] != float64(1) {
 		t.Fatalf("movies folder card: %+v", first)
@@ -276,6 +286,15 @@ func TestDashboardSummarisesLibraryFoldersAndRecentActivity(t *testing.T) {
 	added := d["recentlyAdded"].([]any)
 	if len(added) != 3 || added[0].(map[string]any)["title"] != "A Show" {
 		t.Fatalf("recently added should list newest first: %+v", added)
+	}
+	// Split: the show (some episodes in) and the downloaded film are in the
+	// library; the missing film is still to come.
+	inLib, toCome := d["recentInLibrary"].([]any), d["recentToCome"].([]any)
+	if len(inLib) != 2 || inLib[0].(map[string]any)["title"] != "A Show" || inLib[0].(map[string]any)["state"] != "partial" {
+		t.Fatalf("in the library: %+v", inLib)
+	}
+	if len(toCome) != 1 || toCome[0].(map[string]any)["state"] != "missing" {
+		t.Fatalf("still to come: %+v", toCome)
 	}
 	if _, ok := d["health"].([]any); !ok {
 		t.Fatal("the dashboard must carry the health warnings")

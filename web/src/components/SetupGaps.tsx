@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import type { SetupGap } from '../setupStatus'
 import Icon from './Icon'
+import { t } from '../i18n'
 
 // The things that are still to do after setup, each with a button to the page
 // that fixes it. In the wizard a click goes through onGo (it has to finish the
@@ -16,7 +17,7 @@ export default function SetupGaps({ gaps, onGo }: { gaps: SetupGap[]; onGo?: (to
           <div className="setup-gap-text">
             <strong>
               {g.title}
-              {g.optional && <em> · optional</em>}
+              {g.optional && <em> · {t('optional')}</em>}
             </strong>
             <span>{g.detail}</span>
           </div>

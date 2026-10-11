@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import Icon from './Icon'
 import type { SelectionText } from '../librarySelection'
+import { t } from '../i18n'
 
 // The bar that stays at the top of the Library while you pick titles: how
 // many are picked, "Select all in this view" and "Select none", and the
@@ -24,21 +25,21 @@ export default function BulkBar({
   // in view takes one row, not half the screen.
   const [open, setOpen] = useState(false)
   return (
-    <div className={`bulkbar${open ? ' open' : ''}`} role="toolbar" aria-label="Actions for the selected titles">
+    <div className={`bulkbar${open ? ' open' : ''}`} role="toolbar" aria-label={t('Actions for the selected titles')}>
       <div className="bulkbar-head">
         <strong aria-live="polite">{text.count}</strong>
         <button className="btn-sm" onClick={onSelectAll} disabled={busy || !text.selectAll || text.allSelected}>
-          {text.selectAll || 'Select all in this view'}
+          {text.selectAll || t('Select all in this view')}
         </button>
-        <button className="btn-sm" onClick={onSelectNone} disabled={busy || text.count === 'Nothing selected'}>
-          Select none
+        <button className="btn-sm" onClick={onSelectNone} disabled={busy || text.count === t('Nothing selected')}>
+          {t('Select none')}
         </button>
         {text.scope && <span className="bulkbar-scope">{text.scope}</span>}
         <button className="btn-sm bulkbar-toggle btn-with-icon" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-          Actions <Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} />
+          {t('Actions')} <Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} />
         </button>
         <button className="btn-sm bulkbar-done" onClick={onDone}>
-          Done
+          {t('Done')}
         </button>
       </div>
       <div className="bulkbar-actions">{children}</div>

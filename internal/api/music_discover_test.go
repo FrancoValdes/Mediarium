@@ -247,7 +247,8 @@ func TestMusicDiscoverNewAndUpcoming(t *testing.T) {
 	if got := getJSON[discoverAnswer](t, e.client, e.base+"/api/music/discover?list=new&genre=indie"); got.titles() != "Fresh Single" {
 		t.Fatalf("genre=indie: %s", got.titles())
 	}
-	if got := getJSON[discoverAnswer](t, e.client, e.base+"/api/music/discover?list=new&genre=jazz"); len(got.Items) != 0 || got.Note != "" {
+	// Nothing in the list is jazz, so the music database's own jazz tags answer instead of an empty page.
+	if got := getJSON[discoverAnswer](t, e.client, e.base+"/api/music/discover?list=new&genre=jazz"); !strings.Contains(got.titles(), "First Album") || got.Note != "" {
 		t.Fatalf("genre=jazz: %+v", got)
 	}
 	if got := getJSON[discoverAnswer](t, e.client, e.base+"/api/music/discover?list=new&type=album"); got.titles() != "Fresh Album" {
@@ -349,7 +350,8 @@ func TestMusicDiscoverArtists(t *testing.T) {
 	if a.Name != "Fixture Band" || a.ListenCount != 900 || !a.InLibrary || a.ArtistID != int64(artist["id"].(float64)) || !strings.HasSuffix(a.CoverURL, "/cover") {
 		t.Fatalf("artist in the library: %+v", a)
 	}
-	if b.InLibrary || b.ArtistID != 0 || b.CoverURL != "" || b.MBID != "eeeeeeee-0000-4000-8000-000000000001" {
+	// Not in the library: the picture is the cover of their most listened-to release in the popular list.
+	if b.InLibrary || b.ArtistID != 0 || b.CoverURL != "/api/music/covers/release-group/bbbbbbbb-0000-4000-8000-000000000002" || b.MBID != "eeeeeeee-0000-4000-8000-000000000001" {
 		t.Fatalf("artist not in the library: %+v", b)
 	}
 	if q := lb.lastQuery("/1/stats/sitewide/artists"); !strings.Contains(q, "range=year") {
@@ -411,5 +413,22 @@ func TestMusicDiscoverIsOpenToMembers(t *testing.T) {
 	}
 	if got := getJSON[map[string]any](t, member, base+"/api/music/discover/artists"); len(got["items"].([]any)) != 3 {
 		t.Fatalf("member artists: %v", got)
+	}
+}
+
+// With a genre picked and the listening statistics down, the music database's
+// own genre tags fill the page instead of an error or an empty list.
+func TestMusicDiscoverGenreFallsBackToTheMusicDatabase(t *testing.T) {
+	e := newMusicEnv(t)
+	dead := newFakeListenBrainz(t)
+	dead.Close()
+	e.server.TestSetListenBrainz(dead.URL)
+	raw := getJSON[discoverAnswer](t, e.client, e.base+"/api/music/discover?list=popular&range=all_time&genre=rock")
+	if got := raw.titles(); !strings.Contains(got, "First Album") || strings.Contains(got, "Live Stuff") {
+		t.Fatalf("the genre search should list the studio releases it found: %s", got)
+	}
+	ep := getJSON[discoverAnswer](t, e.client, e.base+"/api/music/discover?list=popular&range=all_time&genre=rock&type=single")
+	if got := ep.titles(); got != "A Single" {
+		t.Fatalf("only singles were asked for: %s", got)
 	}
 }

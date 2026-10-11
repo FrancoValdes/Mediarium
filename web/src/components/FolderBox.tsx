@@ -4,6 +4,7 @@ import { formatBytes } from '../format'
 import { composeLine, FOLDER_INFO, isStale, type FolderKind } from '../setupHelpers'
 import { FieldError, type Validation } from '../useValidation'
 import CopyBox from './CopyBox'
+import { t, tx } from '../i18n'
 
 // The folder above a path, or '' at the top.
 function parentOf(path: string): string {
@@ -130,17 +131,17 @@ export default function FolderBox({
 
       {mapped && mapped !== info.fallback && path !== mapped.trim() && (
         <p className="fbox-note">
-          Your compose file sets this to <code>{mapped}</code>.{' '}
+          {tx('Your compose file sets this to {path}.', { path: <code>{mapped}</code> })}{' '}
           <button type="button" className="link-btn" onClick={() => onChange(mapped)}>
-            Use {mapped}
+            {t('Use {path}', { path: mapped })}
           </button>
         </p>
       )}
       {staleNote && (
         <p className="fbox-note">
-          It was set to <code>{inUse}</code> before. Continuing changes it to <code>{mapped}</code>, the folder your compose file maps.{' '}
+          {tx('It was set to {before} before. Continuing changes it to {after}, the folder your compose file maps.', { before: <code>{inUse}</code>, after: <code>{mapped}</code> })}{' '}
           <button type="button" className="link-btn" onClick={() => onChange(inUse)}>
-            Keep {inUse}
+            {t('Keep {path}', { path: inUse })}
           </button>
         </p>
       )}
@@ -149,52 +150,52 @@ export default function FolderBox({
         <div className="fbox-status">
           {r.exists && (
             <div className="folder-badges">
-              <span className={`badge ${r.writable ? 'downloaded' : 'failed'}`}>{r.writable ? 'writable' : 'read-only'}</span>
-              {r.mountKnown && r.mounted && <span className="badge downloaded">Mapped to your device</span>}
+              <span className={`badge ${r.writable ? 'downloaded' : 'failed'}`}>{r.writable ? t('writable') : t('read-only')}</span>
+              {r.mountKnown && r.mounted && <span className="badge downloaded">{t('Mapped to your device')}</span>}
               {r.totalBytes > 0 && (
                 <span className="badge">
-                  {formatBytes(r.freeBytes)} free of {formatBytes(r.totalBytes)}
+                  {t('{free} free of {total}', { free: formatBytes(r.freeBytes), total: formatBytes(r.totalBytes) })}
                 </span>
               )}
             </div>
           )}
           {missing && status?.parentMapped && (
             <p className="fbox-calm">
-              This folder isn&apos;t there yet. Mediarium creates it when it&apos;s needed, or{' '}
-              {r.canCreate ? (
-                <button type="button" className="link-btn" disabled={creating} onClick={() => void createNow(path)}>
-                  {creating ? 'creating…' : 'create it now'}
-                </button>
-              ) : (
-                'you can create it yourself'
-              )}
-              .
+              {tx("This folder isn't there yet. Mediarium creates it when it's needed, or {action}.", {
+                action: r.canCreate ? (
+                  <button type="button" className="link-btn" disabled={creating} onClick={() => void createNow(path)}>
+                    {creating ? t('creating…') : t('create it now')}
+                  </button>
+                ) : (
+                  t('you can create it yourself')
+                ),
+              })}
             </p>
           )}
           {createError && <p className="fbox-warn">{createError}</p>}
-          {missing && !inDocker && !quiet && <p className="fbox-warn">This folder doesn&apos;t exist on this computer. Create it, or type a folder that does.</p>}
-          {missing && inDocker && quiet && !status?.parentMapped && <p className="fbox-calm">Nothing is mapped here yet, which is fine.</p>}
+          {missing && !inDocker && !quiet && <p className="fbox-warn">{t("This folder doesn't exist on this computer. Create it, or type a folder that does.")}</p>}
+          {missing && inDocker && quiet && !status?.parentMapped && <p className="fbox-calm">{t('Nothing is mapped here yet, which is fine.')}</p>}
           {r.exists && !insideContainer && r.warnings.map((w) => <p key={w} className="fbox-warn">{w}</p>)}
         </div>
       )}
 
       {needsLine && (
         <div className="fbox-fix">
-          <strong>{insideContainer ? 'This folder only exists inside the container.' : 'This folder isn’t mapped to your server yet.'}</strong>
+          <strong>{insideContainer ? t('This folder only exists inside the container.') : t('This folder isn’t mapped to your server yet.')}</strong>
           <p>
-            {insideContainer ? 'Files saved here are lost when the container is updated. ' : 'Docker can only see the folders you map in your compose file. '}
-            Add this line under <code>volumes:</code> and change the first part to the real folder on your server:
+            {insideContainer
+              ? tx('Files saved here are lost when the container is updated. Add this line under {volumes} and change the first part to the real folder on your server:', { volumes: <code>volumes:</code> })
+              : tx('Docker can only see the folders you map in your compose file. Add this line under {volumes} and change the first part to the real folder on your server:', { volumes: <code>volumes:</code> })}
           </p>
-          <CopyBox text={composeLine(info.hostExample, path || info.fallback)} label={`Compose line for the ${info.label.toLowerCase()}`} />
+          <CopyBox text={composeLine(info.hostExample, path || info.fallback)} label={t('Compose line for the {folder}', { folder: info.label.toLowerCase() })} />
           <p className="fbox-small">
-            Before the colon is the folder on your server (this one is an example). After it is the name Mediarium uses, which has to
-            match the box above. Create the folder first, or Docker won&apos;t start.
+            {t("Before the colon is the folder on your server (this one is an example). After it is the name Mediarium uses, which has to match the box above. Create the folder first, or Docker won't start.")}
           </p>
           {canUseParent && (
             <p className="fbox-small">
-              Already mapping <code>{parent}</code>? Then skip this and use a folder inside it.{' '}
+              {tx('Already mapping {path}? Then skip this and use a folder inside it.', { path: <code>{parent}</code> })}{' '}
               <button type="button" className="link-btn" disabled={creating} onClick={() => void createNow(parentValue)}>
-                {creating ? 'Creating…' : `Use ${parentValue}`}
+                {creating ? t('Creating…') : t('Use {path}', { path: parentValue })}
               </button>
             </p>
           )}
@@ -202,9 +203,9 @@ export default function FolderBox({
       )}
       {quiet && inDocker && missing && !status?.parentMapped && (
         <details className="fbox-later">
-          <summary>How to map it later</summary>
-          <p className="fbox-small">When you want it, add this line under volumes: in your compose file (first part is the folder on your server):</p>
-          <CopyBox text={composeLine(info.hostExample, path || info.fallback)} label={`Compose line for the ${info.label.toLowerCase()}`} />
+          <summary>{t('How to map it later')}</summary>
+          <p className="fbox-small">{t('When you want it, add this line under volumes: in your compose file (first part is the folder on your server):')}</p>
+          <CopyBox text={composeLine(info.hostExample, path || info.fallback)} label={t('Compose line for the {folder}', { folder: info.label.toLowerCase() })} />
         </details>
       )}
     </div>

@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import BrandMark from './BrandMark'
 import Icon, { type IconName } from './Icon'
 import type { ItemState } from './state'
+import { t } from '../i18n'
 
 // Shown when a title has no poster (or its image fails to load): the Mediarium
 // mark on a soft gradient, with no text, so every card stays the same shape.
@@ -14,13 +15,42 @@ export function PosterFallback() {
   )
 }
 
-// The same for a record sleeve: a music note on the soft gradient.
+// The same for a record sleeve: a record on the soft gradient.
 export function MusicFallback() {
   return (
     <div className="poster-fallback music-fallback" aria-hidden="true">
-      <Icon name="music" size={48} />
+      <span className="vinyl-mini" />
     </div>
   )
+}
+
+export type CardKind = 'movie' | 'tv' | 'music' | 'book' | 'audiobook'
+
+// The states that are still on the way get a dashed outline in the card's
+// colour (solid means it's in, dashed means it's wanted), and a download gets
+// a live line along the bottom of the picture.
+const WANTED = new Set(['searching', 'pending', 'failed'])
+
+// Each kind of media has its own shape: a movie is a ticket (notches and a
+// tear line, drawn in CSS), a show is a TV set (all CSS), an album has
+// its record peeking out of the sleeve, a book has a ribbon and an audiobook
+// wears headphones. These are the extra pieces the CSS can't draw alone.
+function ShapeParts({ kind }: { kind?: CardKind }) {
+  if (kind === 'music') return <span className="pcard-disc" aria-hidden="true" />
+  if (kind === 'book') return <span className="pcard-bookmark" aria-hidden="true" />
+  if (kind === 'audiobook')
+    return (
+      <span className="pcard-phones" aria-hidden="true">
+        <svg viewBox="0 0 100 50" preserveAspectRatio="none">
+          <path className="band" d="M8 50C8 6 92 6 92 50" />
+          <path className="band-mid" d="M8 50C8 6 92 6 92 50" />
+          <path className="band-line" d="M8 50C8 6 92 6 92 50" />
+        </svg>
+        <span className="cup left" />
+        <span className="cup right" />
+      </span>
+    )
+  return null
 }
 
 export interface CardAction {
@@ -44,6 +74,30 @@ export interface CardRibbon {
 // One poster in a grid: the picture and title open the item, a status pill sits
 // on the image, and a row of quick actions (search, monitor, remove...) is
 // always one tap away (on a mouse they appear over the poster on hover).
+// On a long page of lists (Discover) the posters far down are fetched in the background a moment after the
+// page opens, at low priority, instead of only when they are about to scroll into view, so they are there
+// when you arrive. A connection set to save data keeps the usual wait-until-near behaviour.
+const EagerImages = createContext(false)
+export function EagerImagesProvider({ children, afterMs = 1500 }: { children: ReactNode; afterMs?: number }) {
+  const [on, setOn] = useState(false)
+  useEffect(() => {
+    const saver = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData
+    if (saver) return
+    const timer = window.setTimeout(() => setOn(true), afterMs)
+    return () => window.clearTimeout(timer)
+  }, [afterMs])
+  return <EagerImages.Provider value={on}>{children}</EagerImages.Provider>
+}
+
+// A TMDB poster comes in several sizes. A card is a couple of hundred pixels wide, so the
+// browser gets the 342 wide one, and the 500 wide one only on a sharp screen.
+function cardPoster(url: string, width: number): string {
+  return url.replace('/t/p/w500/', `/t/p/w${width}/`)
+}
+function cardSrcSet(url: string): string | undefined {
+  return url.includes('/t/p/w500/') ? `${cardPoster(url, 342)} 342w, ${url} 500w` : undefined
+}
+
 export default function PosterCard({
   to,
   poster,
@@ -77,17 +131,29 @@ export default function PosterCard({
   state?: ItemState
   genres?: string[]
   rating?: number
-  kind?: 'movie' | 'tv' | 'music'
+  kind?: CardKind
   ribbon?: CardRibbon
   progress?: { pct: number; label?: string }
 }) {
-  const [broken, setBroken] = useState(false)
-  const image = poster && !broken ? <img src={poster} alt="" loading="lazy" onError={() => setBroken(true)} /> : kind === 'music' ? <MusicFallback /> : <PosterFallback />
+  // Remember which address failed, so a poster that changes later (an import finishes) gets its own try.
+  const [brokenSrc, setBrokenSrc] = useState<string | undefined>()
+  const eager = useContext(EagerImages)
+  const image = poster && brokenSrc !== poster ? <img src={cardPoster(poster, 342)} srcSet={cardSrcSet(poster)} sizes="(max-width: 700px) 45vw, 240px" alt="" loading={eager ? 'eager' : 'lazy'} fetchPriority={eager ? 'low' : undefined} decoding="async" onError={() => setBrokenSrc(poster)} /> : kind === 'music' || kind === 'audiobook' ? <MusicFallback /> : <PosterFallback />
+  const wanted = !!state && WANTED.has(state.key)
+  const live = state?.key === 'downloading'
+  const pct = progress?.pct ?? (live ? Number(/(\d+)%/.exec(state.label)?.[1] ?? NaN) : NaN)
+  const cls = ['pcard', dim && 'dim', selection?.selected && 'selected', kind && `kind-${kind}`, state && `st-${state.key}`, wanted && 'is-wanted', live && 'is-live'].filter(Boolean).join(' ')
   return (
-    <article className={`pcard${dim ? ' dim' : ''}${selection?.selected ? ' selected' : ''}${kind ? ` kind-${kind}` : ''}`}>
+    <article className={cls}>
+      {wanted && (
+        <svg className="pcard-dash" aria-hidden="true">
+          <rect width="100%" height="100%" rx="12" />
+        </svg>
+      )}
       <div className="pcard-art">
+        <ShapeParts kind={kind} />
         {selection ? (
-          <button className="pcard-link pcard-select" onClick={(e) => selection.onToggle({ shiftKey: e.shiftKey })} aria-pressed={selection.selected} aria-label={`Select ${title}`}>
+          <button className="pcard-link pcard-select" onClick={(e) => selection.onToggle({ shiftKey: e.shiftKey })} aria-pressed={selection.selected} aria-label={t('Select {title}', { title })}>
             {image}
             <span className={`pcard-check${selection.selected ? ' on' : ''}`} aria-hidden="true">
               {selection.selected && <Icon name="check" size={16} />}
@@ -108,7 +174,7 @@ export default function PosterCard({
           status && <span className={`pill pill-${status}`}>{statusLabel ?? status}</span>
         )}
         {rating ? (
-          <span className="pcard-rating" title="Rating">
+          <span className="pcard-rating" title={t('Rating')}>
             <Icon name="star" size={11} /> {rating.toFixed(1)}
           </span>
         ) : null}
@@ -117,7 +183,7 @@ export default function PosterCard({
             {ribbon.label}
           </span>
         )}
-        {kind && <span className={`pcard-kind kind-${kind}`} title={kind === 'movie' ? 'Movie' : kind === 'music' ? 'Music' : 'TV show'} />}
+        {live && <span className={`pcard-live${Number.isNaN(pct) ? ' unknown' : ''}`} style={Number.isNaN(pct) ? undefined : { width: `${Math.max(4, pct)}%` }} aria-hidden="true" />}
         {actions && actions.length > 0 && !selection && (
           <div className="pcard-actions">
             {actions.map((a) => (
@@ -137,7 +203,7 @@ export default function PosterCard({
           </div>
         )}
       </div>
-      <div className="pcard-body">
+      <div className="pcard-body" data-admit={kind === 'movie' ? t('Admit one') : undefined}>
         {to ? (
           <Link to={to} className="pcard-title">
             {title}

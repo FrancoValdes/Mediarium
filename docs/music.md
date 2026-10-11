@@ -11,7 +11,7 @@ Mediarium can look after a music collection: artists, their albums and the track
    ```
 
    Or map a folder of its own, for example `- /volume1/music:/music` (no `MUSIC_DIR` line is needed while the right side stays `/music`). The compose file in the install guide has both as commented lines you can switch on. On a NAS, create the folder first, or Docker stops with `Bind mount failed ... does not exist`. The folder is only used once the module is on.
-2. As an administrator, open **Settings > Media types** and switch on **Music** (see [modules.md](./modules.md)). Then you can change the music folder on the **Folders and file names** page (Settings > Library). The value in Settings wins over `MUSIC_DIR`.
+2. As an administrator, open **Settings > Media types** and switch on **Music** (see [modules.md](./modules.md)). Then you can change the music folder on the **Folders** page (Settings > Library). The value in Settings wins over `MUSIC_DIR`.
 
 In the first-run setup wizard, choosing Music on the **Media types** step adds a music box to the **Library paths** step. It starts from `MUSIC_DIR`. If nothing is mapped at `/music` but your movies and TV share a parent folder such as `/data`, it suggests a folder inside it (for example `/data/Music`). If the folder isn't mapped at all, it shows the exact compose line to add.
 
@@ -48,7 +48,7 @@ With the module on, music shows up next to movies and TV. Basic users can browse
   **Add** opens the "Add <artist>" dialog (the same one the header search uses, see "Adding an artist"): **Follow all albums**, **Only future albums** or **Only this album** (for an album; the artist is added but nothing else is monitored), the quality profile, and whether to start searching now. For an artist already in the library, adding an album only switches that album on.
 - **Header search**: with music on, the search box at the top also lists matching **Artists** under the movies and shows, each with Add or Open when already in the library. Add opens the same "Add <artist>" dialog as Discover: the choice of what to follow, **Quality profile** and a tick box to start searching now.
 - **Album files**: the **Files** tab lists what's in the album's folder (songs, cover, notes) with sizes and dates. **Play** on a song opens a small player in front of the page. **View** shows the cover or a text file. Playing is direct, so it depends on your browser: MP3 and AAC/M4A play everywhere, FLAC in current browsers and Apple Lossless only in Safari. If your browser can't play a file, the player says so. The file itself is untouched.
-- **Calendar**: with music on, albums with a release date show up on the Upcoming calendar with an orange round badge with a music note (and an "Album" entry in the legend). Clicking one opens the album on its artist page.
+- **Calendar**: with music on, albums with a release date show up on the Upcoming calendar with their cover in a pink sleeve with the record peeking out (and a "Music" entry in the legend). Clicking one opens the album on its artist page.
 - **Settings > Library > Quality > Music** (administrators): all music profiles as cards with their formats, where they stop upgrading (highlighted), fallback and how many artists use them. **New profile** and **Edit** open the same kind of editor as for movies, scrolled into view with the cursor in the name (name, accepted qualities, the quality at which upgrading stops, upgrades on or off, and the fallback order, which you drag). **Make default** sets the profile artists without one of their own use. **Delete** asks first, and a profile that's the default or that artists use is refused with the reason.
 - **Upcoming, Wanted**: with more than one kind of media on, chips (All, Movies, TV shows, Music, each with its own icon) filter the list. Albums that are monitored, released and missing (or below the profile's cutoff, under Upgrades) are listed as "Artist – Album" with the cover, the profile and the last search result on hover, a **Search now** button and a link that opens the album on its artist page. The counts on the Missing and Upgrades tabs include albums.
 - **Activity**: album downloads appear in the queue like movie downloads, titled "Artist – Album" with the cover and an orange edge, and with the same retry, blocklist-and-search-again and remove buttons. A failed one opens the album from the arrow. Albums still waiting for a release join the "Waiting for a release" list. Recently added and recently downloaded albums on the dashboard open their album too.
@@ -145,6 +145,71 @@ An album is rated by its weakest file, so one MP3 among FLAC files makes it MP3.
 
 `GET /api/files/stream?album={id}&path=<relative path>` sends one of those files as it is, with range support so a browser can seek, and an audio file with its own type: `audio/flac`, `audio/mpeg` (MP3), `audio/mp4` (M4A, ALAC), `audio/aac`, `audio/ogg` and `audio/opus`. The cover and text files preview as they do for movies, and everything else is refused. Every answer keeps the `nosniff`, `Content-Security-Policy: sandbox` and inline `Content-Disposition` headers. Only files inside the album's folder, which must lie inside the music folder, can be reached: no `../`, no absolute paths, no symbolic links leading out. Whether a browser can play a format is up to the browser (MP3 and AAC/M4A play everywhere, FLAC in current browsers, ALAC only in Safari). Playing is refused while the music module is off.
 
+## Playing music in Mediarium
+
+On an artist page, **Play** on a downloaded album starts it from the first track, and the play button next to a track starts the album from there. The button next to the volume (**Open the player in its own window**) moves the music to a small window of its own, like the audiobook player: the cover, the controls and the queue, which carries on from where it was. **Back to the app** in that window gives the music back to the bar. Starting something new in the app takes over from the window. If nothing opens, allow pop-ups for the site. **Play** and **Shuffle** at the top of the page queue everything of that artist that is in your library, newest album first, and every artist card in the music Library has a **Play** button too. A bar appears at the bottom of the window with the cover, the title, previous and next, a seek bar, shuffle, repeat (the whole queue, or one track), a volume slider and a close button. The music keeps playing while you move to other pages, and the media keys, headphone buttons and lock screen work too (the browser decides how much of that it shows). The volume is remembered in your browser.
+
+Which formats play is up to the browser, as described above. When a track can't be played, the bar says so and moves on to the next one after a couple of seconds.
+
+`GET /api/music/tracks/{id}/play` (any account) sends a track's file with range support, so seeking works. It answers 404 for a track that isn't on disk, and only files inside the music folder can be reached.
+
+## Queue, playlists, lyrics and scrobbling
+
+Besides play, previous, next, seek, shuffle, repeat and the volume, the player bar has a **Queue** button, a **Lyrics** button and a **Player settings** button. Each opens a panel above the bar.
+
+### The queue
+
+The **Queue** button opens the list of what is coming. The track that is playing is highlighted. Click a track to play it, drag a track by its dots to move it (or use the arrows on the right, which also work on a phone), and press the cross to remove it. **Clear** removes everything except the track that is playing.
+
+The **...** menu on a track, an album or an artist has **Play next** (right after the track that is playing) and **Add to queue** (at the end). **Save as playlist** in the queue panel puts the whole queue on a playlist.
+
+The queue is kept on the device you use, in the browser's own storage, so a reload or a new visit brings it back, paused, at the place you left it. It is not shared between your devices. If the music module is switched off the kept queue is dropped.
+
+### Playlists
+
+Open **Library > Music > Playlists** (`/music/playlists`). A playlist belongs to the account that made it and is private by default. Switch on **Share with everyone** and everyone on the server can see and play it, but only you can change or delete it.
+
+- **New playlist** makes an empty one. From the **...** menu on a track, an album or an artist, **Add to playlist** puts it on an existing list or on a new one. An album adds the tracks you have, in track order. For an artist the menu says **Add top tracks to a playlist**: up to 20 of their tracks, the most played first (the order comes from ListenBrainz and only tracks you own are used). When ListenBrainz can't be reached, or knows none of them, you get their tracks from the newest album on.
+- On a playlist you can play it, shuffle it, add it to the queue, rename it, drag tracks into another order, remove tracks, and delete the list. A track you don't have a file for yet stays on the list, greyed out, and is skipped when playing. The same track can be on a list more than once. A list holds up to 5000 tracks.
+- If an album is removed from the library, its tracks leave the playlists. Deleting an account deletes its playlists.
+
+### Lyrics
+
+The **Lyrics** button shows the words of the song. If they come with times, the line being sung is highlighted and follows the song, and a click on a line jumps to it. Without times you get the plain words. Mediarium looks in this order:
+
+1. A `.lrc` file with the same name as the audio file, next to it (`01 - Song.flac` and `01 - Song.lrc`).
+2. The lyrics written in the file's tags (ID3 lyrics, Vorbis `LYRICS`, `UNSYNCEDLYRICS` or `SYNCEDLYRICS`, MP4 lyrics). Text that has `[mm:ss.xx]` times counts as synced.
+3. [LRCLIB](https://lrclib.net), a free lyrics service. Mediarium sends it the title, artist, album and length of the track, and says who it is in the User-Agent. The answer is kept in the database, so a track is asked about once; a track it had nothing for is asked again after 30 days. If the service can't be reached, nothing is remembered and the next look tries again.
+
+Synced lyrics win over plain ones: if a file only has plain words and LRCLIB has them with times, you get the timed version. Your files are only read, never changed.
+
+An administrator can stop the online lookup in the player's settings (**Settings** tab of the player panel, **Look up lyrics online**). It is on until then, and it only happens when someone opens the lyrics of a track that has none of its own. `GET /api/music/player-settings` (any account) and `PUT /api/music/player-settings` with `{"lyricsOnline": false}` (administrators) do the same.
+
+### Crossfade, gapless and ReplayGain
+
+These are in the **Settings** tab of the player panel and are kept on the device, in the browser.
+
+- **Gapless.** While a track plays, the next one is already loaded in a second audio element, and the player starts it just before the first one ends. A gap of a few milliseconds is possible. Seeking, skipping and loading a new track work as always.
+- **Crossfade** (0 to 12 seconds, off by default). The end of one track fades out while the next fades in. Tracks of the same album follow each other without a fade, because live albums and mixes are made to run on. A short track never gives up more than 40% of itself. Skipping with a button is always a clean cut.
+- **Even out the volume (ReplayGain)**: off, by track or by album, off by default. The player reads the `REPLAYGAIN_TRACK_GAIN`, `REPLAYGAIN_ALBUM_GAIN` and the peak tags (and Opus `R128_*` tags) and turns the track up or down to match. A track is never turned up so far that it would clip: if the loudest sample would pass full scale, the boost is held back, and a boost is refused altogether when the file has no peak tag. A file without the tags plays as it is, and "by album" uses the track gain for a file that only has that. Mediarium doesn't measure or write these tags.
+
+Crossfade and ReplayGain use the browser's Web Audio. It is only switched on when one of them is. Playing with both off is the plain audio element, as before. **Safari on iPhone and iPad:** it ignores the volume of an audio element and has had bugs where Web Audio goes quiet when the screen is locked, so on those devices crossfade and ReplayGain may stop working while locked, and the volume slider is hidden (use the buttons on the side). With both off, playback behaves as it always has. Gapless also needs the page's code to run when a track ends, which a locked iPhone does not always allow. The lock screen and headphone controls (previous, next, play, pause, seek) work through the media session as before.
+
+`GET /api/music/tracks/{id}/gain` (any account that may play) answers `{trackGain, trackPeak, albumGain, albumPeak}` in dB and as a plain number, with `null` for what the file doesn't have.
+
+### Sending your plays to ListenBrainz
+
+Each account can send what it plays to its own [ListenBrainz](https://listenbrainz.org) account. In **Settings > Profile > ListenBrainz** copy your user token from listenbrainz.org/settings, paste it and press **Connect**. Mediarium asks ListenBrainz whether the token is good before keeping it. It is stored encrypted, belongs to your account, is never shown again and never written to the log. **Send my plays to ListenBrainz** switches sending on and off without losing the token, and **Disconnect** forgets it.
+
+- When a track starts, ListenBrainz is told what is playing now.
+- A track counts as a listen once you have heard half of it or four minutes, whichever is less (seeking ahead doesn't count as listening). It is sent with the time it started.
+- Mediarium looks the track up in its own library, so the title, artist, album, length, track number and the MusicBrainz ids of the artist and album come from there.
+- If ListenBrainz can't be reached, or asks for fewer requests, the plays are kept (up to 500 per account) and sent together, oldest first, with the next one. If it stops accepting the token, sending is switched off and the profile says why until you paste the token again.
+
+Last.fm isn't supported.
+
+`GET`, `PUT` and `DELETE /api/music/listenbrainz` read, change and remove your own connection (`{token?, enabled?}`; the answer is `{connected, user?, enabled, lastError?, submitted, pending}` and never has the token). `POST /api/music/listenbrainz/playing` with `{trackId}` and `POST /api/music/listenbrainz/listen` with `{trackId, listenedAt}` (Unix seconds) are what the player calls.
+
 ## Dashboard
 
 `GET /api/dashboard` (any account) has a `library.music` block, `{artists, albums, downloaded, missing}`, counted from your library whether or not the music module is switched on (zeros when there's nothing). `missing` counts albums that are neither downloaded nor downloading. The other fields are unchanged.
@@ -179,6 +244,10 @@ It answers `{page, totalPages, items, note?}` where each item is `{mbid, title, 
 
 Covers on these lists never come from an outside host. `coverUrl` is `/api/music/covers/release-group/{mbid}` (any account), which fetches the front cover of that release group once, keeps it in the `music-covers` folder and serves it like the album covers below. A release group without cover art answers a plain 404.
 
+### The page of an album you don't have yet
+
+A card on the Music tab of Discover opens a page of its own: the cover, the artist, the year and genres, the full tracklist with lengths, and an **Add to library** button (**Add early** for an album that isn't out yet). An album already in your library opens at its place on the artist page instead. The tracklist and genres come from the music database; if it can't be reached, the page says the tracklist isn't available right now and **Add** still works. For scripts: `GET /api/music/preview/{mbid}` (any account; `mbid` is the release group id) answers the card's fields plus `tracks: [{disc, position, title, lengthMs?}]`. The covers of a Discover page are fetched in the background as soon as the list is built, a few at a time, so they are usually ready before the page asks for them.
+
 ## Cover art
 
 Covers are the 500 pixel front cover of the album, fetched **once** per album and kept in the `music-covers` folder inside your config folder, so the app never loads images from an outside site and your browser only talks to Mediarium. `GET /api/music/albums/{id}/cover` and `GET /api/music/artists/{id}/cover` (any account) serve the image with cache headers so browsers keep it for a day. An artist's picture is the cover of its first album that has one. If there's no cover the answer is a plain 404, and Mediarium doesn't look again for a day.
@@ -204,7 +273,7 @@ Removing an artist (administrators) always cancels its downloads and deletes the
 
 ## Sources
 
-Album, artist and release information, cover art and the popular and new-release lists on Discover all come from free public music services. They ask apps to make at most one request per second and to say who they are, and Mediarium does both. The services are named and credited on the **About and credits** page in the app and in [LEGAL.md](./LEGAL.md).
+Album, artist and release information, cover art and the popular and new-release lists on Discover all come from free public music services. They ask apps to make at most one request per second and to say who they are, and Mediarium does both. Lyrics are looked up on [LRCLIB](https://lrclib.net) (see "Lyrics"), and ListenBrainz also receives your plays if you connect it. The services are named and credited on the **About and credits** page in the app and in [LEGAL.md](./LEGAL.md).
 
 ## API
 
@@ -235,5 +304,22 @@ Album, artist and release information, cover art and the popular and new-release
 | GET | `/api/music/artists/{id}/cover` | | a picture for the artist (its first album cover), or a plain 404 |
 | GET | `/api/music/albums/{id}/events` | | `[{at, kind, message, level}]` |
 | GET | `/api/music/wanted?kind=missing\|cutoff` | | `[album + {artistName, profileName, cutoff, lastSearch, lastSearchAt}]` |
+| GET | `/api/music/playlists` | | `[{id, name, shared, mine, owner, trackCount, durationMs, albumIds[], updatedAt}]`: your lists, then the ones shared with everyone |
+| POST | `/api/music/playlists` | `{name, shared?, trackIds?, albumId?, artistId?}` | 201 playlist with `tracks` (`albumId` adds the album, `artistId` the artist's top tracks) |
+| GET | `/api/music/playlists/{id}` | | playlist with `tracks: [{entryId, trackId, title, artist, artistId, album, albumId, lengthMs, hasFile}]`; 404 for a private list of someone else |
+| PUT | `/api/music/playlists/{id}` | `{name?, shared?}` | the playlist; owner only |
+| DELETE | `/api/music/playlists/{id}` | | 204; owner only |
+| POST | `/api/music/playlists/{id}/tracks` | `{trackIds?, albumId?, artistId?}` | `{added, playlist}`; owner only |
+| DELETE | `/api/music/playlists/{id}/tracks/{entryId}` | | the playlist; owner only |
+| PUT | `/api/music/playlists/{id}/order` | `{entryIds: [...]}` every entry once, in the new order | the playlist; owner only |
+| GET | `/api/music/tracks/{id}/lyrics` | | `{source: "sidecar"\|"file"\|"lrclib"\|"", synced, plain, instrumental, online}` |
+| GET | `/api/music/tracks/{id}/gain` | | `{trackGain, trackPeak, albumGain, albumPeak}` (dB; `null` when missing) |
+| GET | `/api/music/player-settings` | | `{lyricsOnline}` |
+| PUT | `/api/music/player-settings` | `{lyricsOnline}` | administrators only |
+| GET | `/api/music/listenbrainz` | | `{connected, user?, enabled, lastError?, submitted, pending}` for your account |
+| PUT | `/api/music/listenbrainz` | `{token?, enabled?}` | the same; a token is checked with ListenBrainz first |
+| DELETE | `/api/music/listenbrainz` | | 204; forgets the token and any unsent plays |
+| POST | `/api/music/listenbrainz/playing` | `{trackId}` | `{sent}` |
+| POST | `/api/music/listenbrainz/listen` | `{trackId, listenedAt}` | `{sent, submitted, pending}` |
 
 An artist is `{id, mbid, name, sortName, disambiguation, monitored, monitorNew, profileId, profileName, addedAt, addedBy, albumCount, monitoredCount, downloadedCount, coverUrl, imageUrl}`; an album `{id, artistId, mbid, title, type, releaseDate, year, monitored, status, quality, path, coverUrl, coverArchiveUrl}`; a track `{id, disc, position, title, lengthMs, hasFile, filePath}`. A release in the interactive search carries what its name says (`artist, album, year, format, bitrate, bitDepth, source, discography, quality`) beside the usual `title, indexerName, protocol, downloadUrl, sizeBytes, publishDate, seeders, peers, blocklisted, rejections, acceptedBy`. `coverUrl` (and, on artists, `imageUrl`, the same address) point at the cover routes above. `coverArchiveUrl` is the address of the original picture at the cover-art service. Album downloads appear in `GET /api/queue` with `albumId` and the title "Artist – Album".

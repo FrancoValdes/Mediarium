@@ -53,6 +53,10 @@ type Area struct {
 	// Protected folders are never removed or entered, even when they lie
 	// inside Work (the movie and TV library folders).
 	Protected []string
+	// Groups are folders directly inside Work that hold download folders
+	// instead of being one (the folders of the torrent categories). They are
+	// looked into, and removed only when they hold no files.
+	Groups []string
 }
 
 // Item is one entry clean-up can remove.
@@ -96,30 +100,61 @@ func Scan(area Area, classify Classify) ([]Item, error) {
 		return nil, fmt.Errorf("read working folder: %w", err)
 	}
 	var items []Item
-	for _, e := range entries {
-		abs := filepath.Join(work, e.Name())
+	consider := func(abs, name string, classified bool) {
 		info, err := os.Lstat(abs)
 		if err != nil {
-			continue // removed meanwhile
+			return // removed meanwhile
 		}
 		if err := area.check(abs); err != nil {
-			continue // a library folder inside the working folder, for example
+			return // a library folder inside the working folder, for example
 		}
-		d := classify(e.Name(), info)
+		var d Decision
+		if classified {
+			d = classify(name, info)
+		}
 		if d.Active {
-			continue
+			return
 		}
 		empty := info.IsDir() && isEmptyTree(abs)
 		if !d.Remove && !empty {
-			continue
+			return
 		}
 		if empty {
 			d.Reason = ReasonEmptyFolder
 		}
 		items = append(items, Item{Path: area.rel(abs), SizeBytes: Size(abs), Reason: d.Reason, abs: abs})
 	}
+	for _, e := range entries {
+		abs := filepath.Join(work, e.Name())
+		if e.IsDir() && area.isGroup(e.Name()) {
+			// A category folder: its download folders are judged one by one,
+			// and it goes only when nothing at all is left in it.
+			if info, err := os.Lstat(abs); err == nil && info.IsDir() && area.check(abs) == nil {
+				if inner, err := os.ReadDir(abs); err == nil {
+					for _, c := range inner {
+						consider(filepath.Join(abs, c.Name()), c.Name(), true)
+					}
+					if len(inner) == 0 {
+						consider(abs, e.Name(), false)
+					}
+				}
+			}
+			continue
+		}
+		consider(abs, e.Name(), true)
+	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Path < items[j].Path })
 	return items, nil
+}
+
+// isGroup reports whether name is one of the category folders in Groups.
+func (a Area) isGroup(name string) bool {
+	for _, g := range a.Groups {
+		if strings.EqualFold(g, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // Remove deletes items found by Scan, checking each again first, and

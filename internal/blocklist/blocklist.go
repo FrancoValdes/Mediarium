@@ -94,6 +94,35 @@ func (r *Repo) List() ([]Entry, error) {
 	return out, rows.Err()
 }
 
+// Page returns one page of the blocklist, newest first, and how many entries
+// there are in all.
+func (r *Repo) Page(limit, offset int) ([]Entry, int, error) {
+	var total int
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM blocklist`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count blocklist: %w", err)
+	}
+	rows, err := r.db.Query(
+		`SELECT id, release_title, protocol, reason, COALESCE(movie_id, 0), COALESCE(series_id, 0), created_at FROM blocklist ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+		limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list blocklist: %w", err)
+	}
+	defer rows.Close()
+	var out []Entry
+	for rows.Next() {
+		var (
+			e       Entry
+			created string
+		)
+		if err := rows.Scan(&e.ID, &e.ReleaseTitle, &e.Protocol, &e.Reason, &e.MovieID, &e.SeriesID, &created); err != nil {
+			return nil, 0, fmt.Errorf("scan blocklist entry: %w", err)
+		}
+		e.CreatedAt, _ = time.Parse("2006-01-02T15:04:05.000Z", created)
+		out = append(out, e)
+	}
+	return out, total, rows.Err()
+}
+
 func (r *Repo) Remove(id int64) error {
 	res, err := r.db.Exec(`DELETE FROM blocklist WHERE id = ?`, id)
 	if err != nil {

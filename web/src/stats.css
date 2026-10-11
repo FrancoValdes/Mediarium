@@ -1,0 +1,61 @@
+/* Statistics: one panel style with the rest of the app. Each kind's count
+   sits next to its shape inside a ring that fills as more of it is
+   downloaded; bars are thin with rounded ends and numbers in mono. Scoped
+   to .stats-page. */
+
+.stats-page .stat-cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; margin-bottom: 18px; }
+.stats-page .stat-card {
+  --tc: var(--accent);
+  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 14px; row-gap: 2px; align-content: start;
+  padding: 16px 18px; border: 0; border-radius: 22px 22px 22px 6px; overflow: hidden;
+  background: radial-gradient(90% 80% at 0% 0%, color-mix(in srgb, var(--tc) 10%, transparent), transparent 65%), linear-gradient(180deg, var(--panel-top), var(--panel-bottom));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px var(--rim), 0 20px 34px -28px var(--lift);
+}
+.stats-page .stat-card::before, .stats-page .stat-card::after { display: none; }
+.stats-page .stat-card:hover { transform: none; }
+.stats-page .stat-card.k-movie { --tc: var(--c-movie); }
+.stats-page .stat-card.k-tv { --tc: var(--c-tv); }
+.stats-page .stat-card.k-music { --tc: var(--c-music); }
+.stats-page .stat-card > :not(.stat-shape) { grid-column: 2; }
+.stats-page .stat-card.k-size > * { grid-column: 1 / -1; }
+.stats-page .stat-card small { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); }
+.stats-page .stat-card strong { font-family: var(--font-mono); font-weight: 500; font-size: 2rem; line-height: 1.05; letter-spacing: -0.04em; color: var(--text); }
+.stats-page .stat-card span:not(.stat-shape):not(.stat-split) { font-size: 0.84rem; color: var(--text-dim); }
+
+.stat-shape { grid-row: 1 / span 3; position: relative; width: 56px; height: 56px; display: grid; place-items: center; color: var(--tc); }
+.stat-shape .kind-glyph { position: relative; }
+.stat-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.stat-ring circle { fill: none; stroke-width: 3; stroke-linecap: round; }
+.stat-ring .track { stroke: color-mix(in srgb, var(--tc) 16%, transparent); }
+.stat-ring .fill { stroke: var(--tc); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--tc) 60%, transparent)); transition: stroke-dasharray 0.8s var(--ease-out); }
+
+/* Usenet against torrents, as one split line */
+.stat-split { display: block; height: 4px; margin-top: 10px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--c-audiobook) 70%, transparent); }
+.stat-split i { display: block; height: 100%; background: var(--accent); border-right: 2px solid var(--panel-top); }
+
+/* panels */
+.stats-page .card:not(.stat-card) {
+  border: 0; border-radius: 22px 22px 22px 6px; padding: 20px 22px;
+  background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px var(--rim), 0 20px 34px -28px var(--lift);
+}
+.stats-page .card > h2 { font-size: 1.1rem; letter-spacing: -0.015em; margin: 0 0 14px; }
+.stats-page .half-cols { margin-top: 18px; }
+.stats-page .over-time-charts h3 { font-size: 0.86rem; font-weight: 600; color: var(--text-dim); }
+
+/* bar rows: label, a thin bar, the numbers */
+.stats-page .bar-list { gap: 10px; }
+.stats-page .bar-row { display: grid; grid-template-columns: minmax(124px, max-content) minmax(0, 1fr) max-content; align-items: center; gap: 12px; }
+.stats-page .bar-label { font-weight: 600; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.stats-page a.bar-label:hover { color: var(--accent); text-decoration: none; }
+.stats-page .bar-track { display: flex; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); overflow: hidden; gap: 2px; }
+.stats-page .bar-fill { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.stats-page .bar-fill.bad { background: var(--danger); }
+.stats-page .bar-value { font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-faint); text-align: right; white-space: nowrap; }
+.stats-page .field-hint { margin: 14px 0 0; font-size: 0.8rem; color: var(--text-faint); }
+.stats-page > h2 { font-size: 1.3rem; letter-spacing: -0.02em; }
+
+@media (max-width: 640px) {
+  .stats-page .bar-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .stats-page .bar-track { grid-column: 1 / -1; grid-row: 2; }
+}

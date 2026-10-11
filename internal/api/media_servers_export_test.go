@@ -8,3 +8,6 @@ func (s *Server) TestFlushMediaServerRefresh() { s.mediaRefresher.Flush() }
 // TestSetPlexTVURL points Sign in with Plex at a fake plex.tv, for
 // media_servers_signin_test.go (package api_test).
 func (s *Server) TestSetPlexTVURL(u string) { s.signIns().plexTVURL = u }
+
+// TestSetPlexDiscoverURL points watchlist calls at a fake.
+func (s *Server) TestSetPlexDiscoverURL(u string) { s.signIns().plexDiscoverURL = u }

@@ -4,6 +4,7 @@ import { api, type MusicDiscoverArtist, type MusicDiscoverItem, type MusicList, 
 import { comingLabel } from '../discoverSources'
 import { useGridColumns } from '../useGridColumns'
 import { useHideOwned } from '../useHideOwned'
+import { useNearViewport } from '../useNearViewport'
 import { scrollToTop } from '../scrollTop'
 import type { AddMusicTarget } from './AddMusicDialog'
 import Cover from './Cover'
@@ -11,21 +12,22 @@ import Dropdown from './Dropdown'
 import Icon from './Icon'
 import PosterCard from './PosterCard'
 import type { ItemState } from './state'
+import { plural, t } from '../i18n'
 
 export type MusicListId = MusicList | 'artists'
 
 export const MUSIC_RANGES: { value: MusicRange; label: string }[] = [
-  { value: 'week', label: 'This week' },
-  { value: 'month', label: 'This month' },
-  { value: 'year', label: 'This year' },
-  { value: 'all_time', label: 'All time' },
+  { value: 'week', label: t('This week') },
+  { value: 'month', label: t('This month') },
+  { value: 'year', label: t('This year') },
+  { value: 'all_time', label: t('All time') },
 ]
 
 const TYPES: { value: MusicType; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'album', label: 'Albums' },
-  { value: 'ep', label: 'EPs' },
-  { value: 'single', label: 'Singles' },
+  { value: 'all', label: t('All') },
+  { value: 'album', label: t('Albums') },
+  { value: 'ep', label: t('EPs') },
+  { value: 'single', label: t('Singles') },
 ]
 
 // The genres offered in the genre picker of Discover. A pick also finds the
@@ -33,28 +35,29 @@ const TYPES: { value: MusicType; label: string }[] = [
 export const MUSIC_GENRES = ['Alternative', 'Ambient', 'Blues', 'Classical', 'Country', 'Dance', 'Electronic', 'Folk', 'Funk', 'Hip hop', 'Indie', 'Jazz', 'Latin', 'Metal', 'Pop', 'Punk', 'R&B', 'Reggae', 'Rock', 'Soul']
 
 export const MUSIC_TYPE_OPTIONS: { value: MusicType; label: string }[] = [
-  { value: 'all', label: 'All types' },
-  { value: 'album', label: 'Albums' },
-  { value: 'ep', label: 'EPs' },
-  { value: 'single', label: 'Singles' },
+  { value: 'all', label: t('All types') },
+  { value: 'album', label: t('Albums') },
+  { value: 'ep', label: t('EPs') },
+  { value: 'single', label: t('Singles') },
 ]
 
-const TYPE_WORD: Record<string, string> = { album: 'Album', ep: 'EP', single: 'Single' }
+const TYPE_WORD: Record<string, string> = { album: t('Album'), ep: t('EP'), single: t('Single') }
 
-const RANGE_TITLE: Record<MusicRange, string> = { week: 'this week', month: 'this month', year: 'this year', all_time: 'of all time' }
+const POPULAR_TITLE: Record<MusicRange, string> = { week: t('Popular this week'), month: t('Popular this month'), year: t('Popular this year'), all_time: t('Popular of all time') }
+const ARTISTS_TITLE: Record<MusicRange, string> = { week: t('Popular artists this week'), month: t('Popular artists this month'), year: t('Popular artists this year'), all_time: t('Popular artists of all time') }
 
 export function musicListTitle(list: MusicListId, range: MusicRange = 'week'): string {
-  if (list === 'new') return 'New releases'
-  if (list === 'upcoming') return 'Coming soon'
-  return `${list === 'artists' ? 'Popular artists' : 'Popular'} ${RANGE_TITLE[range]}`
+  if (list === 'new') return t('New releases')
+  if (list === 'upcoming') return t('Coming soon')
+  return list === 'artists' ? ARTISTS_TITLE[range] : POPULAR_TITLE[range]
 }
 
 // The rails on Discover keep their names short and fixed; the browse page
 // adds the time range.
-const RAIL_TITLE: Record<MusicListId, string> = { popular: 'Popular this week', new: 'New releases', upcoming: 'Coming soon', artists: 'Popular artists' }
-const RAIL_HINT: Record<MusicListId, string | undefined> = { popular: undefined, new: 'just out', upcoming: 'add them now and they download when released', artists: 'what people are listening to' }
+const RAIL_TITLE: Record<MusicListId, string> = { popular: t('Popular this week'), new: t('New releases'), upcoming: t('Coming soon'), artists: t('Popular artists') }
+const RAIL_HINT: Record<MusicListId, string | undefined> = { popular: undefined, new: t('just out'), upcoming: t('add them now and they download when released'), artists: t('what people are listening to') }
 
-const IN_LIBRARY: ItemState = { key: 'downloaded', label: 'In your library', icon: 'check', hint: 'Already in your library.' }
+const IN_LIBRARY: ItemState = { key: 'downloaded', label: t('In your library'), icon: 'check', hint: t('Already in your library.') }
 
 // ---- Filters --------------------------------------------------------------
 
@@ -62,7 +65,7 @@ const IN_LIBRARY: ItemState = { key: 'downloaded', label: 'In your library', ico
 export function MusicFilters({ type, onType, genre, onGenre, genres }: { type: MusicType; onType: (t: MusicType) => void; genre: string; onGenre: (g: string) => void; genres: string[] }) {
   return (
     <>
-      <div className="seg" role="group" aria-label="Kind of release">
+      <div className="seg" role="group" aria-label={t('Kind of release')}>
         {TYPES.map((t) => (
           <button key={t.value} className={type === t.value ? 'active' : ''} onClick={() => onType(t.value)}>
             {t.label}
@@ -70,7 +73,7 @@ export function MusicFilters({ type, onType, genre, onGenre, genres }: { type: M
         ))}
       </div>
       {genres.length > 0 && (
-        <Dropdown label="Genre" value={genre} onChange={onGenre} options={[{ value: '', label: 'All genres' }, ...genres.map((g) => ({ value: g, label: g }))]} />
+        <Dropdown label={t('Genre')} value={genre} onChange={onGenre} options={[{ value: '', label: t('All genres') }, ...genres.map((g) => ({ value: g, label: g }))]} />
       )}
     </>
   )
@@ -100,7 +103,7 @@ export function AlbumCards({ items, onAdd }: { items: MusicDiscoverItem[]; onAdd
   return (
     <>
       {items.map((m) => {
-        const path = m.inLibrary ? ownedPath(m) : undefined
+        const path = m.inLibrary ? ownedPath(m) : `/music/release/${m.mbid}`
         const coming = comingLabel(m.releaseDate)
         const year = m.releaseDate ? m.releaseDate.slice(0, 4) : ''
         return (
@@ -129,18 +132,18 @@ export function AlbumCards({ items, onAdd }: { items: MusicDiscoverItem[]; onAdd
             state={m.inLibrary ? IN_LIBRARY : undefined}
             footer={
               <div className="pcard-footer music-foot">
-                <span className="badge" title="Kind of release">
-                  {TYPE_WORD[m.type] ?? 'Release'}
+                <span className="badge" title={t('Kind of release')}>
+                  {TYPE_WORD[m.type] ?? t('Release')}
                 </span>
                 {m.inLibrary ? (
                   path && (
                     <button className="btn-sm btn-with-icon" onClick={() => navigate(path)}>
-                      <Icon name="open" size={15} /> Open
+                      <Icon name="open" size={15} /> {t('Open')}
                     </button>
                   )
                 ) : (
                   <button className="primary btn-sm btn-with-icon" onClick={() => onAdd({ kind: 'album', item: m })}>
-                    <Icon name="plus" size={15} /> {coming ? 'Add early' : 'Add'}
+                    <Icon name="plus" size={15} /> {coming ? t('Add early') : t('Add')}
                   </button>
                 )}
               </div>
@@ -165,23 +168,23 @@ export function ArtistCards({ items, onAdd }: { items: MusicDiscoverArtist[]; on
             </div>
             <div className="artist-text">
               <strong title={a.name}>{a.name}</strong>
-              {a.listenCount > 0 && <small>{a.listenCount.toLocaleString()} listens</small>}
+              {a.listenCount > 0 && <small>{plural(a.listenCount, '{n} listen', '{n} listens')}</small>}
             </div>
             <div className="artist-action">
               {a.inLibrary ? (
                 <>
                   <span className="state-tag st-downloaded">
-                    <Icon name="check" size={12} /> In your library
+                    <Icon name="check" size={12} /> {t('In your library')}
                   </span>
                   {path && (
                     <button className="btn-sm btn-with-icon" onClick={() => navigate(path)}>
-                      <Icon name="open" size={15} /> Open
+                      <Icon name="open" size={15} /> {t('Open')}
                     </button>
                   )}
                 </>
               ) : (
                 <button className="primary btn-sm btn-with-icon" onClick={() => onAdd({ kind: 'artist', mbid: a.mbid, name: a.name })}>
-                  <Icon name="plus" size={15} /> Add
+                  <Icon name="plus" size={15} /> {t('Add')}
                 </button>
               )}
             </div>
@@ -202,7 +205,7 @@ interface Fetched<T> {
 
 // Loads pages of one list until `want` items are in hand. Starts over when
 // `dep` changes (a filter was picked).
-function useFilled<T>(fetchPage: (page: number) => Promise<Fetched<T>>, keyOf: (t: T) => string, dep: string, want: number, keep?: (t: T) => boolean) {
+function useFilled<T>(fetchPage: (page: number) => Promise<Fetched<T>>, keyOf: (t: T) => string, dep: string, want: number, keep?: (t: T) => boolean, enabled = true) {
   const [state, setState] = useState<{ key: string; items: T[]; page: number; totalPages?: number; note: string; error: string; done: boolean }>({ key: dep, items: [], page: 0, note: '', error: '', done: false })
   const busy = useRef(false)
   const gen = useRef(0)
@@ -215,7 +218,7 @@ function useFilled<T>(fetchPage: (page: number) => Promise<Fetched<T>>, keyOf: (
 
   useEffect(() => {
     const kept = keep ? state.items.filter(keep).length : state.items.length
-    if (state.key !== dep || busy.current || state.done || state.error || kept >= want) return
+    if (!enabled || state.key !== dep || busy.current || state.done || state.error || kept >= want) return
     busy.current = true
     const mine = gen.current
     fetchPage(state.page + 1)
@@ -236,7 +239,7 @@ function useFilled<T>(fetchPage: (page: number) => Promise<Fetched<T>>, keyOf: (
         if (mine === gen.current) busy.current = false
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, want, dep, !!keep])
+  }, [state, want, dep, !!keep, enabled])
 
   return { ...state, loading: state.page === 0 && !state.done }
 }
@@ -248,7 +251,7 @@ function Shell({ id, title, hint, browse, note, children, foot }: { id: string; 
         <h2>{title}</h2>
         {hint && <span>{hint}</span>}
         <Link to={`/discover/music?${browse}`} className="rail-more">
-          Browse all <Icon name="chevron-right" size={15} />
+          {t('Browse all')} <Icon name="chevron-right" size={15} />
         </Link>
       </div>
       {note && <p className="music-note">{note}</p>}
@@ -275,6 +278,9 @@ interface RailProps {
 function AlbumRail({ list, type, genre, onAdd, onGenres, rows = 2 }: RailProps & { list: MusicList }) {
   const grid = useRef<HTMLDivElement>(null)
   const cols = useGridColumns(grid)
+  // MusicBrainz is asked politely: the lists start by themselves, spread over a few seconds.
+  const [warm] = useState(() => 1200 + Math.random() * 5000)
+  const near = useNearViewport(grid, 1600, warm)
   const [extra, setExtra] = useState(0)
   const want = cols * (rows + extra)
   const range: MusicRange = 'week'
@@ -286,6 +292,7 @@ function AlbumRail({ list, type, genre, onAdd, onGenres, rows = 2 }: RailProps &
     dep,
     want,
     hideOwned ? (m) => !m.inLibrary : undefined,
+    near,
   )
   useEffect(() => {
     if (onGenres && r.items.length > 0) onGenres(r.items.flatMap((i) => i.genres ?? []))
@@ -314,7 +321,7 @@ function AlbumRail({ list, type, genre, onAdd, onGenres, rows = 2 }: RailProps &
 function MoreButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
   return (
     <button className="btn-sm btn-with-icon" onClick={onClick} disabled={busy}>
-      <Icon name="plus" size={15} /> Load more
+      <Icon name="plus" size={15} /> {t('Load more')}
     </button>
   )
 }
@@ -322,6 +329,9 @@ function MoreButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
 function ArtistRail({ onAdd, rows = 3 }: Pick<RailProps, 'onAdd' | 'rows'>) {
   const grid = useRef<HTMLDivElement>(null)
   const cols = useGridColumns(grid, 3)
+  // MusicBrainz is asked politely: the lists start by themselves, spread over a few seconds.
+  const [warm] = useState(() => 1200 + Math.random() * 5000)
+  const near = useNearViewport(grid, 1600, warm)
   const [extra, setExtra] = useState(0)
   const want = cols * (rows + extra)
   const range: MusicRange = 'week'
@@ -332,6 +342,7 @@ function ArtistRail({ onAdd, rows = 3 }: Pick<RailProps, 'onAdd' | 'rows'>) {
     'artists',
     want,
     hideOwned ? (a) => !a.inLibrary : undefined,
+    near,
   )
   const items = hideOwned ? r.items.filter((a) => !a.inLibrary) : r.items
   const shown = wholeRows(items, want, cols)
@@ -372,14 +383,16 @@ export interface MusicBrowseFilters {
   sort: string
 }
 
-const WORD_FOR_TYPE: Record<MusicType, string> = { all: 'music', album: 'albums', ep: 'EPs', single: 'singles' }
-
 // "Rock albums from 1990 to 1999", named like the movie and show lists.
 export function musicBrowseTitle(f: MusicBrowseFilters): string {
-  const years = f.yearFrom && f.yearTo ? ` from ${f.yearFrom} to ${f.yearTo}` : f.yearFrom ? ` from ${f.yearFrom}` : f.yearTo ? ` up to ${f.yearTo}` : ''
-  const what = WORD_FOR_TYPE[f.type]
-  const named = f.genre ? `${f.genre} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)
-  return named + years
+  const genre = f.genre
+  const named = genre
+    ? { all: t('{genre} music', { genre }), album: t('{genre} albums', { genre }), ep: t('{genre} EPs', { genre }), single: t('{genre} singles', { genre }) }[f.type]
+    : { all: t('Music'), album: t('Albums'), ep: t('EPs'), single: t('Singles') }[f.type]
+  if (f.yearFrom && f.yearTo) return t('{what} from {from} to {to}', { what: named, from: f.yearFrom, to: f.yearTo })
+  if (f.yearFrom) return t('{what} from {from}', { what: named, from: f.yearFrom })
+  if (f.yearTo) return t('{what} up to {to}', { what: named, to: f.yearTo })
+  return named
 }
 
 function Pager({ page, pages, more, onGo }: { page: number; pages?: number; more: boolean; onGo: (n: number) => void }) {
@@ -390,9 +403,9 @@ function Pager({ page, pages, more, onGo }: { page: number; pages?: number; more
   for (let n = from; n <= to; n++) numbers.push(n)
   if (more && to < (pages ?? Infinity)) numbers.push('…')
   return (
-    <nav className="pager" aria-label="Pages">
+    <nav className="pager" aria-label={t('Pages')}>
       <button className="btn-sm btn-with-icon" onClick={() => onGo(page - 1)} disabled={page <= 1}>
-        <Icon name="chevron-left" size={15} /> Previous
+        <Icon name="chevron-left" size={15} /> {t('Previous')}
       </button>
       <div className="pager-numbers">
         {numbers.map((n, i) =>
@@ -408,7 +421,7 @@ function Pager({ page, pages, more, onGo }: { page: number; pages?: number; more
         )}
       </div>
       <button className="btn-sm btn-with-icon" onClick={() => onGo(page + 1)} disabled={!more}>
-        Next <Icon name="chevron-right" size={15} />
+        {t('Next')} <Icon name="chevron-right" size={15} />
       </button>
     </nav>
   )
@@ -425,6 +438,7 @@ export function MusicBrowseGrid({ filters, onAdd, onClear, rows = 3 }: { filters
   const [page, setPage] = useState(1)
   const [data, setData] = useState<{ items: MusicDiscoverItem[]; totalPages: number; note: string } | null>(null)
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0) // raised by Try again
   const key = `${filters.type}|${filters.genre}|${filters.yearFrom}|${filters.yearTo}|${filters.sort}|${size}`
 
   useEffect(() => {
@@ -453,7 +467,7 @@ export function MusicBrowseGrid({ filters, onAdd, onClear, rows = 3 }: { filters
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, page])
+  }, [key, page, attempt])
 
   const items = data ? (hideOwned ? data.items.filter((m) => !m.inLibrary) : data.items) : []
   const empty = data !== null && data.items.length === 0 && page === 1
@@ -466,17 +480,24 @@ export function MusicBrowseGrid({ filters, onAdd, onClear, rows = 3 }: { filters
     <section className="discover-rail paged-grid music-rail">
       <div className="rail-head">
         <h2>{musicBrowseTitle(filters)}</h2>
-        {page > 1 && <span className="page-at">Page {page}</span>}
+        {page > 1 && <span className="page-at">{t('Page {page}', { page })}</span>}
       </div>
-      {error && <p className="error-text">{error}</p>}
+      {error && (
+        <p className="error-text">
+          {error}{' '}
+          <button className="btn-sm" onClick={() => setAttempt((n) => n + 1)}>
+            {t('Try again')}
+          </button>
+        </p>
+      )}
       {data?.note && <p className="music-note">{data.note}</p>}
       {empty && !data?.note ? (
         <div className="empty-state">
           <Icon name="compass" size={36} />
-          <p>Nothing matches these filters.</p>
+          <p>{t('Nothing matches these filters.')}</p>
           {onClear && (
             <button className="btn-with-icon" onClick={onClear}>
-              Clear filters
+              {t('Clear filters')}
             </button>
           )}
         </div>

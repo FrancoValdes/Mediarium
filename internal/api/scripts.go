@@ -23,7 +23,7 @@ import (
 	"github.com/rdborg/mediarium/internal/settings"
 )
 
-// A script to run after each import (Settings > System > Scripts). Off until
+// A script to run after each import (Settings > System > Server and updates). Off until
 // an administrator picks one. Only files placed in the scripts folder inside
 // the config folder (/config/scripts) can be picked, and only from a
 // signed-in browser session, not with an API key: whoever can choose what

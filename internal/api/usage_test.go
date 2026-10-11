@@ -96,7 +96,7 @@ func TestUsageEndpointAndTraktLimitWarning(t *testing.T) {
 	if warn == nil || warn["level"] != "warn" || warn["title"] != "The shared Trakt key is at its limit" {
 		t.Fatalf("expected the trakt-limit warning, got %+v", healthItemIDs(t, env))
 	}
-	if a := warn["action"].(map[string]any); a["label"] != "Use my own key" || a["path"] != "/settings/metadata" {
+	if a := warn["action"].(map[string]any); a["label"] != "Use my own key" || a["path"] != "/settings/lists" {
 		t.Fatalf("action = %+v", a)
 	}
 	if !strings.Contains(warn["impact"].(string), "free personal Trakt key") {

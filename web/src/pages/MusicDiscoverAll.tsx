@@ -6,6 +6,7 @@ import Dropdown from '../components/Dropdown'
 import Icon from '../components/Icon'
 import { AlbumCards, ArtistCards, MUSIC_RANGES, MusicFilters, musicListTitle, useKnownGenres, type MusicListId } from '../components/MusicRails'
 import { scrollToTop } from '../scrollTop'
+import { t } from '../i18n'
 
 const LISTS: MusicListId[] = ['popular', 'new', 'upcoming', 'artists']
 const RANGES: MusicRange[] = ['week', 'month', 'year', 'all_time']
@@ -24,7 +25,15 @@ export default function MusicDiscoverAll() {
   const artists = list === 'artists'
   const ranged = list === 'popular' || artists
 
-  const [page, setPage] = useState(1)
+  // The page is in the address too, so Back from an album returns to the same page.
+  const page = Math.max(1, Number(params.get('page')) || 1)
+  const setPage = (n: number | ((p: number) => number)) => {
+    const next = typeof n === 'function' ? n(page) : n
+    const q = new URLSearchParams(params)
+    if (next > 1) q.set('page', String(next))
+    else q.delete('page')
+    setParams(q, { replace: true })
+  }
   const [albums, setAlbums] = useState<MusicDiscoverItem[]>([])
   const [people, setPeople] = useState<MusicDiscoverArtist[]>([])
   const [totalPages, setTotalPages] = useState<number | undefined>()
@@ -45,7 +54,7 @@ export default function MusicDiscoverAll() {
       if (v && !(k === 'type' && v === 'all')) q.set(k, v)
       else q.delete(k)
     }
-    setPage(1)
+    q.delete('page')
     setParams(q, { replace: true })
   }
 
@@ -118,11 +127,11 @@ export default function MusicDiscoverAll() {
     <div>
       <div className="toolbar filter-bar">
         <Link to="/discover?kind=music" className="btn btn-with-icon">
-          <Icon name="chevron-left" size={16} /> Discover
+          <Icon name="chevron-left" size={16} /> {t('Discover')}
         </Link>
         <h2 style={{ margin: 0 }}>{musicListTitle(list, range)}</h2>
         <span className="spacer" />
-        {ranged && <Dropdown label="Time" value={range} onChange={(v) => change({ range: v })} options={MUSIC_RANGES.map((r) => ({ value: r.value, label: r.label }))} />}
+        {ranged && <Dropdown label={t('Time')} value={range} onChange={(v) => change({ range: v })} options={MUSIC_RANGES.map((r) => ({ value: r.value, label: r.label }))} />}
         {!artists && <MusicFilters type={type} onType={(t) => change({ type: t })} genre={genre} onGenre={(g) => change({ genre: g })} genres={genres} />}
       </div>
 
@@ -132,7 +141,7 @@ export default function MusicDiscoverAll() {
         {empty && !error && !note && (
           <div className="empty-state">
             <Icon name="compass" size={36} />
-            <p>{page > 1 ? "That's the end of the list." : 'Nothing matches these filters.'}</p>
+            <p>{page > 1 ? t("That's the end of the list.") : t('Nothing matches these filters.')}</p>
           </div>
         )}
         {artists ? (
@@ -145,9 +154,9 @@ export default function MusicDiscoverAll() {
           </div>
         )}
 
-        <nav className="pager" aria-label="Pages">
+        <nav className="pager" aria-label={t('Pages')}>
           <button className="btn-sm btn-with-icon" onClick={() => goTo(page - 1)} disabled={page <= 1}>
-            <Icon name="chevron-left" size={15} /> Previous
+            <Icon name="chevron-left" size={15} /> {t('Previous')}
           </button>
           <div className="pager-numbers">
             {numbers.map((n, i) =>
@@ -163,7 +172,7 @@ export default function MusicDiscoverAll() {
             )}
           </div>
           <button className="btn-sm btn-with-icon" onClick={() => goTo(page + 1)} disabled={!hasMore}>
-            Next <Icon name="chevron-right" size={15} />
+            {t('Next')} <Icon name="chevron-right" size={15} />
           </button>
         </nav>
       </section>

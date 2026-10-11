@@ -1,7 +1,7 @@
 name: mediarium
 services:
   mediarium:
-    image: ghcr.io/rdborg/mediarium:2.1.0
+    image: ghcr.io/rdborg/mediarium:3.0.0
     container_name: mediarium
     restart: unless-stopped
     ports:
@@ -25,7 +25,9 @@ services:
       MOVIES_DIR: /data/Movies
       TV_DIR: /data/TV Shows
       # Optional folders: MUSIC_DIR, EBOOKS_DIR and AUDIOBOOKS_DIR (for example /data/Music).
-      # Music works today; ebooks and audiobooks are on the way. See docs/INSTALL.md.
+      # Leave them out if you do not use music, ebooks or audiobooks. See docs/INSTALL.md.
+      # Optional: the permissions new files get, for example 022 or 002. Empty keeps the default.
+      UMASK: ""
     volumes:
       - type: bind
         source: /DATA/AppData/$AppID/config
@@ -53,6 +55,9 @@ services:
         - container: TV_DIR
           description:
             en_US: TV library, inside /data
+        - container: UMASK
+          description:
+            en_US: Advanced, optional. Permissions for new files, for example 022 or 002. Leave empty to keep the default.
       ports:
         - container: "8264"
           description:
@@ -77,8 +82,8 @@ x-casaos:
   author: rdborg
   developer: Mediarium
   category: Media
-  version: "2.1.0"
-  update_at: "2026-09-29"
+  version: "3.0.0"
+  update_at: "2026-10-11"
   icon: https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Mediarium/icon.svg
   thumbnail: https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Mediarium/thumbnail.png
   screenshot_link:
@@ -88,12 +93,12 @@ x-casaos:
   title:
     en_US: Mediarium
   tagline:
-    en_US: Movies and TV, from search to library, in one app
+    en_US: Movies, TV, music and books, from search to library, in one app
   description:
     en_US: |
-      Mediarium is an all-in-one media manager for movies and TV. Discover a title and it searches your Usenet and torrent indexers, downloads the best release with its built-in downloaders, unpacks it, names it the way you chose and puts it in your library, ready for Jellyfin, Plex or Emby.
+      Mediarium is an all-in-one media manager for movies, TV, music, ebooks and audiobooks. Find a title and it searches your Usenet and torrent indexers, downloads the best release with its built-in Usenet downloader and torrent client, unpacks it, names it the way you chose and puts it in your library, ready for Plex, Jellyfin, Emby, Silo, Audiobookshelf or Kavita.
 
-      It does the jobs of Radarr, Sonarr, Prowlarr, SABnzbd, a torrent client and Bazarr in one app, with quality profiles, automatic upgrades, subtitles, notifications, family accounts and a built-in VPN for torrents.
+      It does the jobs of Radarr, Sonarr, Prowlarr, SABnzbd, a torrent client and Bazarr in one app, with a built-in list of indexer sites (no Prowlarr needed), quality profiles, automatic upgrades, subtitles, a request portal and family accounts, notifications, a built-in VPN for torrents and optional single sign-on.
 
       Mediarium does not provide or host any content. You are responsible for the indexers you add and what you download.
   tips:

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useUrlState } from '../useUrlState'
 import type { DiscoverMovie } from '../api'
-import { fetchPage, type Kind, type Source } from '../discoverSources'
+import { fetchPage, sourceToQuery, type Kind, type Source } from '../discoverSources'
 import { useGridColumns } from '../useGridColumns'
 import { useHideOwned } from '../useHideOwned'
 import type { Owned } from '../useOwned'
@@ -8,6 +9,7 @@ import type { AddTarget } from './AddDialog'
 import { DiscoverCards } from './DiscoverRail'
 import Icon from './Icon'
 import { scrollToTop } from '../scrollTop'
+import { t } from '../i18n'
 
 const PER_FETCH = 20 // TMDB returns 20 titles per page
 const MAX_ITEMS = 500 * PER_FETCH // TMDB serves at most 500 pages
@@ -37,8 +39,13 @@ export default function PagedGrid({ source, kind, owned, onAdd, rows = 3, title,
   const [total, setTotal] = useState<number | undefined>()
   // Where you are, in pages of `size` titles, so a change in the number of
   // columns (window resize, sidebar) keeps you on the same page.
-  const [current, setCurrent] = useState(1)
+  // The page lives in the address (with the list it belongs to), so Back from a title returns to the same page.
+  const [ui, patchUi] = useUrlState({ pg: '1', pgs: '' })
+  const listKey = sourceToQuery(source)
+  const current = ui.pgs === listKey ? Math.max(1, Number(ui.pg) || 1) : 1
+  const setCurrent = (n: number) => patchUi({ pg: String(n), pgs: n > 1 ? listKey : '' })
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0) // raised by Try again, to ask for the failed pages once more
   const inflight = useRef(new Set<number>())
 
   const start = (current - 1) * size
@@ -55,6 +62,7 @@ export default function PagedGrid({ source, kind, owned, onAdd, rows = 3, title,
     missing.forEach((p) => inflight.current.add(p))
     Promise.all(missing.map((p) => fetchPage(source, p).then((r) => [p, r] as const)))
       .then((res) => {
+        setError('')
         setFetched((m) => {
           const next = new Map(m)
           for (const [p, r] of res) next.set(p, r.results)
@@ -67,7 +75,7 @@ export default function PagedGrid({ source, kind, owned, onAdd, rows = 3, title,
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => missing.forEach((p) => inflight.current.delete(p)))
-  }, [needed, fetched, source])
+  }, [needed, fetched, source, attempt])
 
   // What is on screen, without repeats (TMDB lists shift a little between pages).
   const { items, waiting } = useMemo(() => {
@@ -116,10 +124,10 @@ export default function PagedGrid({ source, kind, owned, onAdd, rows = 3, title,
         )}
         <div className="empty-state">
           <Icon name="compass" size={36} />
-          <p>Nothing matches these filters.</p>
+          <p>{t('Nothing matches these filters.')}</p>
           {onClear && (
             <button className="btn-with-icon" onClick={onClear}>
-              Clear filters
+              {t('Clear filters')}
             </button>
           )}
         </div>
@@ -133,20 +141,33 @@ export default function PagedGrid({ source, kind, owned, onAdd, rows = 3, title,
         <div className="rail-head">
           <h2>{title}</h2>
           {hint && <span>{hint}</span>}
-          {current > 1 && <span className="page-at">Page {current}</span>}
+          {current > 1 && <span className="page-at">{t('Page {page}', { page: current })}</span>}
         </div>
       )}
-      {error && <p className="error-text">{error}</p>}
+      {error && (
+        <p className="error-text">
+          {error}{' '}
+          <button
+            className="btn-sm"
+            onClick={() => {
+              setError('')
+              setAttempt((n) => n + 1)
+            }}
+          >
+            {t('Try again')}
+          </button>
+        </p>
+      )}
       <div className="poster-grid" ref={grid}>
         <DiscoverCards items={hideOwned ? items.filter((m) => !(kind === 'movie' ? owned.movies : owned.shows).has(m.tmdbId)) : items} kind={kind} owned={owned} onAdd={onAdd} />
-        {Array.from({ length: waiting }, (_, i) => (
+        {!error && Array.from({ length: waiting }, (_, i) => (
           <div key={`s${i}`} className="skeleton" style={{ aspectRatio: '2 / 3.5' }} />
         ))}
       </div>
 
-      <nav className="pager" aria-label="Pages">
+      <nav className="pager" aria-label={t('Pages')}>
         <button className="btn-sm btn-with-icon" onClick={() => goTo(current - 1)} disabled={current <= 1}>
-          <Icon name="chevron-left" size={15} /> Previous
+          <Icon name="chevron-left" size={15} /> {t('Previous')}
         </button>
         <div className="pager-numbers">
           {numbers.map((n, i) =>
@@ -162,7 +183,7 @@ export default function PagedGrid({ source, kind, owned, onAdd, rows = 3, title,
           )}
         </div>
         <button className="btn-sm btn-with-icon" onClick={() => goTo(current + 1)} disabled={!hasMore}>
-          Next <Icon name="chevron-right" size={15} />
+          {t('Next')} <Icon name="chevron-right" size={15} />
         </button>
       </nav>
     </section>

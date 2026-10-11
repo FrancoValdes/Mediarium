@@ -25,6 +25,7 @@ func newTVTMDBServer(t *testing.T, extraEpisode *atomic.Bool) *httptest.Server {
 		json.NewEncoder(w).Encode(map[string]any{
 			"id": 1399, "name": "Fixture Show", "first_air_date": "2011-04-17", "poster_path": "/p.jpg", "overview": "A show.",
 			"seasons": []map[string]any{{"season_number": 0}, {"season_number": 1}, {"season_number": 2}},
+			"status":  "Ended",
 		})
 	})
 	mux.HandleFunc("/tv/1399/season/1", func(w http.ResponseWriter, r *http.Request) {

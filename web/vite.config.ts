@@ -4,6 +4,10 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Relative addresses in the built files, so the same build works at the root
+  // and under any URL_BASE prefix. The server rewrites the few files that need
+  // an absolute address (internal/api/static_prefix.go).
+  base: './',
   build: {
     outDir: 'dist',
   },

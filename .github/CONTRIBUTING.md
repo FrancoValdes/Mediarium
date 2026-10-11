@@ -6,7 +6,7 @@ Mediarium is licensed under AGPL-3.0. By submitting a change you agree that it i
 
 ## Ways to help without writing code
 
-- **Report a bug** with the [bug report form](https://github.com/rdborg/Mediarium/issues/new/choose). Your version (Settings > System > About and credits), how you installed it and the **Copy for support** text (Settings > System > Server and backup > Help and support) make it much quicker to fix.
+- **Report a bug** with the [bug report form](https://github.com/rdborg/Mediarium/issues/new/choose). Your version (Settings > System > About and credits), how you installed it and the **Copy for support** text (Settings > System > Server and updates > Help and support) make it much quicker to fix.
 - **Test on your hardware.** The install guides for Synology, Unraid and QNAP need people with real devices. If a step or a menu name is different on yours, tell us.
 - **Try a "coming soon" platform** from [PLATFORMS.md](../docs/PLATFORMS.md) and report what happens.
 - **Improve the docs.** Plain, friendly wording for people who are not developers is the goal.
@@ -45,6 +45,8 @@ docker compose up -d --build     # .env points at docker/docker-compose.dev.yml
 gofmt -l .            # should print nothing
 go vet ./...
 go test ./...
+go test -race ./...    # slower; also run by CI, catches goroutines sharing data
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 -checks "SA*,-SA1019" ./...   # bug patterns, also run by CI
 cd web && npm run lint && npm test && npm run build
 ```
 

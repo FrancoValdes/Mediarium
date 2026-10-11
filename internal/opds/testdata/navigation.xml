@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/" xmlns:opds="http://opds-spec.org/2010/catalog" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <id>urn:mediarium:opds:root</id>
+  <title>Mediarium books</title>
+  <updated>2026-10-09T12:30:00Z</updated>
+  <author>
+    <name>Mediarium</name>
+  </author>
+  <link rel="self" href="/opds/" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  <link rel="start" href="/opds/" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  <link rel="search" href="/opds/opensearch.xml" type="application/opensearchdescription+xml" title="Search"/>
+  <link rel="search" href="/opds/search?q={searchTerms}" type="application/atom+xml;profile=opds-catalog;kind=acquisition" title="Search"/>
+  <entry>
+    <title>Recently added</title>
+    <id>urn:mediarium:opds:new</id>
+    <updated>2026-10-09T12:30:00Z</updated>
+    <content type="text">The newest books in the library.</content>
+    <link rel="http://opds-spec.org/sort/new" href="/opds/new" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  </entry>
+  <entry>
+    <title>Authors &amp; friends</title>
+    <id>urn:mediarium:opds:authors</id>
+    <updated>2026-10-09T12:30:00Z</updated>
+    <content type="text">Books by author.</content>
+    <link rel="subsection" href="/opds/authors" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  </entry>
+</feed>

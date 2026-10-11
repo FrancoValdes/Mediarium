@@ -78,6 +78,10 @@ func RemoveFolder(root, folder string) (int64, error) {
 // "pt-BR.sdh.ass").
 var sidecarRest = regexp.MustCompile(`(?i)^(?:(?:[a-z]{2,3}(?:-[a-z]{2,4})?|forced|sdh|default|cc|hi|full|foreign)\.){0,3}(?:srt|ass|ssa|sub|idx|vtt|sup|smi|nfo|jpg|jpeg|png|tbn|txt|xml)$`)
 
+// artworkSuffix matches the rest of the artwork files Kodi, Jellyfin and Emby
+// name after a video ("Film (2020)-poster.jpg", "-fanart.jpg", "-clearlogo.png").
+var artworkSuffix = regexp.MustCompile(`(?i)^-(?:poster|fanart|clearlogo|logo|thumb|landscape|banner|backdrop|folder|cover)\.(?:jpg|jpeg|png|webp|tbn)$`)
+
 // RemoveFileWithSidecars deletes a title's video file and the files beside
 // it that belong with it (the same name with a subtitle, .nfo or artwork
 // extension), then folders left empty up to (not including) root. It
@@ -141,7 +145,8 @@ func fileAndSidecars(abs string) ([]string, error) {
 	var out []string
 	for _, e := range entries {
 		n := e.Name()
-		ours := n == name || (strings.HasPrefix(n, stem+".") && sidecarRest.MatchString(n[len(stem)+1:]))
+		ours := n == name || (strings.HasPrefix(n, stem+".") && sidecarRest.MatchString(n[len(stem)+1:])) ||
+			(strings.HasPrefix(n, stem+"-") && artworkSuffix.MatchString(n[len(stem):]))
 		if ours && !e.IsDir() {
 			out = append(out, filepath.Join(dir, n))
 		}

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
-import Icon from './Icon'
+import Icon, { type IconName } from './Icon'
 
 export interface DropdownOption {
   value: string
@@ -13,13 +13,14 @@ interface Props {
   label: string // accessible name
   disabled?: boolean
   title?: string
+  icon?: IconName // a leading symbol that says what the choice is about
 }
 
 // A select in the app's own style whose list always opens below the field
 // (native menus open on top of it on macOS and look different everywhere).
 // Keyboard: arrows move, Enter or Space picks, Escape closes, typing a letter
 // jumps to the next option starting with it.
-export default function Dropdown({ value, options, onChange, label, disabled, title }: Props) {
+export default function Dropdown({ value, options, onChange, label, disabled, title, icon }: Props) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const root = useRef<HTMLDivElement>(null)
@@ -78,7 +79,7 @@ export default function Dropdown({ value, options, onChange, label, disabled, ti
   }
 
   return (
-    <div className={`dropdown${open ? ' open' : ''}`} ref={root}>
+    <div className={`dropdown${open ? ' open' : ''}${icon ? ' has-icon' : ''}`} ref={root}>
       <button
         type="button"
         className="dropdown-btn"
@@ -91,8 +92,9 @@ export default function Dropdown({ value, options, onChange, label, disabled, ti
         aria-expanded={open}
         aria-controls={id}
       >
+        {icon && <Icon name={icon} size={15} className="dd-lead" />}
         <span>{current?.label}</span>
-        <Icon name="chevron-down" size={15} />
+        <Icon name="chevron-down" size={15} className="dd-chev" />
       </button>
       {open && (
         <ul className="dropdown-list" role="listbox" id={id} ref={list} aria-label={label}>

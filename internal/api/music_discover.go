@@ -173,21 +173,34 @@ func (s *Server) handleMusicDiscover(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	lb := s.discoverClient()
 
+	// With a genre picked the listening statistics get a shorter time, and when they are slow, fail, or know no
+	// genres for the list, the music database's own genre tags answer instead.
+	listCtx := ctx
+	if genre != "" {
+		var stop context.CancelFunc
+		listCtx, stop = context.WithTimeout(ctx, discoverGenreWait)
+		defer stop()
+	}
 	var cands []discoverCandidate
 	switch list {
 	case discoverListPopular:
-		cands, err = discoverPopular(ctx, lb, rng)
+		cands, err = discoverPopular(listCtx, lb, rng)
 	default:
-		cands, err = discoverFresh(ctx, lb, list == discoverListUpcoming, time.Now().UTC())
+		cands, err = discoverFresh(listCtx, lb, list == discoverListUpcoming, time.Now().UTC())
 	}
 	out := musicDiscoverPayload{Page: page, TotalPages: 1, Items: []musicDiscoverItem{}}
-	if err != nil {
+	listFailed := false
+	if err != nil && genre == "" {
 		slog.Warn("music: discover list unavailable", "list", list, "err", err)
 		out.Note = discoverUnavailable
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	if len(cands) == 0 {
+	if err != nil {
+		slog.Warn("music: discover list slow or unavailable, using genre tags instead", "list", list, "genre", genre, "err", err)
+		cands, listFailed = nil, true
+	}
+	if len(cands) == 0 && genre == "" {
 		out.Note = discoverUnavailable
 		writeJSON(w, http.StatusOK, out)
 		return
@@ -198,8 +211,21 @@ func (s *Server) handleMusicDiscover(w http.ResponseWriter, r *http.Request) {
 	}
 	// Genres come with the source's tags. A list without any tag cannot be
 	// filtered by genre, so the filter is left out rather than emptying it.
+	filtered := listFailed
 	if genre != "" && anyGenres(cands) {
 		cands = filterCandidates(cands, func(c discoverCandidate) bool { return hasGenre(c.genres, genre) })
+		filtered = true
+	} else if genre != "" && list == discoverListPopular && !listFailed {
+		// A popular list that came back without a single genre (the details lookup failed) can't be filtered.
+		cands, filtered = nil, true
+	}
+	if filtered && len(cands) == 0 {
+		cands = append(cands, s.genreCandidates(ctx, genre, typ, cands)...)
+		if len(cands) == 0 {
+			out.Note = discoverUnavailable
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
 	}
 
 	if yearFrom > 0 || yearTo > 0 {
@@ -227,6 +253,56 @@ func (s *Server) handleMusicDiscover(w http.ResponseWriter, r *http.Request) {
 	out.Items = items
 	writeJSON(w, http.StatusOK, out)
 }
+
+// discoverGenreWait is how long the listening statistics get when a genre is picked, before the music database's own
+// genre tags are used instead.
+const discoverGenreWait = 18 * time.Second
+
+// genreCandidates is releases carrying a genre tag in the music database (best
+// match first), the stand-in for the listening statistics. Ones already in
+// have are left out. A failure gives none.
+func (s *Server) genreCandidates(ctx context.Context, genre, typ string, have []discoverCandidate) []discoverCandidate {
+	primary := ""
+	if typ != "all" {
+		primary = typ
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	groups, err := s.MusicBrainz().SearchReleaseGroupsByTag(ctx, genre, primary, 100)
+	if err != nil {
+		slog.Info("music: genre search unavailable", "genre", genre, "err", err)
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, c := range have {
+		seen[c.mbid] = true
+	}
+	var out []discoverCandidate
+	for _, g := range groups {
+		t, ok := discoverType(g.PrimaryType)
+		if !ok || len(g.SecondaryTypes) > 0 || seen[g.ID] || (typ != "all" && t != typ) {
+			continue
+		}
+		seen[g.ID] = true
+		c := discoverCandidate{mbid: g.ID, title: g.Title, typ: t, date: g.FirstReleaseDate}
+		if len(g.ArtistCredit) > 0 {
+			c.artistName = g.ArtistCredit[0].Name
+			c.artistMBID = g.ArtistCredit[0].Artist.ID
+		}
+		sort.SliceStable(g.Tags, func(i, j int) bool { return g.Tags[i].Count > g.Tags[j].Count })
+		for i, tg := range g.Tags {
+			if i == maxCandidateGenres {
+				break
+			}
+			c.genres = append(c.genres, tg.Name)
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// maxCandidateGenres is how many genre tags a release found by tag shows.
+const maxCandidateGenres = 4
 
 func filterCandidates(in []discoverCandidate, keep func(discoverCandidate) bool) []discoverCandidate {
 	out := make([]discoverCandidate, 0, len(in))
@@ -443,6 +519,7 @@ func (s *Server) discoverItems(cands []discoverCandidate) ([]musicDiscoverItem, 
 		return nil, err
 	}
 	out := make([]musicDiscoverItem, len(cands))
+	var toWarm []string
 	for i, c := range cands {
 		it := musicDiscoverItem{
 			MBID: c.mbid, Title: c.title, Type: c.typ, ArtistName: c.artistName, ArtistMBID: c.artistMBID,
@@ -457,9 +534,13 @@ func (s *Server) discoverItems(cands []discoverCandidate) ([]musicDiscoverItem, 
 		if al, ok := albums[c.mbid]; ok {
 			it.InLibrary, it.AlbumID, it.ArtistID = true, al.ID, al.ArtistID
 			it.CoverURL = albumCoverURL(al.ID)
+		} else {
+			toWarm = append(toWarm, c.mbid)
 		}
 		out[i] = it
 	}
+	// The page is about to ask for these covers: fetch them now, a few at a time, so they are ready.
+	s.warmMusicCovers(toWarm)
 	return out, nil
 }
 
@@ -468,13 +549,41 @@ func releaseGroupCoverURL(mbid string) string {
 	return "/api/music/covers/release-group/" + mbid
 }
 
+// artistPictures maps an artist id to the release group of theirs that people
+// listened to most in the range, taken from the popular releases list the page
+// already uses (kept for an hour, so this costs no new request). An artist with
+// none in that list has no picture. A failure gives an empty map.
+func (s *Server) artistPictures(ctx context.Context, rng string) map[string]string {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out := map[string]string{}
+	lb := s.discoverClient()
+	for p := 0; p < discoverSourcePages; p++ {
+		got, err := lb.TopReleaseGroups(ctx, rng, discoverSourceCount, p*discoverSourceCount)
+		if err != nil {
+			break
+		}
+		for _, rg := range got {
+			for _, id := range rg.ArtistMBIDs {
+				if _, ok := out[id]; !ok {
+					out[id] = rg.MBID
+				}
+			}
+		}
+		if len(got) < discoverSourceCount {
+			break
+		}
+	}
+	return out
+}
+
 type discoverArtistPayload struct {
 	MBID        string `json:"mbid"`
 	Name        string `json:"name"`
 	ListenCount int    `json:"listenCount"`
 	InLibrary   bool   `json:"inLibrary"`
 	ArtistID    int64  `json:"artistId,omitempty"`
-	CoverURL    string `json:"coverUrl,omitempty"` // only for artists in the library
+	CoverURL    string `json:"coverUrl,omitempty"` // the artist's own picture when in the library, else the cover of their most listened-to release
 }
 
 type discoverArtistsPayload struct {
@@ -522,8 +631,12 @@ func (s *Server) handleMusicDiscoverArtists(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "Couldn't read the library. Check the Mediarium log for details.")
 		return
 	}
+	pictures := s.artistPictures(ctx, rng)
 	for _, a := range stats {
 		it := discoverArtistPayload{MBID: a.MBID, Name: a.Name, ListenCount: a.ListenCount}
+		if rg, ok := pictures[a.MBID]; ok {
+			it.CoverURL = releaseGroupCoverURL(rg) // an artist not in the library borrows the cover of its most listened-to release
+		}
 		if k, ok := known[a.MBID]; ok {
 			it.InLibrary, it.ArtistID, it.CoverURL = true, k.ID, artistCoverURL(k.ID)
 		}

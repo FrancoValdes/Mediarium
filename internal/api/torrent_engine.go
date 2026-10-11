@@ -28,6 +28,15 @@ type torrentRegistry struct {
 	jobs         map[int64]*torrentJob // by queue item
 	goalMet      map[int64]bool        // queue items whose seeding goal was reached
 	lastIncoming time.Time             // latest incoming peer connection of any engine, kept after it closes
+
+	// noPortMapping stops engines from asking the router to open the listen
+	// port. Off by default in the sense that the zero value maps, as the
+	// engine always did.
+	noPortMapping bool
+
+	// allowLocal lets engines started from now on use trackers, web seeds and
+	// metadata addresses on the home network (see torrentclient.Config).
+	allowLocal bool
 }
 
 type engineKey struct {
@@ -49,6 +58,7 @@ type torrentJob struct {
 	cancel  context.CancelFunc
 	engine  *torrentEngine
 	t       *torrent.Torrent
+	ctl     *torrentclient.Control // file selection, order and speed limits; nil until the torrent is added
 	stopped bool
 }
 
@@ -68,10 +78,11 @@ func (r *torrentRegistry) start(queueID int64, dir, dataRoot string, port int, t
 	key := engineKey{port: port, tunnel: tunnel}
 	e := r.engines[key]
 	if e == nil {
-		tc, err := torrentclient.New(torrentclient.Config{DataDir: dataRoot, ListenPort: port, Tunnel: tunnel})
+		mapPort := !r.noPortMapping && tunnel == nil
+		tc, err := torrentclient.New(torrentclient.Config{DataDir: dataRoot, ListenPort: port, Tunnel: tunnel, PortMapping: mapPort, AllowLocalAddresses: r.allowLocal})
 		if err != nil && port != 0 && tunnel == nil {
 			log.Printf("torrent: listen_port=%d unavailable, using a port the system picks: %v", port, err)
-			tc, err = torrentclient.New(torrentclient.Config{DataDir: dataRoot, Tunnel: tunnel})
+			tc, err = torrentclient.New(torrentclient.Config{DataDir: dataRoot, Tunnel: tunnel, PortMapping: mapPort, AllowLocalAddresses: r.allowLocal})
 		}
 		if err != nil {
 			return nil, err
@@ -102,6 +113,62 @@ func (r *torrentRegistry) attach(job *torrentJob, t *torrent.Torrent) bool {
 	}
 	job.t = t
 	return true
+}
+
+// attachControl records the control of a job's torrent. It reports false when
+// the job was stopped in the meantime.
+func (r *torrentRegistry) attachControl(job *torrentJob, ctl *torrentclient.Control) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if job.stopped {
+		return false
+	}
+	job.ctl = ctl
+	return true
+}
+
+// control returns the control of queueID's running torrent, if it has one.
+func (r *torrentRegistry) control(queueID int64) *torrentclient.Control {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if job := r.jobs[queueID]; job != nil && !job.stopped {
+		return job.ctl
+	}
+	return nil
+}
+
+// setAllowLocal is read when an engine starts, so it applies to engines
+// started after the change (the next restart for one already running).
+func (r *torrentRegistry) setAllowLocal(on bool) {
+	r.mu.Lock()
+	r.allowLocal = on
+	r.mu.Unlock()
+}
+
+// setPortMapping switches asking the router to open the listen port on or off,
+// for the engines running now and the ones started later.
+func (r *torrentRegistry) setPortMapping(on bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.noPortMapping = !on
+	for key, e := range r.engines {
+		if key.tunnel == nil {
+			e.tc.SetPortMapping(on)
+		}
+	}
+}
+
+// portMapStatus is what port mapping has done on the engine without a tunnel
+// ("idle" when no such engine runs).
+func (r *torrentRegistry) portMapStatus() torrentclient.PortMapStatus {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for key, e := range r.engines {
+		if key.tunnel == nil {
+			return e.tc.PortMapping()
+		}
+	}
+	return torrentclient.PortMapStatus{State: "idle"}
 }
 
 // stop ends a job: aborts its download or seeding, removes its torrent from
@@ -178,6 +245,24 @@ func (r *torrentRegistry) seedingDone(queueID int64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.goalMet[queueID]
+}
+
+// swarm says how many peers and seeds the built-in client is connected to for
+// a queue item's torrent; ok is false when that item has no torrent running
+// (or it has no details yet).
+func (r *torrentRegistry) swarm(queueID int64) (peers, seeds int, ok bool) {
+	r.mu.Lock()
+	job := r.jobs[queueID]
+	var t *torrent.Torrent
+	if job != nil && !job.stopped {
+		t = job.t
+	}
+	r.mu.Unlock()
+	if t == nil {
+		return 0, 0, false
+	}
+	st := t.Stats()
+	return st.ActivePeers, st.ConnectedSeeders, true
 }
 
 // activeDir reports whether a running torrent (downloading or seeding) is

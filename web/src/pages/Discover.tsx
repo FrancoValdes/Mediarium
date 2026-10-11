@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { api, isRequested, ApiError, type BookFound, type DiscoverMovie, type MusicType } from '../api'
 import { PicksProvider, pickKey, usePicks } from '../discoverPicks'
 import AddDialog, { type AddTarget } from '../components/AddDialog'
 import type { AddMusicTarget } from '../components/AddMusicDialog'
 import DiscoverRail from '../components/DiscoverRail'
+import { EagerImagesProvider } from '../components/PosterCard'
 import { BookAddDialog, BookBody } from '../components/BookDiscover'
 import { MusicAddDialog, MusicBody } from '../components/MusicDiscover'
 import { MUSIC_GENRES, MUSIC_TYPE_OPTIONS } from '../components/MusicRails'
@@ -12,6 +13,7 @@ import { KIND_LABEL, useKinds, useModules, type MediaKind } from '../ModulesCont
 import Dropdown from '../components/Dropdown'
 import PagedGrid from '../components/PagedGrid'
 import Icon from '../components/Icon'
+import KindGlyph from '../components/KindGlyph'
 import Switch from '../components/Switch'
 import { useToast } from '../components/Toast'
 import { DISCOVER_KINDS, SHARED_ORDERS } from '../discoverKinds'
@@ -21,6 +23,9 @@ import { useIncludeOlder } from '../useIncludeOlder'
 import { useHideOwned } from '../useHideOwned'
 import { firstError, minMax, required, url } from '../validate'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
+import FilterToggle from '../components/FilterToggle'
+import { useUrlState } from '../useUrlState'
+import { plural, t, tx } from '../i18n'
 
 const LIST_EXAMPLE = 'https://trakt.tv/users/name/lists/my-list'
 
@@ -28,7 +33,7 @@ const LIST_EXAMPLE = 'https://trakt.tv/users/name/lists/my-list'
 function traktList(value: string): string | null {
   const v = value.trim()
   if (!v) return null
-  const bad = `That isn't the address of a Trakt list. It should look like ${LIST_EXAMPLE}.`
+  const bad = t("That isn't the address of a Trakt list. It should look like {example}.", { example: LIST_EXAMPLE })
   const web = url(v, { example: LIST_EXAMPLE })
   if (web) return web
   let u: URL
@@ -37,7 +42,7 @@ function traktList(value: string): string | null {
   } catch {
     return bad
   }
-  if (!/(^|\.)trakt\.tv$/i.test(u.hostname)) return `That address isn't on trakt.tv. It should look like ${LIST_EXAMPLE}.`
+  if (!/(^|\.)trakt\.tv$/i.test(u.hostname)) return t("That address isn't on trakt.tv. It should look like {example}.", { example: LIST_EXAMPLE })
   const parts = u.pathname.split('/').filter(Boolean)
   if (parts.length < 4 || parts[0] !== 'users' || parts[2] !== 'lists') return bad
   return null
@@ -49,7 +54,7 @@ type Show = 'all' | Section
 const isSection = (v: string | null): v is Section => v === 'movie' || v === 'tv' || v === 'music' || v === 'book'
 
 const LISTS: ListName[] = ['trending', 'popular', 'upcoming']
-const LIST_HINT: Record<ListName, string> = { trending: 'this week', popular: 'all-time favourites', upcoming: 'add them now and they download once released', similar: 'based on what is in your library' }
+const LIST_HINT: Record<ListName, string> = { trending: t('this week'), popular: t('all-time favourites'), upcoming: t('add them now and they download once released'), similar: t('based on what is in your library') }
 
 interface Filters {
   genre: string
@@ -72,15 +77,15 @@ function TitleRails({ kind, filters, filtering, includeOlder, setIncludeOlder, o
     <>
       <DiscoverRail
         key={sourceToQuery(similar)}
-        title={short ? 'More like your library' : sourceTitle(similar)}
+        title={short ? t('More like your library') : sourceTitle(similar)}
         hint={LIST_HINT.similar}
         source={similar}
         kind={kind}
         owned={owned}
         onAdd={onAdd}
         rows={1}
-        moreLabel="Browse more"
-        headExtra={<Switch checked={includeOlder} onChange={setIncludeOlder} label="Include older titles" />}
+        moreLabel={t('Browse more')}
+        headExtra={<Switch checked={includeOlder} onChange={setIncludeOlder} label={t('Include older titles')} />}
       />
       {LISTS.map((list) => {
         const src: Source = { kind, list }
@@ -116,8 +121,14 @@ function SelectToggle() {
   const picks = usePicks()
   if (!picks) return null
   return (
-    <button className={`btn-with-icon${picks.selecting ? ' primary' : ''}`} aria-pressed={picks.selecting} onClick={() => picks.setSelecting(!picks.selecting)}>
-      <Icon name="check" size={16} /> Select
+    <button
+      className={`icon-btn select-btn${picks.selecting ? ' primary active' : ''}`}
+      aria-pressed={picks.selecting}
+      aria-label={t('Select')}
+      title={t('Select several titles to add at once')}
+      onClick={() => picks.setSelecting(!picks.selecting)}
+    >
+      <Icon name="check" size={17} />
     </button>
   )
 }
@@ -125,7 +136,9 @@ function SelectToggle() {
 export default function Discover() {
   return (
     <PicksProvider>
+      <EagerImagesProvider>
       <DiscoverPage />
+      </EagerImagesProvider>
     </PicksProvider>
   )
 }
@@ -143,9 +156,9 @@ function PickBar({ onAdded }: { onAdded: () => void }) {
     let failed = 0
     let asked = 0
     for (let i = 0; i < list.length; i++) {
-      const t = list[i]
+      const p = list[i]
       try {
-        const res = t.kind === 'movie' ? await api.addMovie(t.tmdbId, { searchNow: true }) : await api.addSeries(t.tmdbId, { searchNow: true })
+        const res = p.kind === 'movie' ? await api.addMovie(p.tmdbId, { searchNow: true }) : await api.addSeries(p.tmdbId, { searchNow: true })
         if (isRequested(res)) asked++
       } catch {
         failed++
@@ -153,27 +166,29 @@ function PickBar({ onAdded }: { onAdded: () => void }) {
       setBusy({ done: i + 1, total: list.length })
     }
     setBusy(null)
-    if (failed === 0 && asked > 0) toast.success(`Asked for ${asked} ${asked === 1 ? 'title' : 'titles'}. An administrator will look at ${asked === 1 ? 'it' : 'them'} under Activity > Requests.`)
-    else if (failed === 0) toast.success(`Added ${list.length} ${list.length === 1 ? 'title' : 'titles'}. Mediarium is looking for them now.`)
-    else toast.error(`${failed} of ${list.length} could not be added.`)
+    if (failed === 0 && asked > 0) toast.success(plural(asked, 'Asked for {n} title. An administrator will look at it under Activity > Requests.', 'Asked for {n} titles. An administrator will look at them under Activity > Requests.'))
+    else if (failed === 0) toast.success(plural(list.length, 'Added {n} title. Mediarium is looking for it now.', 'Added {n} titles. Mediarium is looking for them now.'))
+    else toast.error(t('{failed} of {total} could not be added.', { failed, total: list.length }))
     picks?.setSelecting(false)
     onAdded()
   }
   return (
-    <div className="pick-bar" role="region" aria-label="Picked titles">
-      <span>{list.length === 0 ? 'Pick the titles you want, then add them all at once.' : `${list.length} picked`}</span>
+    <div className="pick-bar" role="region" aria-label={t('Picked titles')}>
+      <span>{list.length === 0 ? t('Pick the titles you want, then add them all at once.') : t('{n} picked', { n: list.length })}</span>
       <span className="spacer" />
-      <button className="btn-sm" disabled={list.length === 0 || busy !== null} onClick={() => {
-          list.forEach((t) => picks.notInterested(t))
-          picks.clear()
-        }}>
-        Not interested
-      </button>
+      {!picks.readOnly && (
+        <button className="btn-sm" disabled={list.length === 0 || busy !== null} onClick={() => {
+            list.forEach((p) => picks.notInterested(p))
+            picks.clear()
+          }}>
+          {t('Not interested')}
+        </button>
+      )}
       <button className="primary btn-sm" disabled={list.length === 0 || busy !== null} onClick={() => void addAll()}>
-        {busy ? `Adding ${busy.done} of ${busy.total}…` : `Add ${list.length || ''} ${list.length === 1 ? 'title' : 'titles'}`.replace('  ', ' ')}
+        {busy ? t('Adding {done} of {total}…', { done: busy.done, total: busy.total }) : list.length ? plural(list.length, 'Add {n} title', 'Add {n} titles') : t('Add titles')}
       </button>
       <button className="btn-sm" onClick={() => picks.setSelecting(false)}>
-        Done
+        {t('Done')}
       </button>
     </div>
   )
@@ -191,7 +206,7 @@ function NotInterestedList() {
   return (
     <>
       <button className="btn-sm" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        Not interested ({picks.excluded.size})
+        {t('Not interested ({n})', { n: picks.excluded.size })}
       </button>
       {open && list && (
         <div className="card not-interested-list">
@@ -199,10 +214,10 @@ function NotInterestedList() {
             <div key={pickKey(e)} className="row-actions">
               <span>
                 {e.title}
-                {e.year ? ` (${e.year})` : ''} <small style={{ color: 'var(--text-dim)' }}>{e.kind === 'tv' ? 'show' : 'movie'}</small>
+                {e.year ? ` (${e.year})` : ''} <small style={{ color: 'var(--text-dim)' }}>{e.kind === 'tv' ? t('show') : t('movie')}</small>
               </span>
               <button className="btn-sm" onClick={() => picks.showAgain(e.kind, e.tmdbId)}>
-                Show again
+                {t('Show again')}
               </button>
             </div>
           ))}
@@ -213,6 +228,7 @@ function NotInterestedList() {
 }
 
 function DiscoverPage() {
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const owned = useOwned()
   const [includeOlder, setIncludeOlder] = useIncludeOlder()
   const [hideOwned, setHideOwned] = useHideOwned()
@@ -220,11 +236,10 @@ function DiscoverPage() {
   const [addingMusic, setAddingMusic] = useState<AddMusicTarget | null>(null)
   const [addingBook, setAddingBook] = useState<BookFound | null>(null)
 
-  const [params] = useSearchParams()
-  const [picked, setPicked] = useState<Show>(() => {
-    const asked = params.get('kind')
-    return isSection(asked) ? asked : 'all'
-  })
+  // The tab and the filters live in the address, so Back from a title or an album brings Discover back as it was.
+  const [ui, patchUi] = useUrlState({ kind: 'all', genre: '', from: '', to: '', sort: 'popular', type: 'all' })
+  const picked: Show = isSection(ui.kind) ? ui.kind : 'all'
+  const setPicked = (k: Show) => patchUi({ kind: k, genre: '', type: 'all', sort: ui.sort === 'rating' && k !== 'movie' && k !== 'tv' ? 'popular' : ui.sort })
   // Only the kinds of media that are switched on get a tab, and a section on
   // the All tab. Ebooks and audiobooks share one Books section.
   const { on } = useModules()
@@ -234,16 +249,17 @@ function DiscoverPage() {
   const kindsOn: Section[] = [...(on('movies') || on('tv') || on('music') || !booksOn ? mediaKinds : []), ...(booksOn ? (['book'] as const) : [])]
   const tabs: Show[] = ['all', ...kindsOn]
   const show: Show = tabs.includes(picked) ? picked : tabs[0]
-  useEffect(() => {
-    const asked = params.get('kind')
-    if (isSection(asked)) setPicked(asked)
-  }, [params])
   const [subjects, setSubjects] = useState<{ label: string; subject: string }[]>([])
-  const [genre, setGenre] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [sort, setSort] = useState('popular')
-  const [musicType, setMusicType] = useState<MusicType>('all')
+  const genre = ui.genre
+  const setGenre = (v: string) => patchUi({ genre: v })
+  const from = ui.from
+  const setFrom = (v: string) => patchUi({ from: v })
+  const to = ui.to
+  const setTo = (v: string) => patchUi({ to: v })
+  const sort = ui.sort
+  const setSort = (v: string) => patchUi({ sort: v })
+  const musicType = ui.type as MusicType
+  const setMusicType = (v: MusicType) => patchUi({ type: v })
   const [genres, setGenres] = useState<{ id: number; name: string }[]>([])
   const [browseMissing, setBrowseMissing] = useState(false)
   const filtering = !!(genre || from || to || sort !== 'popular' || (show === 'music' && musicType !== 'all'))
@@ -252,20 +268,31 @@ function DiscoverPage() {
   const [listUrl, setListUrl] = useState('')
   const [importedFrom, setImportedFrom] = useState('')
   const [imported, setImported] = useState<DiscoverMovie[] | undefined>()
+  // The signed-in account's Plex watchlist, when it connected one (Your profile).
+  const [watchlist, setWatchlist] = useState<DiscoverMovie[]>([])
+  useEffect(() => {
+    let live = true
+    api
+      .plexWatchlist()
+      .then((st) => (st.connected ? api.plexWatchlistItems() : []))
+      .then((items) => live && setWatchlist(items))
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [])
+  const watchMovies = watchlist.filter((m) => m.mediaType !== 'tv')
+  const watchShows = watchlist.filter((m) => m.mediaType === 'tv')
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
   const v = useValidation({
-    listUrl: firstError(required(listUrl, 'Paste the address of a Trakt list, for example trakt.tv/users/name/lists/my-list.'), traktList(listUrl)),
+    listUrl: firstError(required(listUrl, t('Paste the address of a Trakt list, for example trakt.tv/users/name/lists/my-list.')), traktList(listUrl)),
   })
-  const yearProblem = minMax(from, to, "The 'from' year can't be later than the 'to' year. Swap them or pick a different year.")
+  const yearProblem = minMax(from, to, t("The 'from' year can't be later than the 'to' year. Swap them or pick a different year."))
 
   // Movie and show genres come from the movie database and differ from each
   // other; music has its own list. The All tab has no genre filter.
   useEffect(() => {
-    setGenre('')
-    setMusicType('all')
-    // The order picked on one tab may not exist on another (music has no "highest rated").
-    setSort((cur) => (cur === 'rating' && show !== 'movie' && show !== 'tv' ? 'popular' : cur))
     if (show === 'book') {
       setGenres([])
       if (subjects.length === 0) api.bookSubjects().then(setSubjects).catch(() => undefined)
@@ -312,18 +339,21 @@ function DiscoverPage() {
   }
 
   function clear() {
-    setGenre('')
-    setFrom('')
-    setTo('')
-    setSort('popular')
-    setMusicType('all')
+    patchUi({ genre: '', from: '', to: '', sort: 'popular', type: 'all' })
   }
 
   const switcher = (
-    <div className="seg">
+    <div className="seg kind-tabs">
       {tabs.map((k) => (
-        <button key={k} className={show === k ? 'active' : ''} onClick={() => setPicked(k)}>
-          {k === 'all' ? 'All' : k === 'book' ? 'eBooks & Audiobooks' : KIND_LABEL[k]}
+        <button
+          key={k}
+          className={`k-${k}${show === k ? ' active' : ''}`}
+          style={k === 'all' ? undefined : { ['--kc' as string]: DISCOVER_KINDS[k].color }}
+          onClick={() => setPicked(k)}
+          title={k === 'book' ? t('eBooks and audiobooks') : undefined}
+        >
+          {k === 'all' ? <Icon name="grid" size={15} /> : <KindGlyph kind={k === 'book' ? 'book' : k} size={17} />}
+          {k === 'all' ? t('All') : k === 'book' ? t('Books') : KIND_LABEL[k]}
         </button>
       ))}
     </div>
@@ -340,34 +370,38 @@ function DiscoverPage() {
 
   return (
     <div>
-      <div className="toolbar filter-bar">
+      <div className={`toolbar filter-bar collapsible${filtersOpen ? ' filters-open' : ''}`}>
         {switcher}
+        <FilterToggle open={filtersOpen} onToggle={() => setFiltersOpen((o) => !o)} active={filtering} />
+        <div className="fold">
         <Dropdown
-          label="Genre"
+          icon="sparkles"
+          label={t('Genre')}
           value={genre}
           onChange={setGenre}
           disabled={(titleKind && browseMissing) || show === 'all'}
-          title={show === 'all' ? 'Pick a kind of media to filter by genre' : undefined}
-          options={[{ value: '', label: show === 'all' ? 'Genre: pick a kind' : 'All genres' }, ...genreOptions]}
+          title={show === 'all' ? t('Pick a kind of media to filter by genre') : undefined}
+          options={[{ value: '', label: show === 'all' ? t('Genre: pick a kind') : t('All genres') }, ...genreOptions]}
         />
-        <Dropdown label="From year" value={from} onChange={setFrom} disabled={titleKind && browseMissing} options={[{ value: '', label: 'From any year' }, ...years.map((y) => ({ value: y, label: `From ${y}` }))]} />
-        <Dropdown label="To year" value={to} onChange={setTo} disabled={titleKind && browseMissing} options={[{ value: '', label: 'To any year' }, ...years.map((y) => ({ value: y, label: `To ${y}` }))]} />
-        <Dropdown label="Order" value={sort} onChange={setSort} disabled={titleKind && browseMissing} options={orders} />
-        {show === 'music' && <Dropdown label="Type" value={musicType} onChange={(t) => setMusicType(t as MusicType)} options={MUSIC_TYPE_OPTIONS} />}
+        <Dropdown icon="calendar" label={t('From year')} value={from} onChange={setFrom} disabled={titleKind && browseMissing} options={[{ value: '', label: t('From year') }, ...years.map((y) => ({ value: y, label: t('From {year}', { year: y }) }))]} />
+        <Dropdown icon="calendar" label={t('To year')} value={to} onChange={setTo} disabled={titleKind && browseMissing} options={[{ value: '', label: t('To year') }, ...years.map((y) => ({ value: y, label: t('To {year}', { year: y }) }))]} />
+        <Dropdown icon="sort" label={t('Order')} value={sort} onChange={setSort} disabled={titleKind && browseMissing} options={orders} />
+        {show === 'music' && <Dropdown icon="disc" label={t('Type')} value={musicType} onChange={(m) => setMusicType(m as MusicType)} options={MUSIC_TYPE_OPTIONS} />}
         {filtering && (
           <button className="btn-sm" onClick={clear}>
-            Clear filters
+            {t('Clear filters')}
           </button>
         )}
-        <Switch checked={hideOwned} onChange={setHideOwned} label="Hide what I have" />
+        <Switch checked={hideOwned} onChange={setHideOwned} label={t('Hide owned')} />
         <span className="spacer" />
         <NotInterestedList />
         {titleKind && <SelectToggle />}
         {trakt && (
-          <button className="btn-with-icon" onClick={() => setShowImport((v) => !v)}>
-            <Icon name="list" size={16} /> {showImport ? 'Close list import' : 'Import a Trakt list'}
+          <button className={`icon-btn trakt-btn${showImport ? ' active' : ''}`} onClick={() => setShowImport((v) => !v)} title={showImport ? t('Close the Trakt list import') : t('Import a Trakt list')} aria-label={showImport ? t('Close the Trakt list import') : t('Import a Trakt list')} aria-pressed={showImport}>
+            <Icon name="trakt" size={17} />
           </button>
         )}
+        </div>
       </div>
       {yearProblem && (
         <p className="field-error" role="alert" style={{ margin: '0 0 14px' }}>
@@ -377,16 +411,17 @@ function DiscoverPage() {
 
       {trakt && showImport && (
         <section className="card grid-form" style={{ marginBottom: 24 }}>
-          <h2>Import a Trakt list</h2>
+          <h2>{t('Import a Trakt list')}</h2>
           <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem', margin: 0 }}>
-            Paste the address of any public Trakt list to see everything on it here. Trakt is a free site where people keep lists
-            of what they watch. See <Link to="/settings/metadata">Settings &gt; Info, lists and subtitles &gt; Movie info and lists</Link>.
+            {tx('Paste the address of any public Trakt list to see everything on it here. Trakt is a free site where people keep lists of what they watch. See {link}.', {
+              link: <Link to="/settings/metadata">{t('Settings > Info, lists and subtitles > Movie and show info')}</Link>,
+            })}
           </p>
-          <input value={listUrl} onChange={(e) => setListUrl(e.target.value)} placeholder="trakt.tv/users/…/lists/…" aria-label="Trakt list address" {...v.bind('listUrl', listUrl, setListUrl)} />
+          <input value={listUrl} onChange={(e) => setListUrl(e.target.value)} placeholder="trakt.tv/users/…/lists/…" aria-label={t('Trakt list address')} {...v.bind('listUrl', listUrl, setListUrl)} />
           <FieldError v={v} name="listUrl" />
           <div>
             <button className="primary" disabled={importing} onClick={onImport}>
-              {importing ? 'Importing…' : 'Import'}
+              {importing ? t('Importing…') : t('Import')}
             </button>
           </div>
           <FormProblem v={v} verb="import" />
@@ -396,7 +431,14 @@ function DiscoverPage() {
 
       <PickBar onAdded={() => owned.reload()} />
 
-      {trakt && imported && <DiscoverRail title={`Imported from ${importedFrom}`} items={imported} kind="movie" owned={owned} onAdd={setAdding} rows={3} />}
+      {watchMovies.length > 0 && (show === 'all' || show === 'movie') && kindsOn.includes('movie') && (
+        <DiscoverRail title={t('Your Plex watchlist: movies')} items={watchMovies} kind="movie" owned={owned} onAdd={setAdding} rows={1} />
+      )}
+      {watchShows.length > 0 && (show === 'all' || show === 'tv') && kindsOn.includes('tv') && (
+        <DiscoverRail title={t('Your Plex watchlist: shows')} items={watchShows} kind="tv" owned={owned} onAdd={setAdding} rows={1} />
+      )}
+
+      {trakt && imported && <DiscoverRail title={t('Imported from {url}', { url: importedFrom })} items={imported} kind="movie" owned={owned} onAdd={setAdding} rows={3} />}
 
       {show === 'all'
         ? kindsOn.map((kind) => (

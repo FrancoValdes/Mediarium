@@ -9,8 +9,8 @@ services:
       PROXY_AUTH_WHITELIST: "/api/*"
 
   web:
-    # Pin by digest before publishing: ghcr.io/rdborg/mediarium:2.1.0@sha256:<index digest>
-    image: ghcr.io/rdborg/mediarium:2.1.0
+    # TODO (maintainer, after the 3.0.0 release): pin by digest, ghcr.io/rdborg/mediarium:3.0.0@sha256:<index digest>
+    image: ghcr.io/rdborg/mediarium:3.0.0
     restart: unless-stopped
     stop_grace_period: 1m
     environment:
@@ -21,8 +21,10 @@ services:
       DOWNLOADS_DIR: /data/mediarium
       MOVIES_DIR: /data/movies
       TV_DIR: /data/tv
-      # Optional folders: MUSIC_DIR, EBOOKS_DIR and AUDIOBOOKS_DIR (for example /data/Music).
-      # Music works today; ebooks and audiobooks are on the way. See docs/INSTALL.md.
+      # Optional folders: MUSIC_DIR, EBOOKS_DIR and AUDIOBOOKS_DIR (for example /data/music).
+      # Leave them out if you do not use music, ebooks or audiobooks. See docs/INSTALL.md.
+      # Optional: the permissions new files get, for example 022 or 002. Empty keeps the default.
+      UMASK: ""
     ports:
       # Optional torrent port (not HTTP, so it is published directly).
       - 58264:58264

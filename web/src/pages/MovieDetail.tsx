@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AddDialog from '../components/AddDialog'
 import Icon from '../components/Icon'
+import InfoTip from '../components/InfoTip'
 import PosterCard from '../components/PosterCard'
 import ProfilePicker from '../components/ProfilePicker'
 import ReleaseTable from '../components/ReleaseTable'
 import TitleTags from '../components/Tags'
 import WatchedLine from '../components/WatchedLine'
+import CollectionCard from '../components/CollectionCard'
+import CopiesCard from '../components/CopiesCard'
+import TitleRequestActions from '../components/TitleRequestActions'
 import FilesPanel from '../components/FilesPanel'
 import SubtitlesOffNote from '../components/SubtitlesOffNote'
 import SubtitlesPanel from '../components/SubtitlesPanel'
@@ -28,6 +32,7 @@ import { removeOption } from '../diskUsage'
 import ReleaseNotice from '../components/ReleaseNotice'
 import type { Unanswered } from '../releaseHint'
 import { useDocumentTitle } from '../documentTitle'
+import { plural, t } from '../i18n'
 
 // One page per movie. Not in your library: exactly one main action, "Add to
 // library" (the dialog picks quality and where to download, and can start the
@@ -72,7 +77,8 @@ function MoviePage() {
     api.tmdbSimilarMovies(id).then(setSimilar).catch(() => undefined)
   }
   useEffect(reload, [id])
-  useLive(() => api.tmdbMovieDetail(id).then((m) => m.tmdbId === id && setMovie(m)).catch(() => undefined), 5000)
+  // Only a title in the library changes by itself (a download starts, finishes); the details of one that isn't don't need re-reading.
+  useLive(() => api.tmdbMovieDetail(id).then((m) => m.tmdbId === id && setMovie(m)).catch(() => undefined), 5000, !!movie?.libraryId)
 
   const libraryId = movie?.libraryId
   useEffect(() => {
@@ -88,7 +94,7 @@ function MoviePage() {
     try {
       await api.setMovieMonitored(libraryId, v)
       setMonitored(v)
-      toast.success(v ? 'Monitored: looking for this movie.' : 'Unmonitored: this movie is left alone.')
+      toast.success(v ? t('Monitored: looking for this movie.') : t('Unmonitored: this movie is left alone.'))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     }
@@ -128,7 +134,7 @@ function MoviePage() {
     setGrabbing(r.downloadUrl)
     try {
       await api.grab(libraryId, { releaseTitle: r.title, downloadUrl: r.downloadUrl, sizeBytes: r.sizeBytes, protocol: r.protocol })
-      toast.success(`Started downloading "${r.title}". Follow it in Activity.`)
+      toast.success(t('Started downloading "{title}". Follow it in Activity.', { title: r.title }))
       setTimeout(reload, 500)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -140,10 +146,16 @@ function MoviePage() {
   async function onRemove() {
     if (!movie?.libraryId) return
     const usage = await api.movieDiskUsage(movie.libraryId).catch(() => null)
+    const copies = (await api.titleCopies('movie', movie.libraryId).catch(() => null))?.items ?? []
     const answer = await confirm({
-      title: `Remove ${movie.title} from your library?`,
-      body: <p>Mediarium stops tracking this movie and cancels anything still downloading for it. You can add it back any time.</p>,
-      confirmLabel: 'Remove',
+      title: t('Remove {title} from your library?', { title: movie.title }),
+      body: (
+        <p>
+          {t('Mediarium stops tracking this movie and cancels anything still downloading for it. You can add it back any time.')}
+          {copies.length > 0 && ' ' + plural(copies.length, 'Its second copy ({names}) goes too, with its file if you tick the box.', 'Its second copies ({names}) go too, with their files if you tick the box.', { names: copies.map((c) => c.profileName).join(', ') })}
+        </p>
+      ),
+      confirmLabel: t('Remove'),
       danger: true,
       option: removeOption('movie', usage),
     })
@@ -151,7 +163,7 @@ function MoviePage() {
     const deleteFiles = answer.checked
     try {
       await api.deleteMovie(movie.libraryId, deleteFiles)
-      toast.success(`${movie.title} removed.`)
+      toast.success(t('{title} removed.', { title: movie.title }))
       navigate('/library')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -172,9 +184,9 @@ function MoviePage() {
           ...movie,
           kind: 'movie',
           facts: [
-            ...(movie.directors?.length ? [{ label: movie.directors.length > 1 ? 'Directors' : 'Director', value: movie.directors.join(', ') }] : []),
-            ...(movie.releaseDate ? [{ label: 'Released', value: movie.releaseDate }] : []),
-            ...(movie.releaseStatus ? [{ label: 'Status', value: movie.releaseStatus }] : []),
+            ...(movie.directors?.length ? [{ label: movie.directors.length > 1 ? t('Directors') : t('Director'), value: movie.directors.join(', ') }] : []),
+            ...(movie.releaseDate ? [{ label: t('Released'), value: movie.releaseDate }] : []),
+            ...(movie.releaseStatus ? [{ label: t('Status'), value: movie.releaseStatus }] : []),
           ],
           links: inLibrary ? undefined : titleLinks('movie', movie.tmdbId, movie.imdbId, movie.homepage),
         }}
@@ -191,24 +203,34 @@ function MoviePage() {
             <>
               {can(me, 'manage') && (
                 <button className="primary btn-with-icon" onClick={searchNow} disabled={searchingNow || movie.status === 'downloading'}>
-                  <Icon name="search" size={16} /> {searchingNow ? 'Searching…' : movie.status === 'downloaded' ? 'Look for a better copy' : 'Find and download now'}
+                  <Icon name="search" size={16} /> {searchingNow ? t('Searching…') : movie.status === 'downloaded' ? t('Look for a better copy') : t('Find and download now')}
                 </button>
+              )}
+              {can(me, 'manage') && (
+                <InfoTip
+                  text={
+                    movie.status === 'downloaded'
+                      ? t('Searches your indexers right now for a better release than the file you have. It only looks when "Better versions" is on and the file is below the profile\'s cutoff.')
+                      : t('Searches your indexers right now and starts the best release for the quality profile, even if the movie is not monitored.')
+                  }
+                />
               )}
               {can(me, 'releases') && (
                 <button className="btn-with-icon" onClick={chooseRelease} disabled={searching}>
-                  <Icon name="list" size={16} /> {searching ? 'Loading…' : 'Choose a release'}
+                  <Icon name="list" size={16} /> {searching ? t('Loading…') : t('Choose a release')}
                 </button>
               )}
+              {can(me, 'releases') && <InfoTip text={t('Lists every release your indexers found for this movie, so you can pick one yourself instead of letting Mediarium choose.')} />}
               {movie.status === 'downloaded' && <WatchLinks tmdbId={movie.tmdbId} kind="movie" />}
               {admin && (
                 <button className="btn-with-icon danger-ghost" onClick={onRemove}>
-                  <Icon name="trash" size={16} /> Remove
+                  <Icon name="trash" size={16} /> {t('Remove')}
                 </button>
               )}
             </>
           ) : (
             <button className="primary btn-with-icon big" onClick={() => setAdding(true)}>
-              <Icon name="plus" size={18} /> Add to library
+              <Icon name="plus" size={18} /> {t('Add to library')}
             </button>
           )
         }
@@ -216,12 +238,13 @@ function MoviePage() {
         {inLibrary && movie.status === 'missing' && movie.libraryId && <SearchStatus kind="movie" id={movie.libraryId} />}
         {inLibrary && (
           <div className="title-controls">
-            <Switch checked={monitored ?? true} onChange={toggleMonitored} label="Monitored" description="Keeps looking until it finds this movie." />
-            <ProfilePicker kind="movie" itemId={movie.libraryId!} />
+            <Switch checked={monitored ?? true} onChange={toggleMonitored} disabled={!can(me, 'manage')} label={<span className="has-tip">{t('Monitored')}<InfoTip text={t('Mediarium keeps searching and downloads a release when one turns up. Switch it off to leave this movie alone; files you already have stay where they are.')} /></span>} description={t('Keeps looking until it finds this movie.')} />
+            <ProfilePicker kind="movie" itemId={movie.libraryId!}>
+              {movie.libraryId && <TitleTags kind="movie" id={movie.libraryId} />}
+            </ProfilePicker>
             {movie.filePath && <code className="filepath">{movie.filePath}</code>}
           </div>
         )}
-        {inLibrary && movie.libraryId && <TitleTags kind="movie" id={movie.libraryId} />}
         {inLibrary && movie.libraryId && <WatchedLine kind="movie" id={movie.libraryId} />}
       </TitleHero>
 
@@ -240,15 +263,23 @@ function MoviePage() {
 
       {results !== null && (
         <section className="card" style={{ marginBottom: 24 }}>
-          <h2>Releases</h2>
+          <h2>{t('Releases')}</h2>
           <ReleaseNotice sources={answered.sources} unanswered={answered.unanswered} results={results.length} />
-          {results.length > 0 && <ReleaseTable results={results} grabbing={grabbing} onGrab={grab} />}
+          {results.length === 0 && (
+            <button className="btn-sm" onClick={() => setResults(null)}>
+              {t('Close')}
+            </button>
+          )}
+          {results.length > 0 && <ReleaseTable results={results} grabbing={grabbing} onGrab={grab} onClose={() => setResults(null)} />}
         </section>
       )}
 
+      {movie.libraryId && <TitleRequestActions kind="movie" tmdbId={movie.tmdbId} libraryId={movie.libraryId} title={movie.title} />}
+      {movie.libraryId && <CopiesCard kind="movie" id={movie.libraryId} admin={admin} />}
+
       {movie.libraryId && (
         <section className="card" style={{ marginBottom: 24 }}>
-          <h2>What happened</h2>
+          <h2>{t('What happened')}</h2>
           <TitleEvents kind="movie" id={movie.libraryId} />
         </section>
       )}
@@ -257,12 +288,12 @@ function MoviePage() {
         <>
           <div className={subtitlesOn ? 'half-cols' : undefined} style={{ marginBottom: subtitlesOn ? 24 : 12 }}>
             <section className="card">
-              <h2>Files</h2>
+              <h2>{t('Files')}</h2>
               <FilesPanel kind="movie" id={movie.libraryId} />
             </section>
             {subtitlesOn && (
               <section className="card">
-                <h2>Subtitles</h2>
+                <h2>{t('Subtitles')}</h2>
                 <SubtitlesPanel kind="movie" id={movie.libraryId} />
               </section>
             )}
@@ -271,10 +302,12 @@ function MoviePage() {
         </>
       )}
 
+      {movie.collection && <CollectionCard collection={movie.collection} admin={admin} onChanged={reload} />}
+
       {similar.length > 0 && (
         <section>
           <div className="rail-head">
-            <h2>Similar movies</h2>
+            <h2>{t('Similar movies')}</h2>
           </div>
           <div className="poster-grid">
             {similar.map((m) => (

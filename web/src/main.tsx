@@ -1,48 +1,38 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import './design.css'
-import './setup.css'
-import { demoEnabled, installDemo } from './demo'
-import App from './App.tsx'
-import { ToastProvider } from './components/Toast'
-import { ConfirmProvider } from './components/ConfirmProvider'
+import { loadLanguage } from './i18n'
 
-if (demoEnabled()) installDemo()
-
-// Applied before first paint so a stored theme override (ThemeToggle.tsx)
-// takes effect immediately instead of flashing the OS default first.
+// Dark unless light was picked (ThemeToggle.tsx), set before anything paints.
+let theme = 'dark'
 try {
-  const stored = localStorage.getItem('mediarium-theme')
-  if (stored === 'light' || stored === 'dark') {
-    document.documentElement.dataset.theme = stored
-  }
+  if (localStorage.getItem('mediarium-theme') === 'light') theme = 'light'
 } catch {
-  // ignore — worst case is one flash of the OS-default theme
+  // blocked storage: dark
+}
+document.documentElement.dataset.theme = theme
+
+// The app puts a page where it belongs when going back or forward (App shell); the browser's own guess would fight it.
+try {
+  history.scrollRestoration = 'manual'
+} catch {
+  // not available: nothing to do
 }
 
-// Mediarium has no service worker. One left behind by another app that once
-// ran on the same address would answer API calls from its own cache and
-// show stale data, so remove any we find and reload once.
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker
-    .getRegistrations()
-    .then(async (regs) => {
-      if (regs.length === 0) return
-      await Promise.all(regs.map((r) => r.unregister()))
-      if (navigator.serviceWorker.controller) location.reload()
-    })
-    .catch(() => {
-      // ignore — not having permission to look is fine
-    })
-}
+// The chosen language is loaded before anything else, so text the app sets up
+// as it starts is already in that language.
+void loadLanguage().finally(() => import('./start.tsx'))
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ToastProvider>
-      <ConfirmProvider>
-        <App />
-      </ConfirmProvider>
-    </ToastProvider>
-  </StrictMode>,
+// A picture that fails to load (a cover that does not exist, a host that is down) shows the browser's broken-image
+// icon. Hide it instead; the box it sits in keeps its own background. A new address that loads clears the mark.
+document.addEventListener(
+  'error',
+  (e) => {
+    if (e.target instanceof HTMLImageElement) e.target.dataset.broken = '1'
+  },
+  true,
+)
+document.addEventListener(
+  'load',
+  (e) => {
+    if (e.target instanceof HTMLImageElement) delete e.target.dataset.broken
+  },
+  true,
 )

@@ -19,13 +19,16 @@ import (
 // bookResults adds covers and the library id to a list of books.
 func (s *Server) bookResults(found []books.Found) []bookSearchResult {
 	out := make([]bookSearchResult, 0, len(found))
+	covers := make([]int, 0, len(found))
 	for _, f := range found {
-		res := bookSearchResult{Found: f, CoverURL: books.CoverURL(f.CoverID, "M")}
+		covers = append(covers, f.CoverID)
+		res := bookSearchResult{Found: f, CoverURL: books.LocalCoverURL(f.CoverID, "M")}
 		if b, ok, _ := s.BookRepo.GetByKey(f.Key); ok {
 			res.LibraryID = b.ID
 		}
 		out = append(out, res)
 	}
+	s.warmBookCovers("M", covers)
 	return out
 }
 
@@ -133,7 +136,7 @@ func (s *Server) handleBookWork(w http.ResponseWriter, r *http.Request) {
 		writeUpstreamError(w, "look the book up on Open Library", err)
 		return
 	}
-	out := workPayload{WorkInfo: info, CoverURL: books.CoverURL(info.CoverID, "L")}
+	out := workPayload{WorkInfo: info, CoverURL: books.LocalCoverURL(info.CoverID, "L")}
 	if b, ok, _ := s.BookRepo.GetByKey(info.Key); ok {
 		out.LibraryID = b.ID
 	}

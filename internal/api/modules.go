@@ -74,6 +74,11 @@ type modulesPayload struct {
 	// account's pages can show or hide the subtitle parts. It is not a media
 	// type and is not changed here (see PUT /api/settings).
 	SubtitlesEnabled bool `json:"subtitlesEnabled"`
+	// TrailerBackground is the server-wide choice to play the trailer behind
+	// movie and show pages. A browser can still choose for itself.
+	TrailerBackground bool `json:"trailerBackground"`
+	// TrailerSound starts that trailer with its sound on.
+	TrailerSound bool `json:"trailerSound"`
 }
 
 func (s *Server) modulesPayload() modulesPayload {
@@ -85,6 +90,9 @@ func (s *Server) modulesPayload() modulesPayload {
 		Ebooks:     moduleState{Enabled: s.ebooksEnabled(), Available: true},
 
 		SubtitlesEnabled: s.subtitlesEnabled(),
+
+		TrailerBackground: s.trailerBackground(),
+		TrailerSound:      s.trailerSound(),
 	}
 }
 
@@ -196,4 +204,21 @@ func (s *Server) requireModule(w http.ResponseWriter, module string) bool {
 		}
 	}
 	return true
+}
+
+// trailerBackground says whether the trailer plays behind movie and show pages
+// for everyone (Settings > Info, lists and subtitles > Movie and show info). It
+// is on until an administrator switches it off, so it works out of the box; the
+// video comes from YouTube, which the setting and the docs say, and a browser
+// can switch it off for itself with the button on the page.
+// trailerSound says whether the trailer behind a title page starts with its
+// sound on. It is off until an administrator switches it on.
+func (s *Server) trailerSound() bool {
+	v, _ := s.Settings.Get(settings.KeyTrailerSound)
+	return v == "1"
+}
+
+func (s *Server) trailerBackground() bool {
+	v, _ := s.Settings.Get(settings.KeyTrailerBackground)
+	return v != "0"
 }

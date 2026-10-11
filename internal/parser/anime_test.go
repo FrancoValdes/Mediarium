@@ -67,3 +67,54 @@ func TestAnimeSeasonsRecapsAndGroups(t *testing.T) {
 		}
 	}
 }
+
+func TestDailyTitleAndPart(t *testing.T) {
+	cases := []struct {
+		name  string
+		title string
+		part  int
+	}{
+		{"The.Tonight.Show.2024.03.15.Tom.Hanks.1080p.WEB.h264-GRP", "Tom Hanks", 0},
+		{"Late Show 2024-11-02 Billie Eilish 720p HDTV x264", "Billie Eilish", 0},
+		{"Jeopardy.2024.05.10.Tournament.of.Champions.Part.2.720p.HDTV-GRP", "Tournament of Champions Part 2", 2},
+		{"News.Hour.2024.05.10.Pt1.1080p.WEB-GRP", "Pt1", 1},
+		{"The.Daily.Show.2024.03.15.1080p.WEB.h264-GRP", "", 0},
+		{"Show.2024.03.15-GRP", "", 0},
+		{"Show.2024.03.15.Guest.Name", "Guest Name", 0},
+		{"Show.S01E05.1080p.WEB-GRP", "", 0}, // not a dated release
+	}
+	for _, tc := range cases {
+		r := Parse(tc.name)
+		if r.DailyTitle != tc.title || r.DailyPart != tc.part {
+			t.Errorf("%q: daily title %q part %d, want %q %d", tc.name, r.DailyTitle, r.DailyPart, tc.title, tc.part)
+		}
+	}
+}
+
+func TestSpecials(t *testing.T) {
+	cases := []struct {
+		name     string
+		special  bool
+		season   int
+		episodes []int
+	}{
+		{"Doctor.Who.2005.S00E05.The.Christmas.Invasion.720p.HDTV-GRP", true, 0, []int{5}},
+		{"Show 0x03 Behind the Scenes", true, 0, []int{3}},
+		{"Show.Season.0.Complete.1080p", true, 0, nil},
+		{"Show.S01E05.1080p.WEB-GRP", false, 1, []int{5}},
+		{"Doctor.Who.2005.The.Christmas.Invasion.720p.HDTV-GRP", false, 0, nil}, // no marker: not known yet
+		{"The.Daily.Show.2024.03.15.1080p.WEB", false, 0, nil},
+	}
+	for _, tc := range cases {
+		r := Parse(tc.name)
+		if r.Special != tc.special || r.Season != tc.season || !reflect.DeepEqual(r.Episodes, tc.episodes) {
+			t.Errorf("%q: special=%v season=%d episodes=%v", tc.name, r.Special, r.Season, r.Episodes)
+		}
+		if r.Special && (r.AirDate != "" || len(r.Absolute) > 0) {
+			t.Errorf("%q: a special read as dated or anime: %+v", tc.name, r)
+		}
+	}
+	if r := Parse("Show.S00E05.mkv"); r.Name != "Show.S00E05" {
+		t.Errorf("name: %q", r.Name)
+	}
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/rdborg/mediarium/internal/auth"
 	"github.com/rdborg/mediarium/internal/httpsec"
+	"github.com/rdborg/mediarium/internal/ldapauth"
 )
 
 // handleVersion reports the running build's version (version-pinned
@@ -52,7 +53,7 @@ type createAdminRequest struct {
 // "member"; isAdmin is kept for older clients.
 func userPayload(u *auth.User) map[string]any {
 	return map[string]any{
-		"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "role": u.Role(),
+		"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "role": u.Role(), "source": sourceOf(u.Source),
 		"name": u.DisplayName(), "firstName": u.FirstName, "lastName": u.LastName, "email": u.Email,
 	}
 }
@@ -164,42 +165,94 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, "Too many sign-in attempts. Wait a few minutes and try again.")
 		return
 	}
-	user, err := s.Auth.Authenticate(req.Username, req.Password)
-	if errors.Is(err, auth.ErrInvalidCredentials) {
+	// A name that belongs to an account with a password here, or to no account
+	// at all while the directory is off, is a password sign-in. A directory
+	// account, or a name nobody here has while the directory is on, goes to the
+	// directory. A person with a password here is never handed to the directory.
+	var (
+		user   *auth.User
+		err    error
+		method = auth.MethodPassword
+	)
+	dirCfg, dirOn := s.ldapActive()
+	viaDirectory := false
+	if dirOn {
+		known, knownErr := s.Auth.UserByName(strings.TrimSpace(req.Username))
+		viaDirectory = knownErr != nil || known.Source == auth.SourceLDAP
+	}
+	if viaDirectory {
+		method = auth.MethodLDAP
+		user, err = s.directorySignIn(r.Context(), dirCfg, strings.TrimSpace(req.Username), req.Password)
+	} else {
+		if !s.localSignInOn() {
+			writeError(w, http.StatusForbidden, localOffMessage)
+			return
+		}
+		user, err = s.Auth.Authenticate(req.Username, req.Password)
+	}
+	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, ldapauth.ErrInvalidCredentials), errors.Is(err, ldapauth.ErrAmbiguous):
 		s.LoginLimiter.RecordFailure(ipKey)
 		byUser.RecordFailure(userKey)
-		slog.Warn("auth: failed sign-in", "user", userKey, "ip", ip)
+		slog.Warn("auth: failed sign-in", "user", userKey, "ip", ip, "method", method)
 		writeError(w, http.StatusUnauthorized, "Wrong username or password.")
 		return
-	}
-	if err != nil {
+	case errors.Is(err, auth.ErrAccountDisabled):
+		slog.Warn("auth: sign-in refused, the account is turned off", "user", userKey, "ip", ip)
+		writeError(w, http.StatusForbidden, disabledMessage)
+		return
+	case errors.Is(err, errNoAccountHere):
+		slog.Warn("auth: directory sign-in refused, no account here and none is made automatically", "user", userKey, "ip", ip)
+		writeError(w, http.StatusForbidden, "That worked, but there is no account for you here yet. Ask an administrator to add one.")
+		return
+	case errors.Is(err, auth.ErrUsernameTaken):
+		slog.Warn("auth: directory sign-in refused, the user name is taken by another account", "user", userKey, "ip", ip)
+		writeError(w, http.StatusConflict, "An account with your user name already exists here and isn't linked to the directory. Ask an administrator.")
+		return
+	case errors.Is(err, ldapauth.ErrUnavailable):
+		slog.Error("auth: the directory could not be used for a sign-in", "err", err)
+		writeError(w, http.StatusBadGateway, "The directory couldn't be reached. Try again in a moment, or ask an administrator.")
+		return
+	case err != nil:
 		log.Printf("api: login: %v", err)
 		writeError(w, http.StatusInternalServerError, "Couldn't sign you in. Try again.")
 		return
 	}
-	s.LoginLimiter.RecordSuccess(ipKey)
-	if err := s.Auth.RecordLogin(user.ID); err != nil {
-		log.Printf("api: login: %v", err) // bookkeeping only; the sign-in itself succeeded
+	// With two-step sign-in on, the password alone isn't enough: the app
+	// code comes next (two_step.go). The failures counted against this
+	// address are kept until that code is right, so a right password can't be
+	// used to wipe the count of wrong codes.
+	if st, err := s.Auth.TwoStepOf(user.ID); err == nil && st.Enabled {
+		s.askForCode(w, user)
+		return
 	}
-	s.startSession(w, r, user.ID)
-	writeJSON(w, http.StatusOK, userPayload(user))
+	s.LoginLimiter.RecordSuccess(ipKey)
+	s.finishSignInVia(w, r, user, method, nil)
 }
 
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, userID int64) {
-	token, expiresAt, err := s.Auth.CreateSession(userID)
+	s.startSessionVia(w, r, userID, auth.MethodPassword)
+}
+
+func (s *Server) startSessionVia(w http.ResponseWriter, r *http.Request, userID int64, method string) {
+	token, expiresAt, err := s.Auth.CreateSessionVia(userID, method)
 	if err != nil {
 		log.Printf("api: create session: %v", err)
 		writeError(w, http.StatusInternalServerError, "Couldn't sign you in. Try again.")
 		return
 	}
-	auth.SetSessionCookie(w, token, expiresAt, s.isHTTPS(r))
+	auth.SetSessionCookieAt(w, token, expiresAt, s.isHTTPS(r), s.cookiePath())
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(auth.CookieName); err == nil {
 		_ = s.Auth.DeleteSession(cookie.Value)
 	}
-	auth.ClearSessionCookie(w, s.isHTTPS(r))
+	auth.ClearSessionCookieAt(w, s.isHTTPS(r), s.cookiePath())
+	if s.cfg.URLBase != "" {
+		// A cookie from before the prefix was set sits at the root.
+		auth.ClearSessionCookie(w, s.isHTTPS(r))
+	}
 	writeJSON(w, http.StatusOK, nil)
 }
 
@@ -222,8 +275,20 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	if rejectBad(w, checkPassword(req.NewPassword, "New password")) {
 		return
 	}
+	// Guessing the current password from a stolen session is slowed down like guessing it at sign-in.
+	byUser := s.sec().byUser
+	guessKey := "password:" + strconv.FormatInt(user.ID, 10)
+	if !byUser.Allow(guessKey) {
+		writeError(w, http.StatusTooManyRequests, "Too many wrong passwords. Wait a few minutes and try again.")
+		return
+	}
 	err := s.Auth.ChangePassword(user.ID, req.CurrentPassword, req.NewPassword)
+	if errors.Is(err, auth.ErrNotLocal) {
+		writeError(w, http.StatusBadRequest, "Your account signs in through single sign-on or the directory, so its password is changed there, not here.")
+		return
+	}
 	if errors.Is(err, auth.ErrInvalidCredentials) {
+		byUser.RecordFailure(guessKey)
 		writeError(w, http.StatusUnauthorized, "Your current password isn't right.")
 		return
 	}
@@ -248,6 +313,9 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	out := userPayload(user)
 	if p, err := s.Auth.PermissionsOf(user.ID); err == nil {
 		out["permissions"] = p // the app hides what the account may not do
+	}
+	if ids, err := s.Auth.IdentitiesOf(user.ID); err == nil {
+		out["oidcLinked"] = hasProvider(ids, oidcProvider) // tied to a single sign-on account
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -300,6 +368,7 @@ func (s *Server) handleUpdateUserProfile(w http.ResponseWriter, r *http.Request)
 type apiKeyPayload struct {
 	ID        int64      `json:"id"`
 	Name      string     `json:"name"`
+	ReadOnly  bool       `json:"readOnly"` // may only be used for GET requests
 	CreatedAt time.Time  `json:"createdAt"`
 	RevokedAt *time.Time `json:"revokedAt,omitempty"`
 	Key       string     `json:"key,omitempty"` // only ever set on creation — see handleCreateAPIKey
@@ -321,13 +390,16 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]apiKeyPayload, len(keys))
 	for i, k := range keys {
-		out[i] = apiKeyPayload{ID: k.ID, Name: k.Name, CreatedAt: k.CreatedAt, RevokedAt: k.RevokedAt}
+		out[i] = apiKeyPayload{ID: k.ID, Name: k.Name, ReadOnly: k.ReadOnly, CreatedAt: k.CreatedAt, RevokedAt: k.RevokedAt}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 type createAPIKeyRequest struct {
 	Name string `json:"name"`
+	// ReadOnly makes a key that can only read: any request that is not a GET
+	// is refused. Good for a dashboard or a monitoring script.
+	ReadOnly bool `json:"readOnly"`
 }
 
 // handleCreateAPIKey makes a new API key and returns the key itself this one
@@ -351,12 +423,12 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if rejectBad(w, checkRequired(req.Name, "Give the key a name, for example: my script."), checkMaxLen(req.Name, "The key name", 60), checkNoControl(req.Name, "The key name")) {
 		return
 	}
-	rawKey, err := s.Auth.CreateAPIKey(user.ID, req.Name)
+	rawKey, err := s.Auth.CreateAPIKeyScoped(user.ID, req.Name, req.ReadOnly)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, apiKeyPayload{Name: req.Name, Key: rawKey})
+	writeJSON(w, http.StatusCreated, apiKeyPayload{Name: req.Name, ReadOnly: req.ReadOnly, Key: rawKey})
 }
 
 func (s *Server) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,7 @@ import { useAuth } from '../AuthContext'
 import { etaText, finishedText, progressText, upNextText } from '../importText'
 import { useLive } from '../useLive'
 import Icon from './Icon'
+import { t } from '../i18n'
 
 // A wide banner under the top bar, on every page, while a library import is
 // running (or has just finished). An import carries on in the background, so
@@ -46,13 +47,17 @@ function Banners() {
           <div className="import-banner-body">
             <strong>
               {j.phase === 'scanning'
-                ? `Looking through your ${j.kind === 'tv' ? 'TV' : 'movie'} folder.`
-                : `Matching your ${j.kind === 'tv' ? 'shows' : 'movies'}: ${j.done} of ${j.total}.`}
+                ? j.kind === 'tv'
+                  ? t('Looking through your TV folder.')
+                  : t('Looking through your movie folder.')
+                : j.kind === 'tv'
+                  ? t('Matching your shows: {done} of {total}.', { done: j.done, total: j.total })
+                  : t('Matching your movies: {done} of {total}.', { done: j.done, total: j.total })}
             </strong>{' '}
-            You can keep using Mediarium.
+            {t('You can keep using Mediarium.')}
           </div>
           <Link className="import-banner-link" to={`/import?kind=${j.kind}`}>
-            Go to the import
+            {t('Go to the import')}
           </Link>
         </div>
       ))}
@@ -67,7 +72,7 @@ function Banners() {
               void Promise.all(batches.filter((b) => !b.running).map((b) => api.dismissImportBatch(b.id).catch(() => undefined))).then(load)
             }
           >
-            Dismiss all
+            {t('Dismiss all')}
           </button>
         </div>
       )}
@@ -87,7 +92,7 @@ function BatchBanner({ batch: b, onDismissed }: { batch: ImportBatch; onDismisse
         </span>
         <div className="import-banner-body">
           <div>
-            <strong>{progressText(b)}</strong> You can keep using Mediarium.
+            <strong>{progressText(b)}</strong> {t('You can keep using Mediarium.')}
           </div>
           <div className="bar active import-banner-bar" aria-hidden="true">
             <span style={{ width: `${pct}%` }} />
@@ -98,7 +103,7 @@ function BatchBanner({ batch: b, onDismissed }: { batch: ImportBatch; onDismisse
           </small>
         </div>
         <Link className="import-banner-link" to={link}>
-          See progress
+          {t('See progress')}
         </Link>
       </div>
     )
@@ -115,12 +120,12 @@ function BatchBanner({ batch: b, onDismissed }: { batch: ImportBatch; onDismisse
         </div>
         <small>
           {problems
-            ? `Mediarium retries the ones with problems in the background. ${upNextText(b, true)}`
+            ? t('Mediarium retries the ones with problems in the background. {next}', { next: upNextText(b, true) })
             : upNextText(b, true)}
         </small>
       </div>
       <Link className="import-banner-link" to={link}>
-        See the report
+        {t('See the report')}
       </Link>
       <button
         className="btn-sm"
@@ -131,7 +136,7 @@ function BatchBanner({ batch: b, onDismissed }: { batch: ImportBatch; onDismisse
             .then(onDismissed)
         }
       >
-        Dismiss
+        {t('Dismiss')}
       </button>
     </div>
   )

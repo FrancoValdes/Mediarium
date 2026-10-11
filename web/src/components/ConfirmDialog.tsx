@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useFocusTrap } from '../useFocusTrap'
 import Icon from './Icon'
+import { t } from '../i18n'
 
 // A small in-app question with two answers, used instead of the browser's
 // own confirm box so it looks like the rest of Mediarium.
@@ -9,7 +10,7 @@ export default function ConfirmDialog({
   title,
   children,
   confirmLabel,
-  cancelLabel = 'Go back',
+  cancelLabel = t('Go back'),
   danger = false,
   onConfirm,
   onCancel,

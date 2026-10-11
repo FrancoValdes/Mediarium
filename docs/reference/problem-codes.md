@@ -10,6 +10,7 @@ Every problem on Settings > System > Logs and errors has one of these codes. The
 |---|---|---|---|---|
 | `download.failed` | error | **A download failed.** The download started but did not finish. | Read the message on Activity and try again. If it keeps failing, copy the report for support. | `/queue` |
 | `download.file_failed` | error | **Could not get the download file.** The indexer didn't hand over the file. | Test the indexer in Settings. If it says its limit is reached, try again later. | `/settings/indexers` |
+| `download.unsafe_files` | error | **A release held programs or scripts.** The release had files that run on a computer (like .exe, .scr or .bat) instead of just a video. That is how fake releases spread malware, so Mediarium did not use it. | Nothing to fix. The release is on the blocklist and Mediarium tries another one. To allow such releases anyway, switch off "Reject releases that contain programs or scripts" in Settings > Downloading. | `/settings/download-rules` |
 | `unpack.failed` | error | **Could not unpack a download.** The archive couldn't be opened. It may be damaged. | Mediarium tries another release. If it keeps happening, check the downloads folder has free space. | `/settings/media` |
 | `unpack.password` | error | **A download is locked with a password.** The archive needs a password, so it can't be opened. | Nothing to fix. Mediarium tries another release. |  |
 | `unpack.tool_missing` | error | **The 7z tool is missing.** This download is a 7z archive and the 7z tool isn't installed. | The Docker image includes it. On a native install, install 7-Zip and restart. |  |
@@ -19,11 +20,11 @@ Every problem on Settings > System > Logs and errors has one of these codes. The
 
 | Code | Level | What it means | What to try | Where |
 |---|---|---|---|---|
-| `usenet.too_many_connections` | warning | **Too many connections to your Usenet provider.** Your provider says this login has too many connections open. | Stop other programs (like SABnzbd) using the account, or lower the connections in Settings > Downloading > Usenet and torrents. | `/settings/downloads` |
-| `usenet.auth_refused` | error | **Your Usenet provider refused the login.** The username and password weren't accepted, or the subscription has ended. | Check the login in Settings > Downloading > Usenet and torrents, and that your subscription is active. | `/settings/downloads` |
-| `usenet.unreachable` | error | **Can't reach your Usenet provider.** Mediarium couldn't connect to the news server. | Check the server name and port, then press Test. | `/settings/downloads` |
-| `usenet.quota_reached` | error | **Usenet limit reached.** The download limit for your plan is used up, or the account has expired. | Wait for the limit to reset, or change your plan with the provider. | `/settings/downloads` |
-| `usenet.articles_missing` | error | **Parts of a download are missing.** Your Usenet servers no longer have every piece of this release. | Mediarium tries another release. A second provider from a different company often has the missing pieces. | `/settings/downloads` |
+| `usenet.too_many_connections` | warning | **Too many connections to your Usenet provider.** Your provider says this login has too many connections open. | Stop other programs (like SABnzbd) using the account, or lower the connections in Settings > Downloading > Usenet. | `/settings/usenet` |
+| `usenet.auth_refused` | error | **Your Usenet provider refused the login.** The username and password weren't accepted, or the subscription has ended. | Check the login in Settings > Downloading > Usenet, and that your subscription is active. | `/settings/usenet` |
+| `usenet.unreachable` | error | **Can't reach your Usenet provider.** Mediarium couldn't connect to the news server. | Check the server name and port, then press Test. | `/settings/usenet` |
+| `usenet.quota_reached` | error | **Usenet limit reached.** The download limit for your plan is used up, or the account has expired. | Wait for the limit to reset, or change your plan with the provider. | `/settings/usenet` |
+| `usenet.articles_missing` | error | **Parts of a download are missing.** Your Usenet servers no longer have every piece of this release. | Mediarium tries another release. A second provider from a different company often has the missing pieces. | `/settings/usenet` |
 
 ## Indexers & Search
 
@@ -31,6 +32,7 @@ Every problem on Settings > System > Logs and errors has one of these codes. The
 |---|---|---|---|---|
 | `indexer.rate_limited` | warning | **An indexer is limiting you.** The site says you've made too many requests or used up your plan's limit. | Wait a while. If it keeps happening, check your plan's limits on that site. | `/settings/indexers` |
 | `indexer.auth_refused` | error | **An indexer refused the key.** The site didn't accept your API key or login. | Copy the key again from your account on that site. | `/settings/indexers` |
+| `indexer.blocked` | warning | **An indexer is turning Mediarium away.** The site answered with a web page, usually a Cloudflare check, instead of results. That is not a wrong key. | Try again later; these blocks often pass. If it keeps happening, the site may only let certain apps in: ask its support, or add the indexer through Prowlarr or NZBHydra and use that in Mediarium. | `/settings/indexers` |
 | `indexer.unreachable` | warning | **Can't reach an indexer.** The site didn't answer. It may be down or have moved. | Press Test on the indexer. If the site has a Cloudflare check, make sure the Cloudflare helper is running. | `/settings/indexers` |
 | `indexer.failed` | warning | **An indexer gave an error.** The site returned an error instead of results. | Try again in a few minutes, or press Test on the indexer. | `/settings/indexers` |
 | `indexer.fetch_failed` | error | **Could not get a file from an indexer.** The indexer didn't hand over the file. The site may be down or the link may have expired. | Press Test on the indexer. If it works, retry the download in Activity. | `/settings/indexers` |
@@ -49,7 +51,7 @@ Every problem on Settings > System > Logs and errors has one of these codes. The
 |---|---|---|---|---|
 | `import.move_failed` | error | **Could not move a file into your library.** The download finished but the file couldn't be moved to your library. | Check the library folder exists, has free space and is writable. Then retry in Activity. | `/settings/media` |
 | `import.no_video` | error | **No video in a download.** The download had no movie or episode file inside. | Nothing to fix. Mediarium tries another release. |  |
-| `import.file_exists` | error | **A file is already there.** A file is already in the place this one should go. | Remove the old file, or set what happens with existing files in Settings > Library > Folders and file names. | `/settings/media` |
+| `import.file_exists` | error | **A file is already there.** A file is already in the place this one should go. | Remove the old file, or set what happens with existing files in Settings > Library > Folders. | `/settings/media` |
 | `import.failed` | error | **An import failed.** This couldn't be added to your library. | Read the message on Activity and try again. | `/queue` |
 
 ## Disk and folders
@@ -59,7 +61,7 @@ Every problem on Settings > System > Logs and errors has one of these codes. The
 | `disk.full` | error | **The disk is full.** There isn't enough free space. | Free up some space, or run Clean up in Settings > System. Then retry in Activity. | `/settings/system` |
 | `folder.permission_denied` | error | **Mediarium may not write to a folder.** The system refused access to a folder. | Give the PUID and PGID user read and write access to the folder. On a Synology, check the shared folder's permissions. | `/settings/media` |
 | `folder.missing` | error | **A folder is missing.** A folder Mediarium needs isn't there. | Create the folder, or check its drive is connected and mounted. | `/settings/media` |
-| `disk.low` | warning | **Downloads are waiting: the disk is nearly full.** The downloads folder has less free space than the limit you set, so no new download starts. | Free some space, or lower "Keep at least this much free" in Settings > Downloading. Waiting downloads start by themselves once there is room. | `/settings/downloads` |
+| `disk.low` | warning | **Downloads are waiting: the disk is nearly full.** The downloads folder has less free space than the limit you set, so no new download starts. | Free some space, or lower "Keep at least this much free" in Settings > Downloading. Waiting downloads start by themselves once there is room. | `/settings/download-rules` |
 
 ## Database
 
@@ -92,5 +94,6 @@ Every problem on Settings > System > Logs and errors has one of these codes. The
 
 | Code | Level | What it means | What to try | Where |
 |---|---|---|---|---|
-| `backup.failed` | error | **The nightly backup was not saved.** Mediarium couldn't save its automatic backup in the backups folder. | Check that the config folder has free space, then press Back up now in Settings > System. | `/settings/system` |
+| `backup.failed` | error | **The nightly backup was not saved.** Mediarium couldn't save its automatic backup in the backups folder. | Check that the config folder has free space, then press Back up now in Settings > System. | `/settings/backup` |
+| `backup.cloud_failed` | error | **The backup was not copied to the cloud.** Mediarium saved its backup here but couldn't copy it to your cloud storage. | Press Test in Settings > System > Backup and restore to see what the storage says. Check the keys or password and that there's space left. | `/settings/backup` |
 | `app.restarted_itself` | warning | **Mediarium restarted itself.** It stopped answering for a few minutes. | If it repeats, copy the report for support. Check the settings folder is on a local disk and the NAS has memory to spare. | `/settings/system` |

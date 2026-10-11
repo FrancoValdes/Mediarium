@@ -1,6 +1,8 @@
 // Small sums for the Books app: where a listener is in an audiobook, how far
 // through it that is, and how times read.
 
+import { t } from '../i18n.ts'
+
 export interface AudioPosition {
   track: number
   seconds: number
@@ -50,7 +52,7 @@ export function nextSpeed(cur: number): number {
 // number reads as "Part 3".
 export function trackLabel(name: string, index: number): string {
   const cleaned = name.replace(/^\s*\d+\s*[-–._)]\s*/, '').trim()
-  if (cleaned === '' || /^\d+$/.test(cleaned)) return `Part ${index + 1}`
+  if (cleaned === '' || /^\d+$/.test(cleaned)) return t('Part {n}', { n: index + 1 })
   return cleaned
 }
 
@@ -68,14 +70,14 @@ export interface Chapter {
 // when it has two or more, otherwise one chapter per file.
 export function buildChapters(tracks: { name: string; chapters?: { title: string; start: number }[] }[]): Chapter[] {
   const out: Chapter[] = []
-  tracks.forEach((t, i) => {
-    const marks = (t.chapters ?? []).filter((c) => Number.isFinite(c.start) && c.start >= 0).sort((a, b) => a.start - b.start)
+  tracks.forEach((tr, i) => {
+    const marks = (tr.chapters ?? []).filter((c) => Number.isFinite(c.start) && c.start >= 0).sort((a, b) => a.start - b.start)
     if (marks.length < 2) {
-      out.push({ track: i, start: 0, title: trackLabel(t.name, i) })
+      out.push({ track: i, start: 0, title: trackLabel(tr.name, i) })
       return
     }
     marks.forEach((c, j) => {
-      out.push({ track: i, start: j === 0 ? 0 : c.start, end: marks[j + 1]?.start, title: c.title.trim() || `Chapter ${out.length + 1}` })
+      out.push({ track: i, start: j === 0 ? 0 : c.start, end: marks[j + 1]?.start, title: c.title.trim() || t('Chapter {n}', { n: out.length + 1 }) })
     })
   })
   return out

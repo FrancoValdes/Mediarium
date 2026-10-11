@@ -97,7 +97,13 @@ type Item struct {
 type Repo struct {
 	db  *sql.DB
 	box *crypto.Box // encrypts the download address; nil keeps it as written (tests)
+	// onEnqueue, when set, is told about every release added to the line, with
+	// its download address as written (used to count grabs per indexer).
+	onEnqueue func(Item)
 }
+
+// SetOnEnqueue sets a function that is called after each release is added.
+func (r *Repo) SetOnEnqueue(f func(Item)) { r.onEnqueue = f }
 
 func NewRepo(db *sql.DB) *Repo { return &Repo{db: db} }
 
@@ -199,6 +205,9 @@ func (r *Repo) Enqueue(item Item) (int64, error) {
 	)
 	if err != nil {
 		return 0, fmt.Errorf("enqueue download: %w", err)
+	}
+	if r.onEnqueue != nil {
+		r.onEnqueue(item)
 	}
 	return res.LastInsertId()
 }
@@ -308,8 +317,43 @@ func (r *Repo) SetProgress(id int64, pct float64) error {
 }
 
 func (r *Repo) List() ([]Item, error) {
+	return r.list("")
+}
+
+// CountByStatus counts the downloads in each status.
+func (r *Repo) CountByStatus() (map[Status]int, error) {
+	rows, err := r.db.Query(`SELECT status, COUNT(*) FROM download_queue GROUP BY status`)
+	if err != nil {
+		return nil, fmt.Errorf("count downloads: %w", err)
+	}
+	defer rows.Close()
+	out := map[Status]int{}
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, fmt.Errorf("scan download count: %w", err)
+		}
+		out[Status(status)] = n
+	}
+	return out, rows.Err()
+}
+
+// ListActive lists the downloads that are waiting in line, downloading or
+// being imported. Same order as List.
+func (r *Repo) ListActive() ([]Item, error) {
+	return r.list(`WHERE status IN ('queued', 'downloading', 'importing')`)
+}
+
+// ListUnfinished lists the downloads that are not over yet: everything but
+// the completed, failed and stopped ones. Same order as List.
+func (r *Repo) ListUnfinished() ([]Item, error) {
+	return r.list(`WHERE status NOT IN ('completed', 'failed', 'stopped')`)
+}
+
+func (r *Repo) list(where string) ([]Item, error) {
 	rows, err := r.db.Query(
-		`SELECT id, COALESCE(movie_id, 0), COALESCE(series_id, 0), COALESCE(season, 0), COALESCE(episode, 0), COALESCE(album_id, 0), COALESCE(book_id, 0), book_format, indexer_id, release_title, nzb_url, size_bytes, protocol, status, progress_pct, COALESCE(error, ''), dest_path, added_at, COALESCE(completed_at, ''), interrupted, priority, line_seq FROM download_queue ORDER BY added_at DESC, id DESC`)
+		`SELECT id, COALESCE(movie_id, 0), COALESCE(series_id, 0), COALESCE(season, 0), COALESCE(episode, 0), COALESCE(album_id, 0), COALESCE(book_id, 0), book_format, indexer_id, release_title, nzb_url, size_bytes, protocol, status, progress_pct, COALESCE(error, ''), dest_path, added_at, COALESCE(completed_at, ''), interrupted, priority, line_seq FROM download_queue ` + where + ` ORDER BY added_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list queue: %w", err)
 	}
@@ -341,7 +385,7 @@ type CompletedItem struct {
 // RecentCompleted returns the most recently completed downloads, newest first.
 func (r *Repo) RecentCompleted(limit int) ([]CompletedItem, error) {
 	rows, err := r.db.Query(
-		`SELECT id, COALESCE(movie_id, 0), COALESCE(series_id, 0), COALESCE(season, 0), COALESCE(episode, 0), COALESCE(album_id, 0), release_title, COALESCE(size_bytes, 0), protocol, COALESCE(completed_at, '')
+		`SELECT id, COALESCE(movie_id, 0), COALESCE(series_id, 0), COALESCE(season, 0), COALESCE(episode, 0), COALESCE(album_id, 0), COALESCE(book_id, 0), release_title, COALESCE(size_bytes, 0), protocol, COALESCE(completed_at, '')
 		 FROM download_queue WHERE status = 'completed' ORDER BY completed_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list recent completed downloads: %w", err)
@@ -351,7 +395,7 @@ func (r *Repo) RecentCompleted(limit int) ([]CompletedItem, error) {
 	for rows.Next() {
 		var c CompletedItem
 		var protocol string
-		if err := rows.Scan(&c.ID, &c.MovieID, &c.SeriesID, &c.Season, &c.Episode, &c.AlbumID, &c.ReleaseTitle, &c.SizeBytes, &protocol, &c.CompletedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.MovieID, &c.SeriesID, &c.Season, &c.Episode, &c.AlbumID, &c.BookID, &c.ReleaseTitle, &c.SizeBytes, &protocol, &c.CompletedAt); err != nil {
 			return nil, fmt.Errorf("scan completed download: %w", err)
 		}
 		c.Protocol = Protocol(protocol)

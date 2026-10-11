@@ -35,7 +35,7 @@ func (s *Server) defaultSources() string {
 // switched off they are unavailable to everything, so every item is Usenet
 // only whatever it asked for.
 func (s *Server) sourcesFor(pref string) string {
-	if !s.torrentsEnabled() {
+	if !s.torrentReleasesOn() {
 		return sourcesUsenet
 	}
 	if pref == "" {
@@ -71,7 +71,9 @@ func preferUsenet(best, candidate *indexers.Result) bool {
 	if pb, pc := indexerRank(best.Priority), indexerRank(candidate.Priority); pb != pc {
 		return pc < pb
 	}
-	return candidate.Protocol == indexers.ProtocolUsenet && best.Protocol != indexers.ProtocolUsenet
+	// Then the preferred protocol (Usenet unless the delay profile says torrents).
+	pref := preferredProtocol()
+	return candidate.Protocol == pref && best.Protocol != pref
 }
 
 // indexerRank is an indexer's priority, with "not set" counting as normal.
@@ -147,7 +149,7 @@ func (s *Server) handleTitleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.TMDB().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie info and lists).")
+		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie and show info).")
 		return
 	}
 	results, err := s.searchTitles(r.Context(), query)
@@ -159,20 +161,21 @@ func (s *Server) handleTitleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) searchTitles(ctx context.Context, query string) ([]titleSearchResult, error) {
-	found, err := s.TMDB().SearchMulti(ctx, query)
+	found, err := s.displayTMDB().SearchMulti(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	if len(found) > maxTitleResults {
 		found = found[:maxTitleResults]
 	}
+	newestFirst(found, query, func(f metadata.MultiResult) string { return f.DisplayTitle() }, func(f metadata.MultiResult) int { return f.Year() })
 	out := make([]titleSearchResult, len(found))
 	var wg sync.WaitGroup
 	for i, f := range found {
 		out[i] = titleSearchResult{
 			Kind: f.MediaType, TMDBID: f.ID, Title: f.DisplayTitle(), Year: f.Year(), Overview: f.Overview,
 			PosterURL: metadata.PosterURL(f.PosterPath),
-			MediaType: f.MediaType, Genres: s.TMDB().MultiGenres(ctx, f),
+			MediaType: f.MediaType, Genres: s.displayTMDB().MultiGenres(ctx, f),
 			Rating: metadata.RoundRating(f.VoteAverage), VoteCount: f.VoteCount,
 		}
 		wg.Add(1)

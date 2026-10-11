@@ -204,6 +204,10 @@ func (s *Server) bulkSet(w http.ResponseWriter, items []bulkItem, field library.
 // endpoints do: a title that stops being monitored, or is set to leave what
 // it has alone, loses the downloads that are only waiting.
 func (s *Server) afterBulkChange(field library.BulkField, value any, refs, missing []library.Ref) {
+	if field == library.BulkProfile {
+		s.afterBulkProfile(value, refs, missing)
+		return
+	}
 	on, _ := value.(bool)
 	var reason string
 	var onlyUpgrades bool
@@ -421,7 +425,7 @@ func (s *Server) runBulkSearch(movies []library.Movie, shows []library.Series) {
 		if ctx.Err() != nil {
 			break
 		}
-		started += s.autoGrabTV(s.targetedTVSearcher(ctx, instances, maxTVSearchesPerHunt), "bulk-search", profiles,
+		started += s.autoGrabTV(s.targetedTVSearcher(ctx, instances, maxTVSearchesPerHunt, true), "bulk-search", profiles,
 			tvScope{seriesID: sr.ID, force: true})
 	}
 	total := len(movies) + len(shows)
@@ -447,4 +451,24 @@ func bulkSearchMessage(r bulkSearchResult) string {
 		msg += fmt.Sprintf(" %d did not need a search.", r.Skipped)
 	}
 	return msg
+}
+
+// afterBulkProfile looks again for each title the new profile aims above
+// (see movieProfileChanged).
+func (s *Server) afterBulkProfile(value any, refs, missing []library.Ref) {
+	profileID, _ := value.(int64)
+	gone := map[library.Ref]bool{}
+	for _, m := range missing {
+		gone[m] = true
+	}
+	for _, ref := range refs {
+		if gone[ref] {
+			continue
+		}
+		if ref.Kind == library.KindMovie {
+			s.movieProfileChanged(ref.ID, profileID)
+		} else {
+			s.seriesProfileChanged(ref.ID, profileID)
+		}
+	}
 }

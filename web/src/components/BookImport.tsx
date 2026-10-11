@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom'
 import { api, type BookFormat, type BookImportState } from '../api'
 import Icon from './Icon'
 import { useToast } from './Toast'
+import { t, tx } from '../i18n'
 
-const STATUS_LABEL: Record<string, string> = { imported: 'Added', already: 'Already there', unmatched: 'Not found', failed: 'Failed' }
+const STATUS_LABEL: Record<string, string> = { imported: t('Added'), already: t('Already there'), unmatched: t('Not found'), failed: t('Failed') }
 
 // "Import": reads the ebooks or audiobooks folder for books that are already
 // there and adds them to the library where they are. Nothing is moved.
@@ -21,13 +22,13 @@ export default function BookImport({ format, folder, onDone }: { format: BookFor
   }, [poll])
   useEffect(() => {
     if (!running) return
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       void api.bookImportStatus().then((s) => {
         setSt(s)
         if (s.phase !== 'running') onDone()
       })
     }, 1500)
-    return () => clearInterval(t)
+    return () => clearInterval(timer)
   }, [running, onDone])
 
   async function start() {
@@ -41,7 +42,7 @@ export default function BookImport({ format, folder, onDone }: { format: BookFor
     }
   }
 
-  const word = format === 'ebook' ? 'ebooks' : 'audiobooks'
+  const ebooks = format === 'ebook'
   const results = (st?.results ?? []).filter((r) => r.kind === format)
   const problems = results.filter((r) => r.status === 'unmatched' || r.status === 'failed')
   const listed = showAll ? results : problems
@@ -50,23 +51,24 @@ export default function BookImport({ format, folder, onDone }: { format: BookFor
     <section className="card book-import">
       <div className="book-import-head">
         <div>
-          <h2>Import the {word} you already have</h2>
+          <h2>{ebooks ? t('Import the ebooks you already have') : t('Import the audiobooks you already have')}</h2>
           <p className="hint">
-            Mediarium reads <code>{folder || `your ${word} folder`}</code>, looks each book up on Open Library and adds it to your library where it is. Nothing is moved or renamed. Folders named
-            Author/Title work best.
+            {tx('Mediarium reads {folder}, looks each book up on Open Library and adds it to your library where it is. Nothing is moved or renamed. Folders named Author/Title work best.', {
+              folder: <code>{folder || (ebooks ? t('your ebooks folder') : t('your audiobooks folder'))}</code>,
+            })}
           </p>
         </div>
         <button className="primary btn-with-icon" onClick={() => void start()} disabled={starting || running}>
-          <Icon name="folder" size={16} /> {running ? 'Importing…' : st?.phase ? 'Import again' : 'Start import'}
+          <Icon name="folder" size={16} /> {running ? t('Importing…') : st?.phase ? t('Import again') : t('Start import')}
         </button>
       </div>
       {running && (
         <div>
-          <div className="bar" title={`${st.done} of ${st.total}`}>
+          <div className="bar" title={t('{done} of {total}', { done: st.done, total: st.total })}>
             <span style={{ width: `${st.total ? (st.done / st.total) * 100 : 0}%` }} />
           </div>
           <small className="hint">
-            {st.done} of {st.total} looked up…
+            {t('{done} of {total} looked up…', { done: st.done, total: st.total })}
           </small>
         </div>
       )}
@@ -74,11 +76,11 @@ export default function BookImport({ format, folder, onDone }: { format: BookFor
       {st?.phase === 'done' && (
         <p>
           {results.length === 0 ? (
-            `No ${word} found in the folder.`
+            ebooks ? t('No ebooks found in the folder.') : t('No audiobooks found in the folder.')
+          ) : sum.failed ? (
+            tx('{added} added, {already} already in your library, {missing} not found, {failed} failed.', { added: <strong>{sum.imported ?? 0}</strong>, already: sum.already ?? 0, missing: sum.unmatched ?? 0, failed: sum.failed })
           ) : (
-            <>
-              <strong>{sum.imported ?? 0}</strong> added, {sum.already ?? 0} already in your library, {sum.unmatched ?? 0} not found{sum.failed ? `, ${sum.failed} failed` : ''}.
-            </>
+            tx('{added} added, {already} already in your library, {missing} not found.', { added: <strong>{sum.imported ?? 0}</strong>, already: sum.already ?? 0, missing: sum.unmatched ?? 0 })
           )}
         </p>
       )}
@@ -86,7 +88,7 @@ export default function BookImport({ format, folder, onDone }: { format: BookFor
         <>
           <div className="row-actions">
             <button className="btn-sm" onClick={() => setShowAll((v) => !v)}>
-              {showAll ? 'Show only the ones not found' : `Show all ${results.length}`}
+              {showAll ? t('Show only the ones not found') : t('Show all {n}', { n: results.length })}
             </button>
           </div>
           {listed.length > 0 && (
@@ -94,9 +96,9 @@ export default function BookImport({ format, folder, onDone }: { format: BookFor
               <table className="import-table">
                 <thead>
                   <tr>
-                    <th>On disk</th>
-                    <th>Read as</th>
-                    <th>Result</th>
+                    <th>{t('On disk')}</th>
+                    <th>{t('Read as')}</th>
+                    <th>{t('Result')}</th>
                   </tr>
                 </thead>
                 <tbody>

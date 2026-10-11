@@ -7,9 +7,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/rdborg/mediarium/internal/fileperms"
 	"github.com/rdborg/mediarium/internal/parser"
 )
 
@@ -101,9 +103,18 @@ func episodeOf(rel string) (int, []int) {
 	return 0, nil
 }
 
+// FindOption changes what FindSidecars counts.
+type FindOption int
+
+// FollowLinks counts a symbolic link as the file it leads to. Only for a
+// download Mediarium laid out itself as links to an external download
+// client's files; the caller checks where each one leads before copying it.
+const FollowLinks FindOption = 1
+
 // FindSidecars lists the subtitles in a finished download folder whose
 // language can be told, skipping sample clips. It only reads.
-func FindSidecars(root string) ([]Sidecar, error) {
+func FindSidecars(root string, opts ...FindOption) ([]Sidecar, error) {
+	links := slices.Contains(opts, FollowLinks)
 	groups := map[string]*Sidecar{}
 	var order []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -115,7 +126,8 @@ func FindSidecars(root string) ([]Sidecar, error) {
 		}
 		// Real files only: a link named like a subtitle would copy whatever it
 		// points at into the library.
-		if d.IsDir() || !d.Type().IsRegular() || !SidecarExts[strings.ToLower(filepath.Ext(path))] {
+		isLink := links && d.Type()&fs.ModeSymlink != 0
+		if d.IsDir() || (!d.Type().IsRegular() && !isLink) || !SidecarExts[strings.ToLower(filepath.Ext(path))] {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)
@@ -127,7 +139,10 @@ func FindSidecars(root string) ([]Sidecar, error) {
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.Size() == 0 {
+		if isLink {
+			info, err = os.Stat(path)
+		}
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
 			return nil
 		}
 		key := strings.ToLower(strings.TrimSuffix(path, filepath.Ext(path)))
@@ -226,5 +241,6 @@ func copyNew(src, dst string) error {
 		_ = os.Remove(dst)
 		return err
 	}
+	_ = fileperms.ApplyFile(dst)
 	return nil
 }

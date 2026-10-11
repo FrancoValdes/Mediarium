@@ -15,6 +15,7 @@ type Show struct {
 	Overview     string  `json:"overview"`
 	FirstAirDate string  `json:"first_air_date"`
 	PosterPath   string  `json:"poster_path"`
+	BackdropPath string  `json:"backdrop_path"`
 	VoteAverage  float64 `json:"vote_average"`
 	VoteCount    int     `json:"vote_count"`
 	Popularity   float64 `json:"popularity"`
@@ -35,12 +36,23 @@ type SeasonSummary struct {
 	EpisodeCount int    `json:"episode_count"`
 	Name         string `json:"name"`
 	AirDate      string `json:"air_date"`
+	PosterPath   string `json:"poster_path"`
 }
 
 // ShowDetail is a Show plus its season list, from GET /tv/{id}.
 type ShowDetail struct {
 	Show
 	Seasons []SeasonSummary `json:"seasons"`
+	// EpisodeRunTime lists the usual episode lengths in minutes, as TMDB gives them.
+	EpisodeRunTime []int `json:"episode_run_time"`
+	// Status is TMDB's: "Returning Series", "Ended", "Canceled", "In Production"…
+	Status string `json:"status"`
+	// ExternalIDs are the show's ids elsewhere (TheTVDB, IMDb); zero when
+	// TMDB doesn't know them.
+	ExternalIDs struct {
+		TVDBID int    `json:"tvdb_id"`
+		IMDBID string `json:"imdb_id"`
+	} `json:"external_ids"`
 }
 
 // EpisodeInfo is one episode from GET /tv/{id}/season/{n}.
@@ -97,7 +109,7 @@ func (c *Client) FindShowByTVDBID(ctx context.Context, tvdbID int) (Show, bool, 
 // GetShow fetches a single show's details and season list.
 func (c *Client) GetShow(ctx context.Context, tmdbID int) (*ShowDetail, error) {
 	var d ShowDetail
-	if err := c.get(ctx, fmt.Sprintf("/tv/%d", tmdbID), nil, &d); err != nil {
+	if err := c.get(ctx, fmt.Sprintf("/tv/%d", tmdbID), url.Values{"append_to_response": {"external_ids"}}, &d); err != nil {
 		return nil, err
 	}
 	return &d, nil

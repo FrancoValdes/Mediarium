@@ -1,6 +1,7 @@
 // The plain-language pieces of the update card: the steps for each way of
 // running Mediarium, and the short sentences about where the running program
 // came from. No React in here so they can be tested.
+import { t } from './i18n.ts'
 
 export interface Steps {
   title: string
@@ -15,40 +16,40 @@ export function installSteps(install: { kind: 'docker' | 'native'; full: boolean
     return {
       groups: [
         {
-          title: 'Update Mediarium',
+          title: t('Update Mediarium'),
           steps: [
-            'Download a backup first (Settings, System).',
-            'Download the new version from the release page and unpack it.',
-            'Stop Mediarium, replace the program file with the new one, and start it again.',
+            t('Download a backup first (Settings, System).'),
+            t('Download the new version from the release page and unpack it.'),
+            t('Stop Mediarium, replace the program file with the new one, and start it again.'),
           ],
         },
       ],
-      notes: ['Your settings and library are kept. Mediarium updates its database when it starts.'],
+      notes: [t('Your settings and library are kept. Mediarium updates its database when it starts.')],
     }
   }
   const tag = install.full ? 'latest-full' : 'latest'
-  const notes = ['Your settings and library are kept. Mediarium updates its database when it starts. Download a backup first (Settings, System).']
+  const notes = [t('Your settings and library are kept. Mediarium updates its database when it starts. Download a backup first (Settings, System).')]
   if (install.full) {
-    notes.push(`You use the image with the Cloudflare helper built in. Keep its tag ending in -full, for example ghcr.io/rdborg/mediarium:${tag}.`)
+    notes.push(t('You use the image with the Cloudflare helper built in. Keep its tag ending in -full, for example {image}.', { image: `ghcr.io/rdborg/mediarium:${tag}` }))
   }
   return {
     groups: [
       {
         title: 'Synology Container Manager',
         steps: [
-          'Open Container Manager and go to Project.',
-          'Select mediarium, then choose Action, Stop, and then Action, Clean. This removes the container, not your folders.',
-          'Go to Image, select ghcr.io/rdborg/mediarium and delete it. If it says Update available, use that instead and skip the Build below.',
-          'Go back to Project, select mediarium and choose Action, Build. Container Manager downloads the new version and starts it.',
+          t('Open Container Manager and go to Project.'),
+          t('Select mediarium, then choose Action, Stop, and then Action, Clean. This removes the container, not your folders.'),
+          t('Go to Image, select ghcr.io/rdborg/mediarium and delete it. If it says Update available, use that instead and skip the Build below.'),
+          t('Go back to Project, select mediarium and choose Action, Build. Container Manager downloads the new version and starts it.'),
         ],
       },
       {
         title: 'Unraid',
-        steps: ['Open the Docker tab and click Check for Updates.', 'When Mediarium says update ready, click it and choose Update.'],
+        steps: [t('Open the Docker tab and click Check for Updates.'), t('When Mediarium says update ready, click it and choose Update.')],
       },
       {
         title: 'Docker Compose',
-        steps: ['In the folder with your compose file, run: docker compose pull', 'Then run: docker compose up -d'],
+        steps: [t('In the folder with your compose file, run: docker compose pull'), t('Then run: docker compose up -d')],
       },
     ],
     notes,
@@ -57,21 +58,21 @@ export function installSteps(install: { kind: 'docker' | 'native'; full: boolean
 
 // Where the running program comes from, for the Updates card.
 export function programSummary(s: { running: string; image: string; pushed: { version: string; running: boolean } | null }): string {
-  if (!s.image) return `You are running Mediarium ${s.running}.`
+  if (!s.image) return t('You are running Mediarium {version}.', { version: s.running })
   if (s.pushed && s.pushed.running) {
-    return `You are running Mediarium ${s.running}, installed on top of the Docker image, which has ${s.image}.`
+    return t('You are running Mediarium {version}, installed on top of the Docker image, which has {image}.', { version: s.running, image: s.image })
   }
   if (s.pushed) {
-    return `You are running Mediarium ${s.running}. An installed update (${s.pushed.version}) is waiting for the next restart. The Docker image has ${s.image}.`
+    return t('You are running Mediarium {version}. An installed update ({update}) is waiting for the next restart. The Docker image has {image}.', { version: s.running, update: s.pushed.version, image: s.image })
   }
-  return `You are running Mediarium ${s.running}.`
+  return t('You are running Mediarium {version}.', { version: s.running })
 }
 
 // The sentence about the last check.
 export function checkedText(n: { enabled: boolean; checkedAt?: string; error?: string }, ago: (iso: string | undefined) => string): string {
-  if (n.error) return n.checkedAt ? `${n.error} The last good check was ${ago(n.checkedAt)}.` : n.error
-  if (n.checkedAt) return `Checked ${ago(n.checkedAt)}.`
-  return n.enabled ? 'Not checked yet.' : 'Checking is switched off. Press Check now to look.'
+  if (n.error) return n.checkedAt ? t('{error} The last good check was {ago}.', { error: n.error, ago: ago(n.checkedAt) }) : n.error
+  if (n.checkedAt) return t('Checked {ago}.', { ago: ago(n.checkedAt) })
+  return n.enabled ? t('Not checked yet.') : t('Checking is switched off. Press Check now to look.')
 }
 
 // How the page waits for Mediarium to come back after it restarts.

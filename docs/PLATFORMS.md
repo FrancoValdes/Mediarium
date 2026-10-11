@@ -1,6 +1,6 @@
 # What runs where
 
-Docker is the one way to install Mediarium today, and it covers most home servers and NAS systems. The other ways below are coming soon.
+Mediarium is one Docker image, and every platform below runs that same image with the same settings. There is nothing separate to wait for: the install is the same compose file or the same few fields everywhere.
 
 ## Available now
 
@@ -14,25 +14,18 @@ Docker is the one way to install Mediarium today, and it covers most home server
 | Raspberry Pi 3, 4 or 5 with a **64-bit** OS | Docker Compose | [linux.md](./linux.md#raspberry-pi) |
 | Windows or Mac with Docker Desktop | Docker Compose, fine for trying it out | [INSTALL.md](./INSTALL.md#using-a-docker-app) |
 
-The image is `ghcr.io/rdborg/mediarium:latest`, built for `linux/amd64` and `linux/arm64`. `ghcr.io/rdborg/mediarium:latest-full` is the same with a Cloudflare helper built in (see [INSTALL.md](./INSTALL.md#optional-getting-past-cloudflare-checks)). Every release also has tags with its version number, for example `:2.1.0` and `:2.1` (and `:2.1.0-full` and `:2.1-full`): see [Updating](./INSTALL.md#updating).
+The image is `ghcr.io/rdborg/mediarium:latest` (also on Docker Hub as `rdborg/mediarium:latest`), built for `linux/amd64` and `linux/arm64`. `ghcr.io/rdborg/mediarium:latest-full` is the same with a Cloudflare helper built in (see [INSTALL.md](./INSTALL.md#optional-getting-past-cloudflare-checks)). Every release also has tags with its version number, for example `:3.0.0` and `:3.0` (and `:3.0.0-full` and `:3.0-full`): see [Updating](./INSTALL.md#updating).
 
-## Coming soon
+## Not available
 
-| Platform | What it will be | Status |
-|---|---|---|
-| Linux without Docker | `.deb` and `.rpm` packages with a systemd service | Coming soon |
-| Unraid Community Applications | One-click install from the Apps tab | Coming soon |
-| TrueNAS SCALE app catalog | One-click install from Apps → Discover | Coming soon |
-| CasaOS / ZimaOS App Store | One-click install from the App Store | Coming soon |
-| Umbrel | Install from a community app store | Coming soon |
-| Portainer | An app template you add by URL | Coming soon |
-| Proxmox | A helper script that creates a ready-made LXC container | Coming soon |
-| Kubernetes | A Helm chart | Coming soon |
-| Raspberry Pi with a 32-bit OS (`armv7`) | An `armv7` image | Not supported yet |
+| What | Where it stands |
+|---|---|
+| Linux without Docker (`.deb`, `.rpm`, systemd) | Not planned for now |
+| One-click entries in app stores (Unraid Community Applications, TrueNAS, CasaOS/ZimaOS, Umbrel, Proxmox helper scripts, Helm) | Not planned for now: the Docker install above does the same job. [Tell us](https://github.com/rdborg/Mediarium/issues/new/choose) which one you would use |
+| Synology Package Center (`.spk`) | Not possible with a Docker app: use Container Manager ([synology.md](./synology.md)) |
+| Raspberry Pi with a 32-bit OS (`armv7`) | Not supported |
 
-Until then, anything that runs Docker can run Mediarium: see the [Docker install](./INSTALL.md).
-
-There are no separate Windows or macOS versions: on a Windows PC or a Mac, run Mediarium in Docker Desktop. Each GitHub release also has a plain Linux program, without an installer. It's a barely tested preview and not supported yet. The notes inside the archive say what to set up. Tell us how it goes.
+There are no separate Windows or macOS versions: on a Windows PC or a Mac, run Mediarium in Docker Desktop. Each GitHub release also has a plain Linux program, without an installer. It's a barely tested preview and not supported. The notes inside the archive say what to set up.
 
 ## Raspberry Pi notes
 
@@ -43,4 +36,4 @@ There are no separate Windows or macOS versions: on a Windows PC or a Mac, run M
 
 ## Want to help?
 
-To test one of the coming-soon platforms, [open an issue](https://github.com/rdborg/Mediarium/issues/new/choose) and say which.
+To test the install on a platform nobody has tried yet, or to ask for a store listing, [open an issue](https://github.com/rdborg/Mediarium/issues/new/choose) and say which.

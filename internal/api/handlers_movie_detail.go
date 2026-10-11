@@ -32,10 +32,12 @@ type movieDetailPayload struct {
 	Year      int    `json:"year"`
 	Overview  string `json:"overview,omitempty"`
 	PosterURL string `json:"posterUrl,omitempty"`
-	LibraryID int64  `json:"libraryId,omitempty"` // 0 if not yet added to the library
-	Status    string `json:"status,omitempty"`    // library state: missing/downloading/downloaded
-	Quality   string `json:"quality,omitempty"`
-	FilePath  string `json:"filePath,omitempty"`
+	// BackdropURL is a wide still for the top of the title page.
+	BackdropURL string `json:"backdropUrl,omitempty"`
+	LibraryID   int64  `json:"libraryId,omitempty"` // 0 if not yet added to the library
+	Status      string `json:"status,omitempty"`    // library state: missing/downloading/downloaded
+	Quality     string `json:"quality,omitempty"`
+	FilePath    string `json:"filePath,omitempty"`
 
 	// From TMDB. ReleaseStatus is TMDB's own status ("Released", "In
 	// Production"...), kept apart from Status above, the library state.
@@ -53,6 +55,8 @@ type movieDetailPayload struct {
 	Directors     []string           `json:"directors"`
 	Cast          []castPayload      `json:"cast"`
 	Trailers      []metadata.Trailer `json:"trailers"`
+	// Collection is the series of films this one is part of, when it is.
+	Collection *collectionRef `json:"collection,omitempty"`
 }
 
 // handleTMDBMovieDetail gives everything the movie page shows from a TMDB id
@@ -65,11 +69,11 @@ func (s *Server) handleTMDBMovieDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.TMDB().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie info and lists).")
+		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie and show info).")
 		return
 	}
 
-	tmdbMovie, err := s.TMDB().GetMovieDetail(r.Context(), tmdbID)
+	tmdbMovie, err := s.displayTMDB().GetMovieDetail(r.Context(), tmdbID)
 	if err != nil {
 		writeUpstreamError(w, "look up that movie", err)
 		return
@@ -77,13 +81,14 @@ func (s *Server) handleTMDBMovieDetail(w http.ResponseWriter, r *http.Request) {
 
 	payload := movieDetailPayload{
 		TMDBID: tmdbMovie.TMDBID, Title: tmdbMovie.Title, Year: tmdbMovie.Year(),
-		Overview: tmdbMovie.Overview, PosterURL: metadata.PosterURL(tmdbMovie.PosterPath),
-		Genres: s.TMDB().MovieGenres(r.Context(), tmdbMovie.Movie), Rating: metadata.RoundRating(tmdbMovie.VoteAverage),
+		Overview: tmdbMovie.Overview, PosterURL: metadata.PosterURL(tmdbMovie.PosterPath), BackdropURL: metadata.BackdropURL(tmdbMovie.BackdropPath),
+		Genres: s.displayTMDB().MovieGenres(r.Context(), tmdbMovie.Movie), Rating: metadata.RoundRating(tmdbMovie.VoteAverage),
 		VoteCount: tmdbMovie.VoteCount, Runtime: tmdbMovie.Runtime, Tagline: tmdbMovie.Tagline,
 		Certification: tmdbMovie.Certification(), ReleaseDate: tmdbMovie.ReleaseDate, ReleaseStatus: tmdbMovie.Status,
 		Language: tmdbMovie.OriginalLanguage, Homepage: tmdbMovie.Homepage, IMDBID: tmdbMovie.IMDBID,
 		Directors: tmdbMovie.Directors(),
 		Cast:      castPayloads(tmdbMovie.Cast(detailCastCount)), Trailers: tmdbMovie.Trailers(),
+		Collection: collectionRefOf(tmdbMovie.BelongsToCollection),
 	}
 
 	if libMovie, ok, err := s.MovieRepo.GetByTMDBID(tmdbID); err != nil {
@@ -112,7 +117,7 @@ func (s *Server) handleTMDBSimilarMovies(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, []discoverPayload{})
 		return
 	}
-	similar, err := s.TMDB().SimilarMovies(r.Context(), tmdbID)
+	similar, err := s.displayTMDB().SimilarMovies(r.Context(), tmdbID)
 	if err != nil {
 		writeUpstreamError(w, "load similar movies", err)
 		return
@@ -130,8 +135,10 @@ type tvDetailPayload struct {
 	Year      int    `json:"year"`
 	Overview  string `json:"overview,omitempty"`
 	PosterURL string `json:"posterUrl,omitempty"`
-	LibraryID int64  `json:"libraryId,omitempty"` // series id; 0 if not yet added to the library
-	Status    string `json:"status,omitempty"`    // library state: missing/downloading/downloaded
+	// BackdropURL is a wide still for the top of the title page.
+	BackdropURL string `json:"backdropUrl,omitempty"`
+	LibraryID   int64  `json:"libraryId,omitempty"` // series id; 0 if not yet added to the library
+	Status      string `json:"status,omitempty"`    // library state: missing/downloading/downloaded
 
 	FirstAirDate  string             `json:"firstAirDate,omitempty"`
 	Seasons       int                `json:"seasons"`
@@ -186,19 +193,19 @@ func (s *Server) handleTMDBTVDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.TMDB().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie info and lists).")
+		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie and show info).")
 		return
 	}
-	show, err := s.TMDB().GetShowFull(r.Context(), tmdbID)
+	show, err := s.displayTMDB().GetShowFull(r.Context(), tmdbID)
 	if err != nil {
 		writeUpstreamError(w, "look up that show", err)
 		return
 	}
 	payload := tvDetailPayload{
 		TMDBID: show.TMDBID, Title: show.Name, Year: show.Year(), Overview: show.Overview,
-		PosterURL: metadata.PosterURL(show.PosterPath), FirstAirDate: show.FirstAirDate,
+		PosterURL: metadata.PosterURL(show.PosterPath), BackdropURL: metadata.BackdropURL(show.BackdropPath), FirstAirDate: show.FirstAirDate,
 		Seasons: show.SeasonCount(), Episodes: show.NumberOfEpisodes, Networks: show.NetworkNames(),
-		ContentRating: show.ContentRating(), Genres: s.TMDB().ShowGenres(r.Context(), show.Show),
+		ContentRating: show.ContentRating(), Genres: s.displayTMDB().ShowGenres(r.Context(), show.Show),
 		Rating: metadata.RoundRating(show.VoteAverage), VoteCount: show.VoteCount,
 		ReleaseStatus: show.Status, Tagline: show.Tagline, Language: show.OriginalLanguage, Homepage: show.Homepage,
 		IMDBID: show.ExternalIDs.IMDBID, Creators: show.Creators(), SeasonList: seasonPayloads(show.Seasons),

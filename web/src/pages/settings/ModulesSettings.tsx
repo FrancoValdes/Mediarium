@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { api, type ModuleKey } from '../../api'
-import Icon, { type IconName } from '../../components/Icon'
+import Icon from '../../components/Icon'
+import KindGlyph, { type GlyphKind } from '../../components/KindGlyph'
 import Switch from '../../components/Switch'
 import { useToast } from '../../components/Toast'
 import { useModules } from '../../ModulesContext'
+import { t, tx } from '../../i18n'
 
 interface ModuleInfo {
   key: ModuleKey
   name: string
-  icon: IconName
+  glyph: GlyphKind
   color: string
   blurb: string
   points: string[]
@@ -17,43 +19,43 @@ interface ModuleInfo {
 const MODULES: ModuleInfo[] = [
   {
     key: 'movies',
-    name: 'Movies',
-    icon: 'film',
+    name: t('Movies'),
+    glyph: 'movie',
     color: 'var(--c-movie)',
-    blurb: 'Find, download and organise movies.',
-    points: ['Discover what is popular, new and coming soon', 'The quality you want, with upgrades if you like', 'Named and filed for your media player', 'Subtitles and tags such as Kids or 4K'],
+    blurb: t('Find, download and organise movies.'),
+    points: [t('Discover what is popular, new and coming soon'), t('The quality you want, with upgrades if you like'), t('Named and filed for your media player'), t('Subtitles and tags such as Kids or 4K')],
   },
   {
     key: 'tv',
-    name: 'TV shows',
-    icon: 'tv',
+    name: t('TV shows'),
+    glyph: 'tv',
     color: 'var(--c-tv)',
-    blurb: 'Follow shows and get new episodes as they air.',
-    points: ['New episodes picked up by themselves', 'Whole seasons or single episodes', 'A calendar of what airs next', 'Filed by show and season'],
+    blurb: t('Follow shows and get new episodes as they air.'),
+    points: [t('New episodes picked up by themselves'), t('Whole seasons or single episodes'), t('A calendar of what airs next'), t('Filed by show and season')],
   },
   {
     key: 'music',
-    name: 'Music',
-    icon: 'music',
+    name: t('Music'),
+    glyph: 'music',
     color: 'var(--c-music)',
-    blurb: 'Keep the albums of the artists you love.',
-    points: ['Follow artists and get their new albums', 'FLAC or MP3, your choice', 'Albums, singles and EPs', 'Filed by artist and album'],
+    blurb: t('Keep the albums of the artists you love.'),
+    points: [t('Follow artists and get their new albums'), t('FLAC or MP3, your choice'), t('Albums, singles and EPs'), t('Filed by artist and album')],
   },
   {
     key: 'ebooks',
-    name: 'Ebooks',
-    icon: 'book',
+    name: t('Ebooks'),
+    glyph: 'book',
     color: 'var(--c-book)',
-    blurb: 'Books for your e-reader, filed by author.',
-    points: ['EPUB first, then AZW3, MOBI or PDF', 'Trending books and the classics on Discover', 'Follow authors for their new books', 'Read them in Mediarium Books'],
+    blurb: t('Books for your e-reader, filed by author.'),
+    points: [t('EPUB first, then AZW3, MOBI or PDF'), t('Trending books and the classics on Discover'), t('Follow authors for their new books'), t('Read them in Mediarium Books')],
   },
   {
     key: 'audiobooks',
-    name: 'Audiobooks',
-    icon: 'headphones',
+    name: t('Audiobooks'),
+    glyph: 'audiobook',
     color: 'var(--c-audiobook)',
-    blurb: 'Audiobooks ready for your player, filed by author.',
-    points: ['M4B first, then MP3 and the rest', 'Chapters kept in order', 'Listen in Mediarium Books, with a sleep timer', 'Your place is saved on every device'],
+    blurb: t('Audiobooks ready for your player, filed by author.'),
+    points: [t('M4B first, then MP3 and the rest'), t('Chapters kept in order'), t('Listen in Mediarium Books, with a sleep timer'), t('Your place is saved on every device')],
   },
 ]
 
@@ -78,7 +80,7 @@ export default function ModulesSettings() {
     setBusy(m.key)
     try {
       set(await api.setModules({ [m.key]: next }))
-      toast.success(next ? `${m.name} is on.` : `${m.name} is off. Nothing was deleted.`)
+      toast.success(next ? t('{name} is on.', { name: m.name }) : t('{name} is off. Nothing was deleted.', { name: m.name }))
     } catch (e) {
       set(before)
       toast.error(e instanceof Error ? e.message : String(e))
@@ -90,7 +92,7 @@ export default function ModulesSettings() {
   return (
     <div className="module-page">
       <p className="module-intro">
-        Pick the kinds of media you want. A switched-off one leaves the menu, and <strong>nothing is deleted</strong>.
+        {tx('Pick the kinds of media you want. A switched-off one leaves the menu, and {nothing}.', { nothing: <strong>{t('nothing is deleted')}</strong> })}
       </p>
       <div className="module-grid">
         {MODULES.map((m) => {
@@ -101,10 +103,10 @@ export default function ModulesSettings() {
             <section key={m.key} className={`module-card${st.enabled ? ' on' : ''}${soon ? ' soon' : ''}`} style={{ ['--mc' as string]: m.color }}>
               <header>
                 <span className="module-ico">
-                  <Icon name={m.icon} size={26} />
+                  <KindGlyph kind={m.glyph} size={40} variant="solid" />
                 </span>
                 <h2>{m.name}</h2>
-                {!soon && <span className={`module-state ${st.enabled ? 'is-on' : 'is-off'}`}>{st.enabled ? 'On' : 'Off'}</span>}
+                {!soon && <span className={`module-state ${st.enabled ? 'is-on' : 'is-off'}`}>{st.enabled ? t('On') : t('Off')}</span>}
               </header>
               <p className="module-blurb">{m.blurb}</p>
               <ul className="module-points">
@@ -117,11 +119,11 @@ export default function ModulesSettings() {
 
               <footer>
                 {soon ? (
-                  <span className="badge module-soon">Coming soon</span>
+                  <span className="badge module-soon">{t('Coming soon')}</span>
                 ) : (
-                  <Switch checked={st.enabled} onChange={(v) => void change(m, v)} disabled={last || busy === m.key} label={st.enabled ? 'Switched on' : 'Switched off'} />
+                  <Switch checked={st.enabled} onChange={(v) => void change(m, v)} disabled={last || busy === m.key} label={st.enabled ? t('Switched on') : t('Switched off')} />
                 )}
-                {last && <small className="module-note">At least one has to stay on.</small>}
+                {last && <small className="module-note">{t('At least one has to stay on.')}</small>}
               </footer>
             </section>
           )

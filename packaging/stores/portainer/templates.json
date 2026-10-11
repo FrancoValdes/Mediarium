@@ -1,12 +1,12 @@
 {
-  "version": "3",
+  "version": "2",
   "templates": [
     {
       "id": 1,
       "type": 3,
       "title": "Mediarium",
       "name": "mediarium",
-      "description": "All-in-one media manager for movies and TV: search Usenet and torrent indexers, download with built-in clients, unpack and organise your library.",
+      "description": "All-in-one media manager for movies, TV, music, ebooks and audiobooks: search Usenet and torrent indexers, download with a built-in Usenet downloader and torrent client, unpack and organise your library.",
       "note": "Put your downloads, movies and TV inside <b>one</b> data folder so finished downloads are hardlinked. After deploying, open http://&lt;server-ip&gt;:8264 and follow the setup wizard. Guide: <a href=\"https://github.com/rdborg/Mediarium/blob/main/docs/INSTALL.md\" target=\"_blank\">docs/INSTALL.md</a>",
       "categories": ["Media", "Downloaders"],
       "platform": "linux",
@@ -74,12 +74,18 @@
         },
         {
           "name": "EBOOKS_DIR",
-          "label": "Ebooks folder (optional, for later)",
+          "label": "Ebooks folder (optional, for example /data/ebooks)",
           "default": ""
         },
         {
           "name": "AUDIOBOOKS_DIR",
-          "label": "Audiobooks folder (optional, for later)",
+          "label": "Audiobooks folder (optional, for example /data/audiobooks)",
+          "default": ""
+        },
+        {
+          "name": "UMASK",
+          "label": "UMASK (optional, advanced)",
+          "description": "The permissions new files get, for example 022 or 002. Leave empty to keep the default.",
           "default": ""
         }
       ]

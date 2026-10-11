@@ -57,7 +57,7 @@ func TestProblemLogListsWhatHappenedWithPlainHelp(t *testing.T) {
 	}
 	if tooMany["title"] != "Too many connections to your Usenet provider" ||
 		!strings.Contains(tooMany["explain"].(string), "too many connections open") ||
-		!strings.Contains(tooMany["try"].(string), "SABnzbd") || tooMany["linkPath"] != "/settings/downloads" || tooMany["known"] != true {
+		!strings.Contains(tooMany["try"].(string), "SABnzbd") || tooMany["linkPath"] != "/settings/usenet" || tooMany["known"] != true {
 		t.Errorf("the help is missing: %+v", tooMany)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/rdborg/mediarium/internal/auth"
 	"github.com/rdborg/mediarium/internal/blocklist"
@@ -33,7 +34,66 @@ func matchesShow(releaseTitle string, series library.Series) bool {
 	if rel.Year != 0 && series.Year != 0 && rel.Year != series.Year && rel.AirDate == "" {
 		return false
 	}
-	return normalizeTitle(rel.Title) == normalizeTitle(series.Title)
+	want := normalizeTitle(rel.Title)
+	if want == normalizeTitle(series.Title) {
+		return true
+	}
+	if withCountryTag(want, normalizeTitle(series.Title), rel.Year, series.Year) {
+		return true
+	}
+	if len(want) < 3 {
+		return false
+	}
+	// The show's other names (an anime's romaji title, the names of its seasons).
+	for _, alias := range series.Aliases {
+		if normalizeTitle(alias) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// withCountryTag reports whether a release title is the show's own title followed
+// by a country tag, the way many releases name a show that has versions in several
+// countries ("Hells.Kitchen.US.S24E01" for "Hell's Kitchen"). Both titles are
+// already normalised. "us" counts always, since an English search finds the American
+// show first; another country counts only when the release also names the show's
+// year, which tells the versions apart ("The.Office.UK.2001").
+func withCountryTag(release, show string, releaseYear, showYear int) bool {
+	if show == "" || len(release) <= len(show) || !strings.HasPrefix(release, show) {
+		return false
+	}
+	switch release[len(show):] {
+	case "us", "usa":
+		return true
+	case "uk", "au", "ca", "nz", "de", "fr", "it", "es":
+		return releaseYear != 0 && releaseYear == showYear
+	}
+	return false
+}
+
+// matchesShowFor is matchesShow, loosened for a special (season 0): one
+// posted under its own title often has no marker to end the show's name at
+// ("Show.The.Christmas.Invasion.720p"), so a name that starts with the show
+// is enough; mapSpecial then checks the special's title is there.
+func matchesShowFor(releaseTitle string, series library.Series, season int) bool {
+	if matchesShow(releaseTitle, series) {
+		return true
+	}
+	if season != 0 {
+		return false
+	}
+	words := strings.Fields(nonAlnum.ReplaceAllString(strings.ToLower(parser.Parse(releaseTitle).Title), " "))
+	show := strings.Fields(nonAlnum.ReplaceAllString(strings.ToLower(series.Title), " "))
+	if len(show) == 0 || len(words) <= len(show) {
+		return false
+	}
+	for i := range show {
+		if words[i] != show[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // tvSearchQuery builds the indexer query for a season pack ("Show S01") or
@@ -60,11 +120,12 @@ func (s *Server) handleSeriesSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	season, _ := strconv.Atoi(r.URL.Query().Get("season"))
 	episode, _ := strconv.Atoi(r.URL.Query().Get("episode"))
-	if season == 0 && r.URL.Query().Get("season") == "0" {
-		writeError(w, http.StatusBadRequest, "Mediarium can't search for specials yet.")
+	specials := season == 0 && r.URL.Query().Get("season") == "0"
+	if specials && episode <= 0 {
+		writeError(w, http.StatusBadRequest, "Choose a special to search for: specials are searched one at a time.")
 		return
 	}
-	if season <= 0 {
+	if season < 0 || (season == 0 && !specials) {
 		writeError(w, http.StatusBadRequest, "Choose a season to search.")
 		return
 	}
@@ -100,27 +161,32 @@ func (s *Server) handleSeriesSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	profile := profiles.resolve(series.ProfileID)
+	profile := s.profileForSeries(profiles, series)
 	blocked := s.blockedKeys()
+	sizeReasons := s.tvSizeRejections(r.Context(), series, profile)
 	out := []searchResultPayload{}
 	for _, res := range merged {
-		if !matchesShow(res.Title, series) || !coversTarget(parseFor(mapper, res.Title), season, episode) {
+		if !matchesShowFor(res.Title, series, season) || !coversTarget(parseFor(mapper, res.Title), season, episode) {
 			continue
 		}
 		payload := s.toSearchResultPayload(res)
 		payload.Blocklisted = blocked[blocklist.Key(res.Title)]
-		payload.Rejections = rejectionsFor(res.Title, profile, false, "")
+		payload.Rejections = append(payload.Rejections, rejectionsFor(res.Title, profile, false, "", "")...)
+		payload.Rejections = append(payload.Rejections, sizeReasons(res.Title, res.SizeBytes)...)
+		setFormatScore(&payload, profile, res.Title)
 		payload.AcceptedBy = acceptedBy(profile, res.Title)
 		out = append(out, payload)
 	}
+	s.markCachedPayloads(r.Context(), out)
 	writeSearch(w, r, out, len(instances), outcomes)
 }
 
 // coversTarget reports whether a parsed release satisfies a season/episode
 // request: for an episode, that episode itself, a multi-episode release
-// containing it, or a whole-season pack; for a season, only a pack.
+// containing it, or a whole-season pack; for a season, only a pack. A
+// special (season 0) needs a release that is that special.
 func coversTarget(rel parser.Release, season, episode int) bool {
-	if rel.Season != season {
+	if rel.Season != season || (season == 0 && (!rel.Special || episode <= 0 || len(rel.Episodes) == 0)) {
 		return false
 	}
 	isPack := len(rel.Episodes) == 0

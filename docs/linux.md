@@ -1,6 +1,6 @@
 # Mediarium on Linux
 
-On a Linux server (Debian, Ubuntu, Fedora, Raspberry Pi OS 64-bit, and so on) Mediarium runs in Docker. A native install without Docker (a `.deb`/`.rpm` package with a systemd service) is coming soon: see [What runs where](./PLATFORMS.md).
+On a Linux server (Debian, Ubuntu, Fedora, Raspberry Pi OS 64-bit, and so on) Mediarium runs in Docker. There is no installer without Docker for now (see [What runs where](./PLATFORMS.md)).
 
 This is the short version, with Linux tips. The full walk-through is in the [install guide](./INSTALL.md).
 
@@ -57,7 +57,7 @@ docker compose pull
 docker compose up -d
 ```
 
-When a new version is out, administrators see a card on the dashboard and on **Settings → System → Server and backup**. If the release is signed, the card also has an **Update now** button. See [Update now](./INSTALL.md#update-now-docker-image).
+When a new version is out, administrators see a card on the dashboard and on **Settings → General**. If the release is signed, the card also has an **Update now** button. See [Update now](./INSTALL.md#update-now-docker-image).
 
 ## Starting at boot
 

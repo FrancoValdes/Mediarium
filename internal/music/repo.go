@@ -285,6 +285,38 @@ func (r *Repo) ListAllAlbums() ([]Album, error) {
 	return r.queryAlbums(`ORDER BY artist_id, release_date = '', release_date, title`)
 }
 
+// AlbumWithArtist is an album together with its artist's name.
+type AlbumWithArtist struct {
+	Album
+	ArtistName string
+}
+
+// ListMonitoredReleasing lists the monitored albums whose full release date
+// ("YYYY-MM-DD") falls from from to to, inclusive, with their artist's name,
+// in the same order ListAllAlbums uses. The calendar asks for this instead of
+// reading every album.
+func (r *Repo) ListMonitoredReleasing(from, to string) ([]AlbumWithArtist, error) {
+	rows, err := r.db.Query(`SELECT a.id, a.artist_id, a.mbid, a.release_mbid, a.title, a.type, a.release_date, a.monitored, a.status, a.quality, a.path, ar.name
+		FROM albums a JOIN artists ar ON ar.id = a.artist_id
+		WHERE a.monitored = 1 AND length(a.release_date) = 10 AND a.release_date >= ? AND a.release_date <= ?
+		ORDER BY a.artist_id, a.release_date, a.title`, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("list releasing albums: %w", err)
+	}
+	defer rows.Close()
+	out := []AlbumWithArtist{}
+	for rows.Next() {
+		var a AlbumWithArtist
+		var status string
+		if err := rows.Scan(&a.ID, &a.ArtistID, &a.MBID, &a.ReleaseMBID, &a.Title, &a.Type, &a.ReleaseDate, &a.Monitored, &status, &a.Quality, &a.Path, &a.ArtistName); err != nil {
+			return nil, fmt.Errorf("scan releasing album: %w", err)
+		}
+		a.Status = Status(status)
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // GetAlbum returns one album; the error wraps sql.ErrNoRows when there is
 // no such album.
 func (r *Repo) GetAlbum(id int64) (Album, error) {
@@ -392,6 +424,17 @@ func (r *Repo) ListTracks(albumID int64) ([]Track, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// GetTrack returns one track, or sql.ErrNoRows when there is none.
+func (r *Repo) GetTrack(id int64) (Track, error) {
+	var t Track
+	err := r.db.QueryRow(`SELECT id, album_id, disc, position, title, length_ms, file_path FROM tracks WHERE id = ?`, id).
+		Scan(&t.ID, &t.AlbumID, &t.Disc, &t.Position, &t.Title, &t.LengthMs, &t.FilePath)
+	if err != nil {
+		return Track{}, err
+	}
+	return t, nil
 }
 
 // SetTrackFile records the file a track was imported to ("" clears it).

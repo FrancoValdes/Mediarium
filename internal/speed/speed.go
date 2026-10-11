@@ -51,3 +51,31 @@ func Wait(ctx context.Context, n int) error {
 	}
 	return nil
 }
+
+// uploadBurst is the most bytes the torrent engine sends in one step. It is
+// well above a torrent chunk (16 KB, up to 128 KB), which the engine needs.
+const uploadBurst = 256 << 10
+
+var (
+	upLimiter = rate.NewLimiter(rate.Inf, uploadBurst)
+	upCurrent atomic.Int64
+)
+
+// UploadLimiter is the upload limiter, for the torrent engine's own config.
+// It is separate from the download limit: Usenet never uploads.
+func UploadLimiter() *rate.Limiter { return upLimiter }
+
+// SetUpload changes the upload limit to bytesPerSecond, or removes it when
+// that is 0 or less. Torrents that are seeding follow it at once.
+func SetUpload(bytesPerSecond int64) {
+	if bytesPerSecond <= 0 {
+		upCurrent.Store(0)
+		upLimiter.SetLimit(rate.Inf)
+		return
+	}
+	upCurrent.Store(bytesPerSecond)
+	upLimiter.SetLimit(rate.Limit(bytesPerSecond))
+}
+
+// CurrentUpload is the upload limit in bytes per second, 0 for none.
+func CurrentUpload() int64 { return upCurrent.Load() }

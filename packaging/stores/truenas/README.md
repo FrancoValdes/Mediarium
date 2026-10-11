@@ -2,7 +2,7 @@
 
 **Status: prepared and render-tested, not submitted.**
 
-TrueNAS SCALE 24.10 and newer install apps from the [truenas/apps](https://github.com/truenas/apps) catalog. Community apps live in the `community` train and are added by pull request.
+TrueNAS SCALE 24.10 and newer install apps from the [truenas/apps](https://github.com/truenas/apps) catalog. Community apps live in the `community` train and are added by pull request. The catalog is strict and this is a "later" item: see [PLAYBOOK.md](../PLAYBOOK.md).
 
 Until Mediarium is in the catalog, TrueNAS users can paste the normal compose file: Apps → Discover Apps → the menu next to **Custom App** → **Install via YAML** (see [INSTALL.md](../../../docs/INSTALL.md#using-a-docker-app)). Use one dataset for downloads, movies and TV, because every dataset is its own filesystem and hardlinks cannot cross datasets.
 
@@ -12,21 +12,21 @@ Until Mediarium is in the catalog, TrueNAS users can paste the normal compose fi
 
 | File | What it is |
 |---|---|
-| `app.yaml` | Catalog metadata: `app_version: 2.1.0`, catalog `version: 1.0.0`, category `media`, icon/screenshot URLs on `media.sys.truenas.net`, run-as 568:568. |
+| `app.yaml` | Catalog metadata: `app_version: 3.0.0`, catalog `version: 1.0.0`, category `media`, icon/screenshot URLs on `media.sys.truenas.net`, run-as 568:568. |
 | `ix_values.yaml` | The image (`ghcr.io/rdborg/mediarium`, tag to be pinned with a digest) and the permissions helper image. |
-| `questions.yaml` | The install form, based on the catalog's Sonarr app: timezone; the downloads, movies and TV folders (inside `/data`); user and group (568 by default); web port 8264 and torrent port 58264 (TCP+UDP); **Config** storage (ixVolume or host path) and **Data** storage (a host path, the one dataset holding downloads, movies and TV) plus additional storage; labels; resources. |
-| `templates/docker-compose.yaml` | Renders the app with the catalog's library: runs as the chosen user (the image supports starting as a non-root user), sets `DOWNLOADS_DIR`/`MOVIES_DIR`/`TV_DIR`, health check on `/api/version`, ports and storage. |
+| `questions.yaml` | The install form, based on the catalog's Sonarr app: timezone; the downloads, movies and TV folders (inside `/data`); an optional UMASK; user and group (568 by default); web port 8264 and torrent port 58264 (TCP+UDP); **Config** storage (ixVolume or host path) and **Data** storage (a host path, the one dataset holding downloads, movies and TV) plus additional storage; labels; resources. |
+| `templates/docker-compose.yaml` | Renders the app with the catalog's library: runs as the chosen user (the image supports starting as a non-root user), sets `DOWNLOADS_DIR`/`MOVIES_DIR`/`TV_DIR` (and `UMASK` when the optional field is filled in), health check on `/api/version`, ports and storage. |
 | `templates/test_values/basic-values.yaml` | Values for the catalog's CI. |
 | `README.md` | The one-paragraph description the catalog shows. |
 
 ### What was tested
 
-The template was rendered with the catalog's own validation image (`ghcr.io/truenas/apps_validation`, `apps_render_app render`) against library `2.3.15` and `basic-values.yaml`, and the rendered compose was then run with a locally built Mediarium image: it started as user 568 with all capabilities dropped, created `/data/downloads/mediarium`, `/data/media/movies` and `/data/media/tv`, answered `/api/onboarding/status`, and the health check reported **healthy**. It has not been run on a real TrueNAS machine.
+The `UMASK` field added for 3.0.0 has only been checked as YAML (the `questions.yaml` and values files parse); it has not been rendered again with the catalog's validator. Earlier, the template was rendered with the catalog's own validation image (`ghcr.io/truenas/apps_validation`, `apps_render_app render`) against library `2.3.15` and `basic-values.yaml`, and the rendered compose was then run with a locally built Mediarium image: it started as user 568 with all capabilities dropped, created `/data/downloads/mediarium`, `/data/media/movies` and `/data/media/tv`, answered `/api/onboarding/status`, and the health check reported **healthy**. It has not been run on a real TrueNAS machine.
 
 ## Requirements
 
-- [ ] The Mediarium repository is public, and `ghcr.io/rdborg/mediarium:2.1.0` is published and **public**, for `amd64` (TrueNAS SCALE is amd64 only).
-- [ ] Pin the image in `ix_values.yaml`: `tag: "2.1.0@sha256:<digest>"` (get it with `docker buildx imagetools inspect ghcr.io/rdborg/mediarium:2.1.0`). Renovate keeps it updated afterwards.
+- [ ] The Mediarium repository is public, and `ghcr.io/rdborg/mediarium:3.0.0` is published and **public**, for `amd64` (TrueNAS SCALE is amd64 only).
+- [ ] Pin the image in `ix_values.yaml`: `tag: "3.0.0@sha256:<digest>"` (get it with `docker buildx imagetools inspect ghcr.io/rdborg/mediarium:3.0.0`). Renovate keeps it updated afterwards.
 - [ ] An icon (PNG, square) and 3 screenshots to attach to the pull request; the TrueNAS team uploads them to `media.sys.truenas.net` and the URLs in `app.yaml` become real. `branding/mediarium-icon-512.png` and `docs/images/*.png` are suitable.
 
 ## Steps
@@ -39,7 +39,7 @@ The template was rendered with the catalog's own validation image (`ghcr.io/true
    - `./.github/scripts/ci.py --app mediarium --train community --test-file basic-values.yaml` (render, then a real start).
    - `./.github/scripts/generate_metadata.py --app mediarium --train community`.
    - Update `date_added` in `app.yaml` to the submission date.
-4. Open a draft pull request early, fill in their template (including the AI-assisted checkbox: these files were prepared with AI assistance), attach the icon and screenshots.
+4. Open a draft pull request early, fill in their template honestly (including any checkbox about how the files were made), attach the icon and screenshots.
 5. After it is merged and released to the train, update `docs/PLATFORMS.md` and the TrueNAS row in `docs/INSTALL.md`.
 
 ## Things to verify during review

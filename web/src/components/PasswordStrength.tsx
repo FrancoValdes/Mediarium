@@ -2,6 +2,8 @@
 // Not trying to be zxcvbn — length plus character
 // variety is enough to steer people away from "password1" without pulling
 // in a scoring library for a single form field.
+import { t } from '../i18n'
+
 function score(password: string): number {
   if (!password) return 0
   let s = 0
@@ -13,7 +15,7 @@ function score(password: string): number {
   return Math.min(s, 4)
 }
 
-const LABELS = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong']
+const LABELS = [t('Very weak'), t('Weak'), t('Fair'), t('Good'), t('Strong')]
 const COLORS = ['var(--danger)', 'var(--danger)', 'var(--warning)', 'var(--success)', 'var(--success)']
 
 export default function PasswordStrength({ password }: { password: string }) {

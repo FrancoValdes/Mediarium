@@ -1,19 +1,27 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { api, isAdmin, type Book, type BookFormat, type Movie, type MusicWanted, type Series, type SubtitleQuota, type SubtitleWanted, type WantedItem } from '../api'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useUrlState } from '../useUrlState'
+import { api, can, isAdmin, type Book, type BookFormat, type Movie, type MusicWanted, type Series, type SubtitleQuota, type SubtitleWanted, type WaitingRelease, type WantedItem } from '../api'
 import { releaseLabel, localDate } from '../bookSeries'
 import { useAuth } from '../AuthContext'
 import { useConfirm } from '../components/ConfirmProvider'
 import Cover from '../components/Cover'
 import Icon, { type IconName } from '../components/Icon'
 import Loading from '../components/Loading'
+import InfoTip from '../components/InfoTip'
+import HelpLink from '../components/HelpLink'
 import { PosterFallback } from '../components/PosterCard'
 import { KIND_LABEL, useKinds, useModules, type MediaKind } from '../ModulesContext'
 import QuotaNote from '../components/QuotaNote'
+import NoSourceNote from '../components/NoSourceNote'
+import { noSourceInQuota } from '../subtitleSources'
 import { describeState } from '../components/state'
 import { useToast } from '../components/Toast'
 import { languageName } from '../languages'
+import { slotName } from '../subtitleProfiles'
 import { useLive } from '../useLive'
+import { plural, t } from '../i18n'
+import { untilText } from '../delayText'
 
 type Kind = 'missing' | 'cutoff' | 'subtitles'
 
@@ -50,7 +58,7 @@ function groupRows(items: WantedItem[]): Row[] {
 // The kinds the list can be narrowed to: the media kinds, and books.
 type ListKind = MediaKind | 'book'
 const KIND_ICON: Record<ListKind, IconName> = { movie: 'film', tv: 'tv', music: 'music', book: 'book' }
-const LIST_LABEL = (k: ListKind) => (k === 'book' ? 'Books' : KIND_LABEL[k])
+const LIST_LABEL = (k: ListKind) => (k === 'book' ? t('Books') : KIND_LABEL[k])
 
 // Wanted: what Mediarium is still hunting for. "Missing" is monitored movies
 // with nothing downloaded and aired episodes without a file; "Upgrades" is
@@ -59,9 +67,14 @@ const LIST_LABEL = (k: ListKind) => (k === 'book' ? 'Books' : KIND_LABEL[k])
 export default function Wanted() {
   const toast = useToast()
   // Marking subtitles as not needed is for administrators.
-  const admin = isAdmin(useAuth().user)
-  const [params] = useSearchParams()
-  const [chosenKind, setKind] = useState<Kind>(params.get('tab') === 'subtitles' ? 'subtitles' : 'missing')
+  const me = useAuth().user
+  const admin = isAdmin(me)
+  // Searching needs the "manage" permission; a viewer or a basic account without it only looks.
+  const canSearch = can(me, 'manage')
+  // The tab, the kind chip and the search live in the address, so Back returns to them.
+  const [ui, patchUi] = useUrlState({ tab: 'missing', media: 'all', q: '' })
+  const chosenKind: Kind = ui.tab === 'subtitles' ? 'subtitles' : ui.tab === 'cutoff' ? 'cutoff' : 'missing'
+  const setKind = (k: Kind) => patchUi({ tab: k })
   // The Subtitles tab, its count and its list exist only while subtitles are switched on.
   const { subtitlesOn } = useModules()
   const kind: Kind = chosenKind === 'subtitles' && !subtitlesOn ? 'missing' : chosenKind
@@ -73,6 +86,8 @@ export default function Wanted() {
   const [movies, setMovies] = useState<Movie[]>([])
   const [series, setSeries] = useState<Series[]>([])
   const [sweeping, setSweeping] = useState(false)
+  // Releases held back by the delay profile (Settings > Languages and automation).
+  const [waiting, setWaiting] = useState<WaitingRelease[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [counts, setCounts] = useState<{ missing?: number; cutoff?: number; subtitles?: number }>({})
@@ -82,14 +97,16 @@ export default function Wanted() {
   const { on } = useModules()
   const booksOn = on('ebooks') || on('audiobooks')
   const kinds: ListKind[] = [...mediaKinds, ...(booksOn ? (['book'] as const) : [])]
-  const [media, setMedia] = useState<'all' | ListKind>('all')
+  const media = ui.media as 'all' | ListKind
+  const setMedia = (m: 'all' | ListKind) => patchUi({ media: m })
   // Books wanted in a format that is still missing (books have no upgrades).
   const [bookList, setBookList] = useState<Book[] | null>(null)
   const [music, setMusic] = useState<MusicWanted[] | null>(null)
   const [musicCounts, setMusicCounts] = useState<{ missing?: number; cutoff?: number }>({})
   // The search box, how many rows are shown, which shows are unfolded, and
   // the progress of "Search all".
-  const [query, setQuery] = useState('')
+  const query = ui.q
+  const setQuery = (v: string) => patchUi({ q: v })
   const [limit, setLimit] = useState(PAGE)
   const [unfolded, setUnfolded] = useState<Set<number>>(new Set())
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null)
@@ -98,6 +115,7 @@ export default function Wanted() {
   useEffect(() => {
     api.listMovies().then(setMovies).catch(() => undefined)
     api.listSeries().then(setSeries).catch(() => undefined)
+    api.searchWaiting().then(setWaiting).catch(() => undefined)
     api.getWanted('missing').then((r) => setCounts((c) => ({ ...c, missing: r.length }))).catch(() => undefined)
     api.getWanted('cutoff').then((r) => setCounts((c) => ({ ...c, cutoff: r.length }))).catch(() => undefined)
   }, [])
@@ -117,27 +135,34 @@ export default function Wanted() {
     return (i: { kind: string; tmdbId?: number; seriesId?: number }) => (i.kind === 'movie' ? byMovie.get(i.tmdbId ?? -1) : bySeries.get(i.seriesId ?? -1))
   }, [movies, series])
 
+  // Each load and each quiet refresh belongs to the tab it started on; an answer that arrives after another tab was picked is dropped.
+  const epoch = useRef(0)
   const load = useCallback(() => {
+    const mine = ++epoch.current
+    const current = () => mine === epoch.current
     setError('')
     if (kind === 'subtitles') {
       setSubs(null)
-      api.subtitlesWanted(showDismissed).then(setSubs).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      api.subtitlesWanted(showDismissed).then((r) => current() && setSubs(r)).catch((e) => current() && setError(e instanceof Error ? e.message : String(e)))
       api.subtitleQuota().then(setQuota).catch(() => undefined)
       return
     }
     setItems(null)
     setMusic(null)
-    api.getWanted(kind).then(setItems).catch((e) => setError(e instanceof Error ? e.message : String(e)))
-    if (musicOn) api.musicWanted(kind).then(setMusic).catch(() => setMusic([]))
+    api.getWanted(kind).then((r) => current() && setItems(r)).catch((e) => current() && setError(e instanceof Error ? e.message : String(e)))
+    if (musicOn) api.musicWanted(kind).then((r) => current() && setMusic(r)).catch(() => current() && setMusic([]))
     if (booksOn) api.listBooks().then(setBookList).catch(() => setBookList([]))
   }, [kind, showDismissed, musicOn, booksOn])
   useEffect(load, [load])
   // Quiet refresh: update the lists in place without flashing the loading state.
   useLive(() => {
+    const mine = epoch.current
+    const current = () => mine === epoch.current
     if (kind === 'subtitles') {
       api
         .subtitlesWanted(showDismissed)
         .then((r) => {
+          if (!current()) return
           setSubs(r)
           setError('')
         })
@@ -147,11 +172,12 @@ export default function Wanted() {
       api
         .getWanted(kind)
         .then((r) => {
+          if (!current()) return
           setItems(r)
           setError('')
         })
         .catch(() => undefined)
-      if (musicOn) api.musicWanted(kind).then(setMusic).catch(() => undefined)
+      if (musicOn) api.musicWanted(kind).then((r) => current() && setMusic(r)).catch(() => undefined)
       if (booksOn) api.listBooks().then(setBookList).catch(() => undefined)
     }
   }, 10000)
@@ -187,7 +213,7 @@ export default function Wanted() {
     if (items.length === 0) return
     try {
       await (undo ? api.undismissSubtitles(items) : api.dismissSubtitles(items))
-      toast.success(undo ? 'Back on the list.' : 'Marked as not needed.')
+      toast.success(undo ? t('Back on the list.') : t('Marked as not needed.'))
       setPicked(new Set())
       load()
     } catch (e) {
@@ -247,9 +273,9 @@ export default function Wanted() {
   async function searchAll(rows: Row[]) {
     if (rows.length > ASK_ABOVE) {
       const ok = await confirm({
-        title: `Search for ${rows.length} titles now?`,
-        body: <p>Each title is one search on every indexer. Many indexers allow only so many searches a day, so this may use up today&apos;s limit. The automatic searches go on as usual either way.</p>,
-        confirmLabel: `Search ${rows.length} titles`,
+        title: t('Search for {n} titles now?', { n: rows.length }),
+        body: <p>{t("Each title is one search on every indexer. Many indexers allow only so many searches a day, so this may use up today's limit. The automatic searches go on as usual either way.")}</p>,
+        confirmLabel: t('Search {n} titles', { n: rows.length }),
       })
       if (!ok) return
     }
@@ -266,7 +292,11 @@ export default function Wanted() {
       setBulk({ done: n + 1, total: rows.length })
     }
     setBulk(null)
-    toast.info(grabbed > 0 ? `Searched ${rows.length} titles and found ${grabbed} ${grabbed === 1 ? 'download' : 'downloads'}.` : `Searched ${rows.length} titles. Nothing suitable was found right now.`)
+    toast.info(
+      grabbed > 0
+        ? plural(grabbed, 'Searched {count} titles and found {n} download.', 'Searched {count} titles and found {n} downloads.', { count: rows.length })
+        : plural(rows.length, 'Searched {n} title. Nothing suitable was found right now.', 'Searched {n} titles. Nothing suitable was found right now.'),
+    )
     if (grabbed > 0) load()
   }
 
@@ -283,6 +313,9 @@ export default function Wanted() {
     }
   }
 
+  // The hold on an item: a movie, an episode, or the season pack it is part of.
+  const heldFor = (i: WantedItem): WaitingRelease | undefined =>
+    waiting.find((w) => (i.kind === 'movie' ? w.movieId === i.movieId : w.seriesId === i.seriesId && w.season === (i.season ?? 0) && ((w.episode ?? 0) === 0 || w.episode === i.episode)))
   const itemRow = (i: WantedItem) => (
             <div key={keyOf(i)} className={`wrow kind-${i.kind === 'movie' ? 'movie' : 'tv'}`}>
               <div className="qthumb">{posterOf(i) ? <img src={posterOf(i)} alt="" loading="lazy" /> : <PosterFallback />}</div>
@@ -295,12 +328,16 @@ export default function Wanted() {
                 {i.subtitle && <small>{i.subtitle}</small>}
               </div>
               <div className="wmeta">
-                {kind === 'missing' ? (
+                {kind === 'missing' && heldFor(i) ? (
+                  <span className="state-tag st-pending" title={t('A {protocol} release was found. It is held back so a copy from the better protocol has time to turn up.', { protocol: heldFor(i)?.protocol === 'torrent' ? t('torrent') : t('Usenet') })}>
+                    <Icon name="clock" size={12} /> {t('Waiting for a better protocol until {time}', { time: untilText(heldFor(i)?.until ?? '') })}
+                  </span>
+                ) : kind === 'missing' ? (
                   <span className={`state-tag st-${missingState.key}`} title={missingState.hint}>
                     <Icon name={missingState.icon} size={12} /> {missingState.label}
                   </span>
                 ) : (
-                  <span className="state-tag st-partial" title="Downloaded, but below the quality you asked for">
+                  <span className="state-tag st-partial" title={t('Downloaded, but below the quality you asked for')}>
                     <Icon name="star" size={12} /> {i.quality} → {i.cutoff}
                   </span>
                 )}
@@ -308,10 +345,12 @@ export default function Wanted() {
                 {i.profileName && <span className="badge">{i.profileName}</span>}
               </div>
               <div className="row-actions">
-                <button className="primary btn-sm btn-with-icon" disabled={busy === keyOf(i)} onClick={() => void searchNow(i)}>
-                  <Icon name="search" size={14} /> {busy === keyOf(i) ? 'Searching…' : 'Search now'}
-                </button>
-                <Link className="icon-btn" to={link(i)} title="Open" aria-label="Open">
+                {canSearch && (
+                  <button className="primary btn-sm btn-with-icon" disabled={busy !== null} onClick={() => void searchNow(i)}>
+                    <Icon name="search" size={14} /> {busy === keyOf(i) ? t('Searching…') : t('Search now')}
+                  </button>
+                )}
+                <Link className="icon-btn" to={link(i)} title={t('Open')} aria-label={t('Open')}>
                   <Icon name="open" size={17} />
                 </Link>
               </div>
@@ -346,12 +385,12 @@ export default function Wanted() {
     <div className="chip-row" style={{ marginBottom: 16, alignItems: 'center' }}>
       {(['all', ...kinds] as const).map((k) => (
         <button key={k} className={`chip${sel === k ? ' active' : ''}`} onClick={() => setMedia(k)}>
-          {k !== 'all' && <Icon name={KIND_ICON[k]} size={13} />} {k === 'all' ? 'All' : LIST_LABEL(k)}
+          {k !== 'all' && <Icon name={KIND_ICON[k]} size={13} />} {k === 'all' ? t('All') : LIST_LABEL(k)}
         </button>
       ))}
       {sel !== 'all' && (
         <button className="btn-sm" onClick={() => setMedia('all')}>
-          Clear filters
+          {t('Clear filters')}
         </button>
       )}
     </div>
@@ -360,24 +399,28 @@ export default function Wanted() {
   return (
     <div>
       <div className="page-header">
-        <h1>Wanted</h1>
+        <h1>{t('Wanted')}</h1>
         <div className="seg">
-          {tab('missing', 'Missing')}
-          {tab('cutoff', 'Upgrades')}
-          {subtitlesOn && tab('subtitles', 'Subtitles')}
+          {tab('missing', t('Missing'))}
+          {tab('cutoff', t('Upgrades'))}
+          {subtitlesOn && tab('subtitles', t('Subtitles'))}
         </div>
+        <HelpLink topic="activity#the-wanted-page" text={t('Missing: monitored titles that have no file yet. Upgrades: titles you have that are below the quality you asked for. Subtitles: downloaded titles that lack a subtitle in your languages.')} />
       </div>
 
       {error && <p className="error-text">{error}</p>}
       {kindChips}
-      {kind !== 'subtitles' && (items?.length ?? 0) + (music?.length ?? 0) + missingBooks.length > 0 && (
+      {kind !== 'subtitles' && (items?.length ?? 0) + (music?.length ?? 0) + (kind === 'missing' ? missingBooks.length : 0) > 0 && (
         <div className="toolbar">
-          <input className="wanted-search" type="search" placeholder="Find a title" aria-label="Find a title in this list" value={query} onChange={(e) => { setQuery(e.target.value); setLimit(PAGE) }} />
+          <input className="wanted-search" type="search" placeholder={t('Find a title')} aria-label={t('Find a title in this list')} value={query} onChange={(e) => { setQuery(e.target.value); setLimit(PAGE) }} />
           <span className="spacer" />
-          {rows.length > 0 && (
+          {rows.length > 0 && canSearch && (
             <button className="btn-with-icon" disabled={bulk !== null} onClick={() => void searchAll(rows)}>
-              <Icon name="search" size={15} /> {bulk ? `Searching ${bulk.done} of ${bulk.total}…` : `Search all ${rows.length}`}
+              <Icon name="search" size={15} /> {bulk ? t('Searching {done} of {total}…', { done: bulk.done, total: bulk.total }) : t('Search all {n}', { n: rows.length })}
             </button>
+          )}
+          {rows.length > 0 && canSearch && (
+            <InfoTip text={t('Runs one search per title in this list, one after another, on every indexer. Many indexers allow only so many searches a day, so a long list can use up the limit.')} />
           )}
         </div>
       )}
@@ -388,39 +431,41 @@ export default function Wanted() {
         ) : (
           <>
             <QuotaNote quota={quota} />
+            <NoSourceNote quota={quota} />
             <p style={{ color: 'var(--text-dim)', marginTop: 0 }}>
-              Downloaded titles with no subtitle in your languages. Pick the ones you want, or get them all, up to today&apos;s limit.
+              {t("Downloaded titles with no subtitle in your languages. Pick the ones you want, or get them all, up to today's limit.")}
             </p>
             <div className="toolbar">
               <button className="btn-sm" onClick={() => setPicked(new Set(subs.filter((i) => !i.dismissed).map(subKey)))}>
-                Select all
+                {t('Select all')}
               </button>
-              <button className="primary btn-with-icon" onClick={() => void getSubtitles(false)} disabled={sweeping || picked.size === 0}>
-                <Icon name="download" size={16} /> {sweeping ? 'Working…' : picked.size > 0 ? `Get subtitles for ${picked.size} selected` : 'Get subtitles for selected'}
+              <button className="primary btn-with-icon" onClick={() => void getSubtitles(false)} disabled={sweeping || picked.size === 0 || noSourceInQuota(quota)}>
+                <Icon name="download" size={16} /> {sweeping ? t('Working…') : picked.size > 0 ? t('Get subtitles for {n} selected', { n: picked.size }) : t('Get subtitles for selected')}
               </button>
-              <button className="btn-with-icon" onClick={() => void getSubtitles(true)} disabled={sweeping || subs.filter((i) => !i.dismissed).length === 0}>
-                Get all
+              <button className="btn-with-icon" onClick={() => void getSubtitles(true)} disabled={sweeping || subs.filter((i) => !i.dismissed).length === 0 || noSourceInQuota(quota)}>
+                {t('Get all')}
               </button>
               <span className="spacer" />
               {admin && (
                 <button className="btn-sm" onClick={() => void dismiss(showDismissed && subs.some((i) => picked.has(subKey(i)) && i.dismissed))} disabled={picked.size === 0}>
-                  {showDismissed && subs.some((i) => picked.has(subKey(i)) && i.dismissed) ? 'Put back on the list' : 'Not needed'}
+                  {showDismissed && subs.some((i) => picked.has(subKey(i)) && i.dismissed) ? t('Put back on the list') : t('Not needed')}
                 </button>
               )}
               <label className="check-row" style={{ margin: 0 }}>
-                <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} /> Show titles marked as not needed
+                <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} /> {t('Show titles marked as not needed')}
               </label>
+              <InfoTip text={t('Not needed takes a title off this list, for example when you do not want subtitles for it. Tick this box to see those titles again; Put back on the list brings one back.')} />
             </div>
             {subs.length === 0 ? (
               <div className="empty-state">
                 <Icon name="check" size={44} />
-                <p>Every downloaded title has all its subtitles.</p>
+                <p>{t('Every downloaded title has all its subtitles.')}</p>
               </div>
             ) : (
               <div className="wlist">
                 {subs.map((s) => (
                   <div key={subKey(s)} className={`wrow kind-${s.kind === 'movie' ? 'movie' : 'tv'}${s.dismissed ? ' dismissed' : ''}`}>
-                    <label className="pick-box" title="Select">
+                    <label className="pick-box" title={t('Select')}>
                       <input type="checkbox" checked={picked.has(subKey(s))} onChange={() => togglePick(subKey(s))} />
                     </label>
                     <div className="qthumb">{posterOf(s) ? <img src={posterOf(s)} alt="" loading="lazy" /> : <PosterFallback />}</div>
@@ -431,14 +476,14 @@ export default function Wanted() {
                       {s.subtitle && <small>{s.subtitle}</small>}
                     </div>
                     <div className="wmeta">
-                      {s.dismissed && <span className="badge">not needed</span>}
+                      {s.dismissed && <span className="badge">{t('not needed')}</span>}
                       {s.missing.map((m) => (
                         <span key={m} className="badge missing">
-                          {languageName(m)}
+                          {slotName(m, languageName)}
                         </span>
                       ))}
                     </div>
-                    <Link className="icon-btn" to={link(s)} title="Open" aria-label="Open">
+                    <Link className="icon-btn" to={link(s)} title={t('Open')} aria-label={t('Open')}>
                       <Icon name="open" size={17} />
                     </Link>
                   </div>
@@ -452,15 +497,15 @@ export default function Wanted() {
       ) : shownItems.length === 0 && shownMusic.length === 0 && shownBooks.length === 0 ? (
         <div className="empty-state">
           <Icon name="check" size={44} />
-          {sel !== 'all' && (items?.length ?? 0) + (music?.length ?? 0) + missingBooks.length > 0 ? (
+          {sel !== 'all' && (items?.length ?? 0) + (music?.length ?? 0) + (kind === 'missing' ? missingBooks.length : 0) > 0 ? (
             <>
-              <p>Nothing matches this filter.</p>
+              <p>{t('Nothing matches this filter.')}</p>
               <button className="btn-with-icon" onClick={() => setMedia('all')}>
-                Clear filters
+                {t('Clear filters')}
               </button>
             </>
           ) : (
-            <p>{kind === 'missing' ? "Nothing is missing. Everything you're monitoring is downloaded or hasn't come out yet." : "Everything you've downloaded is already at the quality you asked for."}</p>
+            <p>{kind === 'missing' ? t("Nothing is missing. Everything you're monitoring is downloaded or hasn't come out yet.") : t("Everything you've downloaded is already at the quality you asked for.")}</p>
           )}
         </div>
       ) : (
@@ -479,17 +524,19 @@ export default function Wanted() {
                       </strong>
                     </Link>
                     <small>
-                      {r.items.length} episodes {kind === 'missing' ? 'missing' : 'below the quality you asked for'}
+                      {kind === 'missing' ? t('{n} episodes missing', { n: r.items.length }) : t('{n} episodes below the quality you asked for', { n: r.items.length })}
                     </small>
                   </div>
                   <div className="wmeta">{r.items[0].profileName && <span className="badge">{r.items[0].profileName}</span>}</div>
                   <div className="row-actions">
                     <button className="btn-sm" aria-expanded={unfolded.has(r.seriesId)} onClick={() => setUnfolded((u) => { const n = new Set(u); if (n.has(r.seriesId)) n.delete(r.seriesId); else n.add(r.seriesId); return n })}>
-                      {unfolded.has(r.seriesId) ? 'Hide episodes' : 'Show episodes'}
+                      {unfolded.has(r.seriesId) ? t('Hide episodes') : t('Show episodes')}
                     </button>
-                    <button className="primary btn-sm btn-with-icon" disabled={busy === `show-${r.seriesId}`} onClick={() => void searchShow(r.seriesId, r.title)}>
-                      <Icon name="search" size={14} /> {busy === `show-${r.seriesId}` ? 'Searching…' : 'Search show'}
-                    </button>
+                    {canSearch && (
+                      <button className="primary btn-sm btn-with-icon" disabled={busy !== null} onClick={() => void searchShow(r.seriesId, r.title)}>
+                        <Icon name="search" size={14} /> {busy === `show-${r.seriesId}` ? t('Searching…') : t('Search show')}
+                      </button>
+                    )}
                   </div>
                 </div>
                 {unfolded.has(r.seriesId) && <div className="wgroup-items">{r.items.map((i) => itemRow(i))}</div>}
@@ -509,7 +556,7 @@ export default function Wanted() {
                       <Icon name="music" size={13} /> {a.artistName} – {a.title}
                     </strong>
                   </Link>
-                  <small>{[a.year || null, a.type === 'ep' ? 'EP' : a.type === 'single' ? 'Single' : 'Album'].filter(Boolean).join(' · ')}</small>
+                  <small>{[a.year || null, a.type === 'ep' ? 'EP' : a.type === 'single' ? t('Single') : t('Album')].filter(Boolean).join(' · ')}</small>
                 </div>
                 <div className="wmeta">
                   {kind === 'missing' ? (
@@ -517,17 +564,19 @@ export default function Wanted() {
                       <Icon name={missingState.icon} size={12} /> {missingState.label}
                     </span>
                   ) : (
-                    <span className="state-tag st-partial" title="Downloaded, but below the quality you asked for">
+                    <span className="state-tag st-partial" title={t('Downloaded, but below the quality you asked for')}>
                       <Icon name="star" size={12} /> {a.quality} → {a.cutoff}
                     </span>
                   )}
                   {a.profileName && <span className="badge">{a.profileName}</span>}
                 </div>
                 <div className="row-actions">
-                  <button className="primary btn-sm btn-with-icon" disabled={busy === `music-${a.id}`} onClick={() => void searchMusicNow(a)}>
-                    <Icon name="search" size={14} /> {busy === `music-${a.id}` ? 'Searching…' : 'Search now'}
-                  </button>
-                  <Link className="icon-btn" to={to} title="Open" aria-label="Open">
+                  {canSearch && (
+                    <button className="primary btn-sm btn-with-icon" disabled={busy !== null} onClick={() => void searchMusicNow(a)}>
+                      <Icon name="search" size={14} /> {busy === `music-${a.id}` ? t('Searching…') : t('Search now')}
+                    </button>
+                  )}
+                  <Link className="icon-btn" to={to} title={t('Open')} aria-label={t('Open')}>
                     <Icon name="open" size={17} />
                   </Link>
                 </div>
@@ -543,12 +592,12 @@ export default function Wanted() {
                     <Icon name={f === 'ebook' ? 'book' : 'headphones'} size={13} /> {b.title}
                   </strong>
                 </Link>
-                <small>{[f === 'ebook' ? 'Ebook' : 'Audiobook', b.author, b.year].filter(Boolean).join(' · ')}</small>
+                <small>{[f === 'ebook' ? t('Ebook') : t('Audiobook'), b.author, b.year].filter(Boolean).join(' · ')}</small>
               </div>
               <div className="wmeta">
                 {b.releaseDate && b.releaseDate > today ? (
-                  <span className="state-tag st-upcoming" title="Mediarium starts looking for it on the day it comes out.">
-                    <Icon name="calendar" size={12} /> Out {releaseLabel(b.releaseDate)}
+                  <span className="state-tag st-upcoming" title={t('Mediarium starts looking for it on the day it comes out.')}>
+                    <Icon name="calendar" size={12} /> {t('Out {date}', { date: releaseLabel(b.releaseDate) })}
                   </span>
                 ) : (
                   <span className={`state-tag st-${missingState.key}`} title={missingState.hint}>
@@ -557,12 +606,12 @@ export default function Wanted() {
                 )}
               </div>
               <div className="row-actions">
-                {!(b.releaseDate && b.releaseDate > today) && (
-                  <button className="primary btn-sm btn-with-icon" disabled={busy === `book-${b.id}-${f}`} onClick={() => void searchBookNow(b, f)}>
-                    <Icon name="search" size={14} /> {busy === `book-${b.id}-${f}` ? 'Searching…' : 'Search now'}
+                {canSearch && !(b.releaseDate && b.releaseDate > today) && (
+                  <button className="primary btn-sm btn-with-icon" disabled={busy !== null} onClick={() => void searchBookNow(b, f)}>
+                    <Icon name="search" size={14} /> {busy === `book-${b.id}-${f}` ? t('Searching…') : t('Search now')}
                   </button>
                 )}
-                <Link className="icon-btn" to={`/book/${b.id}`} title="Open" aria-label="Open">
+                <Link className="icon-btn" to={`/book/${b.id}`} title={t('Open')} aria-label={t('Open')}>
                   <Icon name="open" size={17} />
                 </Link>
               </div>
@@ -573,7 +622,7 @@ export default function Wanted() {
       {kind !== 'subtitles' && listed > limit && (
         <div className="rail-foot">
           <button className="btn-sm" onClick={() => setLimit((l) => l + PAGE)}>
-            Show more ({listed - limit} left)
+            {t('Show more ({n} left)', { n: listed - limit })}
           </button>
         </div>
       )}

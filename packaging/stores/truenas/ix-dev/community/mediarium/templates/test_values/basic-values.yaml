@@ -9,6 +9,7 @@ mediarium:
   downloads_dir: /data/downloads/mediarium
   movies_dir: /data/media/movies
   tv_dir: /data/media/tv
+  umask: ""
   additional_envs: []
 
 network:

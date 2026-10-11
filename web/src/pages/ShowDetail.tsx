@@ -6,6 +6,7 @@ import TitleHero from '../components/TitleHero'
 import { CastCard, SeasonsCard, titleLinks } from '../components/TitlePreview'
 import { api, type TVDetail } from '../api'
 import { useDocumentTitle } from '../documentTitle'
+import { t } from '../i18n'
 
 // A TV show that is not in the library yet: full info plus one action.
 // Shows you already own go straight to their library page instead.
@@ -32,12 +33,12 @@ export default function ShowDetail() {
   if (!show) return <div className="skeleton" style={{ height: 380, borderRadius: 22 }} />
 
   const facts = [
-    show.creators?.length ? { label: show.creators.length > 1 ? 'Creators' : 'Creator', value: show.creators.join(', ') } : null,
-    show.firstAirDate ? { label: 'First aired', value: show.firstAirDate } : null,
-    show.seasons ? { label: 'Seasons', value: String(show.seasons) } : null,
-    show.episodes ? { label: 'Episodes', value: String(show.episodes) } : null,
-    show.networks?.length ? { label: 'Network', value: show.networks.join(', ') } : null,
-    show.releaseStatus ? { label: 'Status', value: show.releaseStatus } : null,
+    show.creators?.length ? { label: show.creators.length > 1 ? t('Creators') : t('Creator'), value: show.creators.join(', ') } : null,
+    show.firstAirDate ? { label: t('First aired'), value: show.firstAirDate } : null,
+    show.seasons ? { label: t('Seasons'), value: String(show.seasons) } : null,
+    show.episodes ? { label: t('Episodes'), value: String(show.episodes) } : null,
+    show.networks?.length ? { label: t('Network'), value: show.networks.join(', ') } : null,
+    show.releaseStatus ? { label: t('Status'), value: show.releaseStatus } : null,
   ].filter(Boolean) as { label: string; value: string }[]
 
   return (
@@ -46,7 +47,7 @@ export default function ShowDetail() {
         info={{ ...show, kind: 'tv', certification: show.contentRating ?? show.certification, facts, links: titleLinks('tv', show.tmdbId, show.imdbId, show.homepage) }}
         actions={
           <button className="primary btn-with-icon big" onClick={() => setAdding(true)}>
-            <Icon name="plus" size={18} /> Add to library
+            <Icon name="plus" size={18} /> {t('Add to library')}
           </button>
         }
       />

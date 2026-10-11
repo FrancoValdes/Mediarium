@@ -30,7 +30,7 @@ func (r *recordingTunnel) DialContext(ctx context.Context, network, addr string)
 // downloads are refused when they would go to a cloud metadata address.
 func TestNetworkPolicyWithoutVPNRefusesMetadataAddresses(t *testing.T) {
 	tcfg := torrent.NewDefaultClientConfig()
-	applyNetworkPolicy(tcfg, nil)
+	applyNetworkPolicy(tcfg, nil, false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -70,7 +70,7 @@ func TestNetworkPolicyWithoutVPNRefusesMetadataAddresses(t *testing.T) {
 func TestNetworkPolicyWithVPNUsesOnlyTheTunnel(t *testing.T) {
 	tun := &recordingTunnel{}
 	tcfg := torrent.NewDefaultClientConfig()
-	applyNetworkPolicy(tcfg, tun)
+	applyNetworkPolicy(tcfg, tun, false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -125,5 +125,81 @@ func TestNetworkPolicyWithVPNUsesOnlyTheTunnel(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("ReadFrom did not return after Close")
+	}
+}
+
+// Trackers, web seeds and magnet addresses on this machine or the home
+// network are refused unless the person allowed them.
+func TestNetworkPolicyRefusesLocalAddressesUnlessAllowed(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	strict := torrent.NewDefaultClientConfig()
+	applyNetworkPolicy(strict, nil, false)
+	for name, dial := range map[string]func(context.Context, string, string) (net.Conn, error){
+		"HTTPDialContext": strict.HTTPDialContext, "TrackerDialContext": strict.TrackerDialContext,
+	} {
+		if _, err := dial(ctx, "tcp", ln.Addr().String()); !errors.Is(err, netguard.ErrBlocked) {
+			t.Errorf("%s to this machine: %v, want ErrBlocked", name, err)
+		}
+	}
+	pc, err := strict.TrackerListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Close()
+	if _, err := pc.WriteTo([]byte("x"), &net.UDPAddr{IP: net.ParseIP("192.168.1.10"), Port: 6969}); !errors.Is(err, netguard.ErrBlocked) {
+		t.Errorf("UDP announce to a home address: %v, want ErrBlocked", err)
+	}
+
+	open := torrent.NewDefaultClientConfig()
+	applyNetworkPolicy(open, nil, true)
+	c, err := open.TrackerDialContext(ctx, "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("allowed local tracker: %v", err)
+	}
+	c.Close()
+}
+
+// A tracker connection stops delivering after the cap, so a hostile tracker
+// can't send the engine an endless nested answer.
+func TestTrackerReplyIsCapped(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	go func() {
+		defer b.Close()
+		buf := make([]byte, 64<<10)
+		for {
+			if _, err := b.Write(buf); err != nil {
+				return
+			}
+		}
+	}()
+	c := &cappedConn{Conn: a, left: 100 << 10}
+	var got int64
+	buf := make([]byte, 32<<10)
+	for {
+		n, err := c.Read(buf)
+		got += int64(n)
+		if err != nil {
+			break
+		}
+	}
+	if got != 100<<10 {
+		t.Fatalf("read %d bytes, want exactly the cap %d", got, 100<<10)
 	}
 }

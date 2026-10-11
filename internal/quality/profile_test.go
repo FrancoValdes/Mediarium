@@ -21,6 +21,11 @@ func TestClassify(t *testing.T) {
 		{"Movie.2024.DVDRip.XviD-GROUP", quality.TierDVD},
 		{"Movie.2024.HDTV.x264-GROUP", quality.TierSDTV},
 		{"Movie.2024.CAM-GROUP", quality.TierPreRelease},
+		// An HDRip is not a web copy, so a profile that wants WEB-DL leaves it out.
+		{"Movie.2024.1080p.HDRip.x264-GROUP", quality.TierHDTV1080p},
+		{"Movie.2024.720p.HD-Rip.x264-GROUP", quality.TierHDTV720p},
+		{"Movie.2019.HDRip.XviD-GROUP", quality.TierSDTV},
+		{"Movie.2024.1080p.HDRip.WEB-DL.x264-GROUP", quality.TierWebDL1080p},
 	}
 	for _, tc := range cases {
 		t.Run(tc.release, func(t *testing.T) {

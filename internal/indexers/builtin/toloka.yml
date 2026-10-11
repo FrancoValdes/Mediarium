@@ -1,0 +1,220 @@
+---
+# Toloka.to, the Ukrainian torrent tracker. Shipped with Mediarium because
+# the shared definition list doesn't have it (Prowlarr runs it from its own
+# code). Toloka's titles carry the Ukrainian name, the original name, the
+# year and "Сезон 1, Серії 1-10 з 12" style episode markers; the title
+# filters below turn that into a release name the parser understands.
+id: toloka
+name: Toloka.to
+description: "Toloka is a Semi-Private Ukrainian torrent site with a thriving file-sharing community"
+language: uk-UA
+type: semi-private
+encoding: UTF-8
+links:
+  - https://toloka.to/
+
+caps:
+  categorymappings:
+    - {id: 117, cat: Movies, desc: "Українське кіно"}
+    - {id: 84, cat: Movies, desc: "Українське кіно: мультфільми і казки"}
+    - {id: 42, cat: Movies, desc: "Українське кіно: художні фільми"}
+    - {id: 124, cat: TV, desc: "Українське кіно: телесеріали"}
+    - {id: 125, cat: TV, desc: "Українське кіно: мультсеріали"}
+    - {id: 129, cat: Movies, desc: "Українське кіно: артхаус"}
+    - {id: 118, cat: Movies, desc: "Українське озвучення"}
+    - {id: 16, cat: Movies, desc: "Українське озвучення: фільми"}
+    - {id: 32, cat: TV, desc: "Українське озвучення: телесеріали"}
+    - {id: 19, cat: Movies, desc: "Українське озвучення: мультфільми"}
+    - {id: 44, cat: TV, desc: "Українське озвучення: мультсеріали"}
+    - {id: 127, cat: TV/Anime, desc: "Українське озвучення: аніме"}
+    - {id: 55, cat: Movies, desc: "Українське озвучення: артхаус"}
+    - {id: 144, cat: Movies, desc: "Українське озвучення: короткометражні"}
+    - {id: 190, cat: Movies, desc: "Українські субтитри"}
+    - {id: 70, cat: Movies, desc: "Українські субтитри: фільми"}
+    - {id: 192, cat: TV, desc: "Українські субтитри: телесеріали"}
+    - {id: 193, cat: Movies, desc: "Українські субтитри: мультфільми"}
+    - {id: 195, cat: TV, desc: "Українські субтитри: мультсеріали"}
+    - {id: 194, cat: TV/Anime, desc: "Українські субтитри: аніме"}
+    - {id: 196, cat: Movies, desc: "Українські субтитри: артхаус"}
+    - {id: 197, cat: Movies, desc: "Українські субтитри: короткометражні"}
+    - {id: 225, cat: TV/Documentary, desc: "Документальні фільми українською"}
+    - {id: 21, cat: TV/Documentary, desc: "Наукові документальні фільми"}
+    - {id: 131, cat: TV/Documentary, desc: "Історичні документальні фільми"}
+    - {id: 226, cat: TV/Documentary, desc: "BBC"}
+    - {id: 227, cat: TV/Documentary, desc: "Discovery"}
+    - {id: 228, cat: TV/Documentary, desc: "National Geographic"}
+    - {id: 229, cat: TV/Documentary, desc: "History Channel"}
+    - {id: 230, cat: TV/Documentary, desc: "Інші іноземні документальні фільми"}
+    - {id: 119, cat: TV/Other, desc: "Телепередачі українською"}
+    - {id: 132, cat: TV/Other, desc: "Телевізійні шоу та програми"}
+    - {id: 96, cat: Movies/HD, desc: "Фільми в HD"}
+    - {id: 173, cat: TV/HD, desc: "Серіали в HD"}
+    - {id: 139, cat: Movies/HD, desc: "Мультфільми в HD"}
+    - {id: 174, cat: TV/HD, desc: "Мультсеріали в HD"}
+    - {id: 140, cat: TV/Documentary, desc: "Документальні фільми в HD"}
+    - {id: 120, cat: Movies/DVD, desc: "DVD українською"}
+    - {id: 66, cat: Movies/DVD, desc: "Художні фільми та серіали в DVD"}
+    - {id: 137, cat: Movies/DVD, desc: "Мультфільми та мультсеріали в DVD"}
+    - {id: 8, cat: Audio, desc: "Українська музика (lossy)"}
+    - {id: 23, cat: Audio, desc: "Поп, естрада"}
+    - {id: 24, cat: Audio, desc: "Джаз, блюз"}
+    - {id: 43, cat: Audio, desc: "Етно, фольклор"}
+    - {id: 35, cat: Audio, desc: "Інструментальна, класична"}
+    - {id: 37, cat: Audio, desc: "Рок, метал, альтернатива"}
+    - {id: 36, cat: Audio, desc: "Реп, хіп-хоп, RnB"}
+    - {id: 38, cat: Audio, desc: "Електронна музика"}
+    - {id: 98, cat: Audio/Lossless, desc: "Українська музика (lossless)"}
+    - {id: 100, cat: Audio/Lossless, desc: "Поп, естрада (lossless)"}
+    - {id: 101, cat: Audio/Lossless, desc: "Джаз, блюз (lossless)"}
+    - {id: 102, cat: Audio/Lossless, desc: "Етно, фольклор (lossless)"}
+    - {id: 103, cat: Audio/Lossless, desc: "Інструментальна, класична (lossless)"}
+    - {id: 104, cat: Audio/Lossless, desc: "Рок, метал, альтернатива (lossless)"}
+    - {id: 105, cat: Audio/Lossless, desc: "Реп, хіп-хоп, RnB (lossless)"}
+    - {id: 106, cat: Audio/Lossless, desc: "Електронна музика (lossless)"}
+    - {id: 11, cat: Books, desc: "Друкована література"}
+    - {id: 134, cat: Books, desc: "Українська художня література (до 1991 р.)"}
+    - {id: 177, cat: Books, desc: "Українська художня література (після 1991 р.)"}
+    - {id: 178, cat: Books, desc: "Зарубіжна художня література"}
+    - {id: 185, cat: Audio/Audiobook, desc: "Аудіокниги українською"}
+    - {id: 135, cat: Audio/Audiobook, desc: "Аудіокниги: українська художня література"}
+    - {id: 186, cat: Audio/Audiobook, desc: "Аудіокниги: зарубіжна художня література"}
+    - {id: 187, cat: Audio/Audiobook, desc: "Аудіокниги: історія, біографістика"}
+  modes:
+    search: [q]
+    tv-search: [q, season, ep]
+    movie-search: [q]
+    music-search: [q]
+    book-search: [q]
+
+settings:
+  - name: username
+    type: text
+    label: Username
+  - name: password
+    type: password
+    label: Password
+  - name: freeleech
+    type: checkbox
+    label: Search freeleech only
+    default: false
+
+login:
+  path: login.php
+  method: post
+  inputs:
+    username: "{{ .Config.username }}"
+    password: "{{ .Config.password }}"
+    autologin: "on"
+    ssl: "on"
+    redirect: ""
+    login: "Вхід"
+  error:
+    - selector: table.forumline table span.gen
+  test:
+    path: index.php
+    selector: a[href*="logout=true"]
+
+search:
+  paths:
+    - path: tracker.php
+  # The site's titles say "Сезон 1, Серії 3", not S01E03, so the episode
+  # part of a search is left off; the parser picks the episode afterwards.
+  keywordsfilters:
+    - name: re_replace
+      args: ["(?i)\\bS\\d{1,3}(E\\d{1,4})?\\b", ""]
+    - name: re_replace
+      args: ["-", " "]
+    - name: trim
+  inputs:
+    $raw: "{{ range .Categories }}f[]={{.}}&{{end}}"
+    o: 1
+    s: 2
+    nm: "{{ .Keywords }}"
+    sds: "{{ if .Config.freeleech }}1{{ else }}{{ end }}"
+  rows:
+    selector: table.forumline > tbody > tr[class*="prow"]
+  fields:
+    category:
+      selector: td:nth-child(2) > a
+      attribute: href
+      filters:
+        - name: querystring
+          args: f
+    title:
+      selector: td:nth-child(3) > a
+      filters:
+        # every kind of dash becomes a hyphen
+        - name: re_replace
+          args: ["\\p{Pd}", "-"]
+        - name: re_replace
+          args: ["\\s(\\d+),(\\d+)", " $1-$2"]
+        # Ukrainian season and episode markers, as the parser writes them
+        - name: re_replace
+          args: ["(?i)(?:Сезони?|Seasons?)\\s*:?\\s+(\\d+)-(\\d+)", "S$1-S$2"]
+        - name: re_replace
+          args: ["(?i)Сезон\\s*:?\\s+(\\d+)[^\\d]+?(?:Серії|Серія|Серій|Епізоди?)\\s*:?\\s+(\\d+)-(\\d+)(?:\\s*з\\s*[\\w?]+)?", "S$1E$2-E$3"]
+        - name: re_replace
+          args: ["(?i)Сезон\\s*:?\\s+(\\d+)[^\\d]+?(?:Серії|Серія|Серій|Епізоди?)\\s*:?\\s+(\\d+)(?:\\s*з\\s*[\\w?]+)?", "S$1E$2"]
+        - name: re_replace
+          args: ["(?i)Сезон\\s*:?\\s+(\\d+)", "S$1"]
+        - name: re_replace
+          args: ["(?i)Season\\s*:?\\s+(\\d+)[^\\d]+?Episodes?\\s*:?\\s+(\\d+)-(\\d+)(?:\\s*of\\s*[\\w?]+)?", "S$1E$2-E$3"]
+        - name: re_replace
+          args: ["(?i)Season\\s*:?\\s+(\\d+)[^\\d]+?Episodes?\\s*:?\\s+(\\d+)(?:\\s*of\\s*[\\w?]+)?", "S$1E$2"]
+        - name: re_replace
+          args: ["(?i)Season\\s*:?\\s+(\\d+)", "S$1"]
+        # "Тиха вулиця (S2E1-E8) / Quiet Street (S2) (2023) ..." becomes
+        # "Quiet Street S2E1-E8 (2023) ...": the marker from the Ukrainian
+        # half goes after the English name.
+        - name: re_replace
+          args: ["^[^/]*?\\((S\\d+(?:-S\\d+)?(?:E\\d+(?:-E\\d+)?)?)\\)[^/]*/\\s*([^(\\[]+?)\\s*(?:\\(S\\d+(?:-S\\d+)?\\)\\s*)?([(\\[]|$)", "$2 $1 $3"]
+        # otherwise the Ukrainian name before " / ", and any other Cyrillic words
+        - name: re_replace
+          args: ["^[^/A-Za-z]*\\p{Cyrillic}[^/A-Za-z]*/\\s*", ""]
+        - name: re_replace
+          args: ["\\([\\p{Cyrillic}\\W]+\\)", ""]
+        - name: re_replace
+          args: ["[\\p{Cyrillic}]+", ""]
+        - name: re_replace
+          args: ["(?i)\\b-Rip\\b", "Rip"]
+        - name: re_replace
+          args: ["(?i)\\bWEB-?DL-?Rip\\b", "WEB-DL"]
+        - name: re_replace
+          args: ["(?i)\\bHDTVRip\\b", "HDTV"]
+        - name: re_replace
+          args: ["[\\[(]\\s*[,/+&-]*\\s*[\\])]", ""]
+        - name: re_replace
+          args: ["\\s+", " "]
+        - name: re_replace
+          args: ["^[\\s&,.!?+_|/\\\\:;-]+|[\\s&,.!?+_|/\\\\:;-]+$", ""]
+    details:
+      selector: td:nth-child(3) > a
+      attribute: href
+    download:
+      selector: td:nth-child(6) > a
+      attribute: href
+    size:
+      selector: td:nth-child(7)
+    grabs:
+      selector: td:nth-child(9)
+      optional: true
+    seeders:
+      selector: td:nth-child(10) > b
+      optional: true
+    leechers:
+      selector: td:nth-child(11) > b
+      optional: true
+    date:
+      selector: td:nth-child(13)
+      optional: true
+      filters:
+        - name: fuzzytime
+    downloadvolumefactor:
+      case:
+        img[src="images/gold.gif"]: 0
+        img[src="images/authors.gif"]: 0
+        img[src="images/silver.gif"]: 0.5
+        img[src="images/bronze.gif"]: 0.75
+        "*": 1
+    uploadvolumefactor:
+      text: 1

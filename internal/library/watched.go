@@ -69,7 +69,7 @@ func (r *Repo) ListWatched() ([]Watched, error) {
 
 // MovieAddedDates maps every movie to when it was added to the library.
 func (r *Repo) MovieAddedDates() (map[int64]time.Time, error) {
-	rows, err := r.db.Query(`SELECT id, added_at FROM movies`)
+	rows, err := r.db.Query(`SELECT id, added_at FROM movies WHERE copy_of IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("movie added dates: %w", err)
 	}
@@ -94,7 +94,7 @@ func (r *Repo) MovieAddedDates() (map[int64]time.Time, error) {
 // ClearMovieFile marks a movie as missing and forgets its file (after the
 // file was deleted).
 func (r *Repo) ClearMovieFile(id int64) error {
-	if _, err := r.db.Exec(`UPDATE movies SET status = 'missing', quality = '', file_path = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`, id); err != nil {
+	if _, err := r.db.Exec(`UPDATE movies SET status = 'missing', quality = '', file_path = NULL, release_title = '', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("clear movie %d file: %w", id, err)
 	}
 	return nil
@@ -102,7 +102,7 @@ func (r *Repo) ClearMovieFile(id int64) error {
 
 // ClearEpisodeFile marks an episode as missing and forgets its file.
 func (r *Repo) ClearEpisodeFile(id int64) error {
-	if _, err := r.db.Exec(`UPDATE episodes SET status = 'missing', quality = '', file_path = NULL WHERE id = ?`, id); err != nil {
+	if _, err := r.db.Exec(`UPDATE episodes SET status = 'missing', quality = '', file_path = NULL, release_title = '' WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("clear episode %d file: %w", id, err)
 	}
 	return nil

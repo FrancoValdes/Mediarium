@@ -1,0 +1,31 @@
+/* Settings > Subtitles: the "Subtitle sources" card. One row per source: the
+   switch and what it is, where it stands, and (for the two sites) the key. */
+
+.sources-card { align-content: start; }
+
+.source-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; align-items: start;
+}
+
+.source-row {
+  display: grid; gap: 10px; min-width: 0;
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: 6px 14px 14px 14px;
+  background: color-mix(in srgb, var(--surface-2, transparent) 60%, transparent);
+}
+.source-row .switch-row { margin: 0; align-items: flex-start; }
+.source-row .switch-label { font-size: 1rem; }
+.source-row.is-off, .source-row.is-needs_key { border-style: dashed; }
+
+.source-state { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 600; color: var(--text-dim); }
+.source-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.source-state.state-on { color: var(--success); }
+.source-state.state-limit { color: var(--warning); }
+.source-state.state-needs_key { color: var(--warning); }
+
+.source-extra { color: var(--text-dim); }
+
+.source-key > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.source-key[open] > summary { margin-bottom: 4px; }
+.source-key .service-embed { display: grid; gap: 12px; }
+.source-key .service-embed ol { margin: 0 0 8px; }

@@ -97,7 +97,7 @@ func Classify(r parser.Release) Tier {
 			return TierBluray2160p
 		case "WEB-DL", "WEBRip", "WEB":
 			return TierWebDL2160p
-		case "HDTV":
+		case "HDTV", "HDRip":
 			return TierHDTV2160p
 		}
 		return TierWebDL2160p // resolution known, source ambiguous — assume a reasonable digital tier
@@ -109,7 +109,7 @@ func Classify(r parser.Release) Tier {
 			return TierBluray1080p
 		case "WEB-DL", "WEBRip", "WEB":
 			return TierWebDL1080p
-		case "HDTV":
+		case "HDTV", "HDRip":
 			return TierHDTV1080p
 		}
 		return TierWebDL1080p
@@ -119,7 +119,7 @@ func Classify(r parser.Release) Tier {
 			return TierBluray720p
 		case "WEB-DL", "WEBRip", "WEB":
 			return TierWebDL720p
-		case "HDTV":
+		case "HDTV", "HDRip":
 			return TierHDTV720p
 		}
 		return TierWebDL720p
@@ -130,7 +130,7 @@ func Classify(r parser.Release) Tier {
 	switch src {
 	case "DVD", "DVDRip", "DVDR":
 		return TierDVD
-	case "HDTV", "SDTV", "PDTV":
+	case "HDTV", "SDTV", "PDTV", "HDRip":
 		return TierSDTV
 	}
 	return TierUnknown
@@ -175,6 +175,28 @@ type Profile struct {
 	// is not stored with the profile. A release clearly in another language
 	// only is not accepted (see FitLanguage). Empty means any language.
 	Language string
+	// OriginalLanguage is the language the title being judged was made in (a
+	// name such as "Japanese"), filled in by whoever loads the profile for a
+	// decision about one film or show. Custom formats with an "Original"
+	// language condition use it. Empty when unknown; it is not stored.
+	OriginalLanguage string
+
+	// Custom formats (see formats_profile.go): the score this profile gives
+	// each format, by format id; the lowest total score a release needs; and
+	// the total at which better-scoring releases stop being looked for (0:
+	// scores never cause an upgrade).
+	FormatScores      map[int64]int
+	MinFormatScore    int
+	CutoffFormatScore int
+	// Formats is FormatScores resolved to the formats themselves, filled in
+	// by whoever loads the profile for a decision; it is not stored.
+	Formats []ScoredFormat
+	// NoSeasonPacks refuses whole-season releases: episodes are fetched one
+	// by one instead.
+	NoSeasonPacks bool
+	// SkipBadReleases leaves out releases nobody wants (see badreleases.go)
+	// and prefers a group's PROPER/REPACK over its broken release.
+	SkipBadReleases bool
 }
 
 // Chain is the profile followed by its resolved fallbacks, in the order an
@@ -251,6 +273,12 @@ func containsTerm(normalizedTitle, term string) bool {
 // TitleAllowed applies the profile's release restrictions to a release
 // title, returning the reason when it is not allowed.
 func (p Profile) TitleAllowed(title string) (bool, string) {
+	if ok, why := p.formatRestrictions(title); !ok {
+		return false, why
+	}
+	if why := p.skipBadReason(title); why != "" {
+		return false, why
+	}
 	norm := normalizeForMatch(title)
 	for _, term := range p.MustNotContain {
 		if containsTerm(norm, term) {
@@ -268,10 +296,12 @@ func (p Profile) TitleAllowed(title string) (bool, string) {
 	return true, ""
 }
 
-// Score is the summed score of every preferred term the title matches.
+// Score is the summed score of every preferred term the title matches, plus
+// its custom-format score.
 func (p Profile) Score(title string) int {
 	norm := normalizeForMatch(title)
-	total := 0
+	total, _ := p.FormatScore(title)
+	total += p.fixScore(title)
 	for _, pr := range p.Preferred {
 		if containsTerm(norm, pr.Term) {
 			total += pr.Score
@@ -393,7 +423,7 @@ func Presets() map[string]Profile {
 		PresetCinema: {
 			Name:    "Cinema recordings",
 			Allowed: []Tier{TierPreRelease},
-			Cutoff:  TierPreRelease, UpgradeAllowed: false,
+			Cutoff:  TierPreRelease, UpgradeAllowed: false, SkipBadReleases: true,
 		},
 		// Anything recognisable, SD included. The cutoff stops the upgrade
 		// hunt at Bluray-1080p so an "Any" item is not chased all the way to
@@ -401,25 +431,25 @@ func Presets() map[string]Profile {
 		PresetAny: {
 			Name:    "Any",
 			Allowed: []Tier{TierSDTV, TierDVD, TierWebDL480p, TierHDTV720p, TierWebDL720p, TierBluray720p, TierHDTV1080p, TierWebDL1080p, TierBluray1080p, TierRemux1080p, TierHDTV2160p, TierWebDL2160p, TierBluray2160p, TierRemux2160p},
-			Cutoff:  TierBluray1080p, UpgradeAllowed: false,
+			Cutoff:  TierBluray1080p, UpgradeAllowed: false, SkipBadReleases: true,
 		},
 		// 720p only, for small screens or limited storage and bandwidth.
 		Preset720p: {
 			Name:    "720p",
 			Allowed: []Tier{TierHDTV720p, TierWebDL720p, TierBluray720p},
-			Cutoff:  TierBluray720p, UpgradeAllowed: false,
+			Cutoff:  TierBluray720p, UpgradeAllowed: false, SkipBadReleases: true,
 		},
 		// The default. 1080p only: TV, WEB and Bluray. No remux, see above.
 		Preset1080p: {
 			Name:    "1080p",
 			Allowed: []Tier{TierHDTV1080p, TierWebDL1080p, TierBluray1080p},
-			Cutoff:  TierBluray1080p, UpgradeAllowed: false,
+			Cutoff:  TierBluray1080p, UpgradeAllowed: false, SkipBadReleases: true,
 		},
 		// 4K only: WEB, Bluray and remux.
 		Preset4K: {
 			Name:    "4K & over",
 			Allowed: []Tier{TierWebDL2160p, TierBluray2160p, TierRemux2160p},
-			Cutoff:  TierBluray2160p, UpgradeAllowed: false,
+			Cutoff:  TierBluray2160p, UpgradeAllowed: false, SkipBadReleases: true,
 		},
 	}
 }
@@ -473,7 +503,9 @@ func legacyPresets() []legacyPreset {
 func sameDefinition(a, b Profile) bool {
 	if a.Name != b.Name || a.Cutoff != b.Cutoff || a.UpgradeAllowed != b.UpgradeAllowed ||
 		len(a.MustContain) != 0 || len(a.MustNotContain) != 0 || len(a.Preferred) != 0 || len(a.Fallback) != 0 ||
-		len(b.MustContain) != 0 || len(b.MustNotContain) != 0 || len(b.Preferred) != 0 || len(b.Fallback) != 0 {
+		len(b.MustContain) != 0 || len(b.MustNotContain) != 0 || len(b.Preferred) != 0 || len(b.Fallback) != 0 ||
+		len(a.FormatScores) != 0 || a.MinFormatScore != 0 || a.CutoffFormatScore != 0 || a.NoSeasonPacks ||
+		len(b.FormatScores) != 0 || b.MinFormatScore != 0 || b.CutoffFormatScore != 0 || b.NoSeasonPacks {
 		return false
 	}
 	set := func(ts []Tier) map[Tier]bool {

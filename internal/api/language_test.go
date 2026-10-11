@@ -37,6 +37,27 @@ func TestPreferredLanguageSetting(t *testing.T) {
 	}
 }
 
+// Several audio languages can be saved, best first, with "Original" for the
+// language each title was made in; a list with a made-up language is refused.
+func TestSeveralAudioLanguagesAreSaved(t *testing.T) {
+	_, base, client := loginNewServer(t)
+	saved := func() any { return getJSON[map[string]any](t, client, base+"/api/settings")["qualityLanguage"] }
+
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"qualityLanguage": "German, English ,Original,German"}, http.StatusOK)
+	if got := saved(); got != "German,English,Original" {
+		t.Fatalf("saved %v, want the list tidied to German,English,Original", got)
+	}
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"qualityLanguage": "German,Klingon"}, http.StatusBadRequest)
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"qualityLanguage": ",,"}, http.StatusBadRequest)
+	if got := saved(); got != "German,English,Original" {
+		t.Fatalf("a refused change altered the list to %v", got)
+	}
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"qualityLanguage": "Original"}, http.StatusOK)
+	if got := saved(); got != "Original" {
+		t.Fatalf("saved %v, want Original", got)
+	}
+}
+
 func TestAutomationSkipsReleasesInAnotherLanguage(t *testing.T) {
 	const (
 		plain   = "Fixture.Show.S01E01.1080p.WEB-DL.x264-GRP"
@@ -127,4 +148,36 @@ func TestSearchResultsShowTheLanguage(t *testing.T) {
 		"releaseTitle": italian, "downloadUrl": byTitle[italian].DownloadURL, "protocol": "usenet", "season": 1, "episode": 1,
 	}, http.StatusAccepted)
 	env.finish(t)
+}
+
+// The trailer behind title pages is on until an administrator switches it off,
+// and every account can read the answer.
+func TestTrailerBackgroundIsOnUntilSwitchedOff(t *testing.T) {
+	_, base, client := loginNewServer(t)
+	modules := func() any { return getJSON[map[string]any](t, client, base+"/api/modules")["trailerBackground"] }
+	settings := func() any { return getJSON[map[string]any](t, client, base+"/api/settings")["trailerBackground"] }
+	if modules() != true || settings() != true {
+		t.Fatalf("the trailer should be on out of the box: modules %v, settings %v", modules(), settings())
+	}
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"trailerBackground": false}, http.StatusOK)
+	if modules() != false || settings() != false {
+		t.Fatalf("switched off: modules %v, settings %v", modules(), settings())
+	}
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"trailerBackground": true}, http.StatusOK)
+	if modules() != true {
+		t.Fatalf("switched on again: %v", modules())
+	}
+}
+
+func TestTrailerSoundIsOffUntilSwitchedOn(t *testing.T) {
+	_, base, client := loginNewServer(t)
+	modules := func() any { return getJSON[map[string]any](t, client, base+"/api/modules")["trailerSound"] }
+	settings := func() any { return getJSON[map[string]any](t, client, base+"/api/settings")["trailerSound"] }
+	if modules() != false || settings() != false {
+		t.Fatalf("the trailer should start muted out of the box: modules %v, settings %v", modules(), settings())
+	}
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"trailerSound": true}, http.StatusOK)
+	if modules() != true || settings() != true {
+		t.Fatalf("switched on: modules %v, settings %v", modules(), settings())
+	}
 }

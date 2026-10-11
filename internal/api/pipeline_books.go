@@ -35,7 +35,7 @@ func (s *Server) bookRoot(f books.Format) string {
 func (s *Server) bookFolder(b books.Book, f books.Format) (string, error) {
 	root := s.bookRoot(f)
 	if root == "" {
-		return "", fmt.Errorf("the %s folder isn't set. Choose one in Settings > Library > Folders and file names", formatWord(f))
+		return "", fmt.Errorf("the %s folder isn't set. Choose one in Settings > Library > Folders", formatWord(f))
 	}
 	mode, repl := s.illegalCharSettings()
 	author := strings.TrimSpace(b.Author)
@@ -71,6 +71,13 @@ func (s *Server) runBookPipeline(queueID int64, b books.Book, f books.Format, re
 		if handled, err := s.settleInterrupted(queueID, run); handled {
 			return err
 		}
+		if dup := asDuplicate(stepErr); dup != nil {
+			s.settleDuplicate(queueID, dup)
+			if !dup.holdsTitle() {
+				_ = s.BookRepo.SetState(b.ID, f, restore, "", "")
+			}
+			return stepErr
+		}
 		plain := plainerror.Message(stepErr)
 		_ = s.QueueRepo.SetStatus(queueID, queue.StatusFailed, plain)
 		noteDownloadFailure(queueID, label, bookLink(b.ID), stepErr)
@@ -103,13 +110,13 @@ func (s *Server) runBookPipeline(queueID int64, b books.Book, f books.Format, re
 	var placed []string
 	fileFormat := ""
 	if f == books.Ebook {
-		src, format := books.EbookFile(dir)
+		src, format := books.EbookFile(dir, bookFindOptions(dir)...)
 		if src == "" {
 			return fail(badRelease(errors.New("the download has no ebook file (epub, azw3, mobi or pdf)")))
 		}
 		mode, repl := s.illegalCharSettings()
 		dest := filepath.Join(folder, organizer.Sanitize(b.Title, mode, repl)+"."+format)
-		res, err := organizer.Import(src, dest, organizer.ConflictOverwriteIfBetter, func() bool {
+		res, err := s.importDownloaded(src, dest, organizer.ConflictOverwriteIfBetter, func() bool {
 			return books.EbookRank(format) >= books.EbookRank(b.EbookFormat)
 		})
 		if err != nil {
@@ -120,12 +127,12 @@ func (s *Server) runBookPipeline(queueID int64, b books.Book, f books.Format, re
 		}
 		placed, fileFormat = []string{res.DestPath}, format
 	} else {
-		files, format := books.AudioFiles(dir)
+		files, format := books.AudioFiles(dir, bookFindOptions(dir)...)
 		if len(files) == 0 {
 			return fail(badRelease(errors.New("the download has no audiobook files (m4b, mp3 and the like)")))
 		}
 		for _, src := range files {
-			res, err := organizer.Import(src, filepath.Join(folder, filepath.Base(src)), organizer.ConflictOverwrite, nil)
+			res, err := s.importDownloaded(src, filepath.Join(folder, filepath.Base(src)), organizer.ConflictOverwrite, nil)
 			if err != nil {
 				return fail(fmt.Errorf("couldn't move %s into your library: %w", filepath.Base(src), err))
 			}

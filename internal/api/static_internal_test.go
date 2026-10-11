@@ -1,9 +1,12 @@
 package api
 
 import (
+	"compress/gzip"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rdborg/mediarium/web"
@@ -62,4 +65,49 @@ func hashedName(name string) bool {
 		}
 	}
 	return false
+}
+
+// A browser that accepts gzip gets the built scripts, styles and the page
+// compressed (the main script is about a megabyte); one that does not, or that
+// asks for a range, gets the plain file.
+func TestBuiltFilesAreSentCompressed(t *testing.T) {
+	h := frontendHandler()
+	do := func(path string, headers map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	gz := map[string]string{"Accept-Encoding": "gzip, deflate"}
+	for _, path := range []string{"/", "/library", "/favicon.svg"} {
+		w := do(path, gz)
+		if w.Code != http.StatusOK || w.Header().Get("Content-Encoding") != "gzip" || w.Header().Get("Vary") != "Accept-Encoding" {
+			t.Fatalf("GET %s: %d, Content-Encoding %q, Vary %q", path, w.Code, w.Header().Get("Content-Encoding"), w.Header().Get("Vary"))
+		}
+		zr, err := gzip.NewReader(w.Body)
+		if err != nil {
+			t.Fatalf("GET %s: not gzip: %v", path, err)
+		}
+		plain, _ := io.ReadAll(zr)
+		if len(plain) == 0 {
+			t.Errorf("GET %s: empty after decompressing", path)
+		}
+		if path != "/favicon.svg" && !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+			t.Errorf("GET %s: Content-Type %q", path, w.Header().Get("Content-Type"))
+		}
+		// Asking again with the tag gets "not modified".
+		again := do(path, map[string]string{"Accept-Encoding": "gzip", "If-None-Match": w.Header().Get("ETag")})
+		if again.Code != http.StatusNotModified {
+			t.Errorf("GET %s with its ETag: %d, want 304", path, again.Code)
+		}
+	}
+	if w := do("/", nil); w.Header().Get("Content-Encoding") != "" {
+		t.Errorf("without Accept-Encoding the page must be plain, got %q", w.Header().Get("Content-Encoding"))
+	}
+	if w := do("/", map[string]string{"Accept-Encoding": "gzip", "Range": "bytes=0-10"}); w.Header().Get("Content-Encoding") != "" {
+		t.Errorf("a range request must get the plain file, got %q", w.Header().Get("Content-Encoding"))
+	}
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import Icon, { type IconName } from './Icon'
+import { t } from '../i18n'
 
 // A service that already ships with Mediarium: what it is, that it is
 // connected, what its shared limits are, and where to get a personal key if
@@ -23,11 +24,11 @@ export default function ConnectedServiceCard({
         <span className="cc-ico">
           <Icon name={icon} size={18} />
         </span>
-        {title} <span className="req-badge included">Connected</span>
+        {title} <span className="req-badge included">{t('Connected')}</span>
       </h2>
       <p className="cc-does">{does}</p>
       <div className="cc-limits">
-        <strong>Limits of the shared key</strong>
+        <strong>{t('Limits of the shared key')}</strong>
         <p>{limits}</p>
       </div>
       <p className="cc-own">

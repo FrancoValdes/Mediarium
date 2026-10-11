@@ -8,7 +8,7 @@ export default function Cover({ src, alt = '', className }: { src?: string; alt?
   const [brokenSrc, setBrokenSrc] = useState<string | undefined>()
   return (
     <span className={`cover${className ? ` ${className}` : ''}`}>
-      {src && brokenSrc !== src ? <img src={src} alt={alt} loading="lazy" onError={() => setBrokenSrc(src)} /> : <MusicFallback />}
+      {src && brokenSrc !== src ? <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setBrokenSrc(src)} /> : <MusicFallback />}
     </span>
   )
 }

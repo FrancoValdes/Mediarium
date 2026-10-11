@@ -107,7 +107,8 @@ func TestRenderPadIsBounded(t *testing.T) {
 	ctx := organizer.NamingContext{Season: 2}
 	start := time.Now()
 	got := organizer.Render("Season {Season:"+strings.Repeat("0", 1_000_000)+"}", ctx)
-	if d := time.Since(start); d > 2*time.Second {
+	// About 0.1 s normally; the race detector makes it ten to forty times slower.
+	if d := time.Since(start); d > 15*time.Second {
 		t.Fatalf("a huge pad took %s", d)
 	}
 	if len(got) > 100 {

@@ -4,6 +4,7 @@ import { api, can, isAdmin, type Book, type BookFormat, type QueueItem, type Sea
 import { useAuth } from '../AuthContext'
 import { useConfirm } from '../components/ConfirmProvider'
 import Icon from '../components/Icon'
+import KindGlyph from '../components/KindGlyph'
 import { PosterFallback } from '../components/PosterCard'
 import ReleaseTable from '../components/ReleaseTable'
 import Switch from '../components/Switch'
@@ -12,17 +13,23 @@ import AuthorBooks from '../components/AuthorBooks'
 import BookSeries from '../components/BookSeries'
 import { audioDetails, localDate } from '../bookSeries'
 import { useDocumentTitle } from '../documentTitle'
+import { locale, t } from '../i18n'
 import { useModules } from '../ModulesContext'
 import { useLive } from '../useLive'
-import { bookState, FORMAT_WORD } from './BookLibrary'
+import { bookState } from './BookLibrary'
 import { listenPath, openBookApp, readPath } from '../bookshelf/open'
 
-const FORMAT_TITLE: Record<BookFormat, string> = { ebook: 'Ebook', audiobook: 'Audiobook' }
+const FORMAT_TITLE: Record<BookFormat, string> = { ebook: t('Ebook'), audiobook: t('Audiobook') }
 
 // One book: its details from Open Library, and a panel for each format that is
 // switched on, with where it stands, the file and the releases to choose from.
 export default function BookDetail() {
   const { id } = useParams()
+  // Keyed by the book, so opening another one from a rail starts clean instead of showing the last book's panels.
+  return <BookPage key={id} id={id} />
+}
+
+function BookPage({ id }: { id?: string }) {
   const bookId = Number(id)
   const navigate = useNavigate()
   const confirm = useConfirm()
@@ -55,16 +62,16 @@ export default function BookDetail() {
     if (!book) return
     const hasFiles = !!(book.ebook.path || book.audiobook.path)
     const answer = await confirm({
-      title: `Remove ${book.title} from your library?`,
-      body: <p>Mediarium stops looking for this book and cancels anything still downloading for it. You can add it back any time.</p>,
-      confirmLabel: 'Remove',
+      title: t('Remove {title} from your library?', { title: book.title }),
+      body: <p>{t('Mediarium stops looking for this book and cancels anything still downloading for it. You can add it back any time.')}</p>,
+      confirmLabel: t('Remove'),
       danger: true,
-      option: hasFiles ? { label: 'Also delete its files', hint: 'The ebook file and the audiobook folder, if there are any.', defaultChecked: false } : undefined,
+      option: hasFiles ? { label: t('Also delete its files'), hint: t('The ebook file and the audiobook folder, if there are any.'), defaultChecked: false } : undefined,
     })
     if (!answer) return
     try {
       await api.deleteBook(book.id, answer.checked)
-      toast.success(`${book.title} removed.`)
+      toast.success(t('{title} removed.', { title: book.title }))
       navigate('/library')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -74,6 +81,8 @@ export default function BookDetail() {
   if (error && !book) return <p className="error-text">{error}</p>
   if (!book) return <div className="skeleton" style={{ height: 320, borderRadius: 22 }} />
 
+  // A book added from Audible has no Open Library page, so the link and the series lookup are left out.
+  const fromAudible = book.olKey.startsWith('audnexus:')
   const formats = (['ebook', 'audiobook'] as BookFormat[]).filter((f) => on(f === 'ebook' ? 'ebooks' : 'audiobooks') || book[f].status === 'downloaded')
   return (
     <div>
@@ -82,33 +91,35 @@ export default function BookDetail() {
         <div className="title-info">
           <div className="title-kicker">
             <span className="kind-tag kind-book">
-              <Icon name="book" size={13} /> Book
+              <Icon name="book" size={13} /> {t('Book')}
             </span>
           </div>
           <h1>{book.title}</h1>
           <p className="title-tagline">
-            {[book.author, book.year, book.seriesName && (book.seriesPosition ? `Book ${book.seriesPosition} of ${book.seriesName}` : book.seriesName)].filter(Boolean).join(' · ')}
+            {[book.author, book.year, book.seriesName && (book.seriesPosition ? t('Book {n} of {series}', { n: book.seriesPosition, series: book.seriesName }) : book.seriesName)].filter(Boolean).join(' · ')}
           </p>
           {book.releaseDate && book.releaseDate > localDate(new Date()) && (
             <p className="notice notice-info" style={{ marginTop: 8 }}>
-              Comes out on {new Date(book.releaseDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}. Mediarium starts looking for it then.
+              {t('Comes out on {date}. Mediarium starts looking for it then.', { date: new Date(book.releaseDate + 'T00:00:00').toLocaleDateString(locale(), { day: 'numeric', month: 'long', year: 'numeric' }) })}
             </p>
           )}
           {book.description && <p className="title-overview">{book.description}</p>}
           <div className="title-links">
             {links.map((l) => (
               <a key={l.serverId} className="link-pill primary-pill" href={l.url} target="_blank" rel="noreferrer">
-                <Icon name={l.kind === 'audiobookshelf' ? 'headphones' : 'book'} size={13} /> {l.kind === 'audiobookshelf' ? 'Listen' : 'Read'} in {l.name}
+                <Icon name={l.kind === 'audiobookshelf' ? 'headphones' : 'book'} size={13} /> {l.kind === 'audiobookshelf' ? t('Listen in {name}', { name: l.name }) : t('Read in {name}', { name: l.name })}
               </a>
             ))}
-            <a className="link-pill" href={`https://openlibrary.org/works/${book.olKey}`} target="_blank" rel="noreferrer">
-              <Icon name="external" size={13} /> More about this book
-            </a>
+            {!fromAudible && (
+              <a className="link-pill" href={`https://openlibrary.org/works/${book.olKey}`} target="_blank" rel="noreferrer">
+                <Icon name="external" size={13} /> {t('More about this book')}
+              </a>
+            )}
           </div>
           {admin && (
             <div className="title-actions">
               <button className="btn-with-icon danger-ghost" onClick={() => void remove()}>
-                <Icon name="trash" size={16} /> Remove
+                <Icon name="trash" size={16} /> {t('Remove')}
               </button>
             </div>
           )}
@@ -120,11 +131,11 @@ export default function BookDetail() {
           <FormatPanel key={f} book={book} format={f} queue={queue} onChanged={load} />
         ))}
       </div>
-      <BookSeries workKey={book.olKey} title={book.title} author={book.author} />
+      {!fromAudible && <BookSeries workKey={book.olKey} title={book.title} author={book.author} />}
       {book.authorKey && <AuthorBooks authorKey={book.authorKey} author={book.author} exclude={book.olKey} />}
       {formats.length === 0 && (
         <p className="hint">
-          Ebooks and audiobooks are both switched off. {admin ? <Link to="/settings/modules">Switch one on in Settings &gt; Media types.</Link> : null}
+          {t('Ebooks and audiobooks are both switched off.')} {admin ? <Link to="/settings/modules">{t('Switch one on in Settings > Media types.')}</Link> : null}
         </p>
       )}
     </div>
@@ -179,7 +190,7 @@ function FormatPanel({ book, format, queue, onChanged }: { book: Book; format: B
     setGrabbing(r.downloadUrl)
     try {
       await api.grabBook(book.id, { format, releaseTitle: r.title, downloadUrl: r.downloadUrl, sizeBytes: r.sizeBytes, protocol: r.protocol })
-      toast.success(`Started downloading "${r.title}". Follow it in Activity.`)
+      toast.success(t('Started downloading "{title}". Follow it in Activity.', { title: r.title }))
       setOpen(false)
       setTimeout(onChanged, 500)
     } catch (e) {
@@ -193,7 +204,7 @@ function FormatPanel({ book, format, queue, onChanged }: { book: Book; format: B
     <section className={`card book-format kind-${format}`}>
       <header className="book-format-head">
         <h2>
-          <Icon name={format === 'ebook' ? 'book' : 'headphones'} size={18} /> {FORMAT_TITLE[format]}
+          <KindGlyph kind={format === 'ebook' ? 'book' : 'audiobook'} size={30} variant="solid" /> {FORMAT_TITLE[format]}
         </h2>
         <span className={`state-tag st-${state.key}`} title={state.hint}>
           <Icon name={state.icon} size={13} /> {state.label}
@@ -206,23 +217,31 @@ function FormatPanel({ book, format, queue, onChanged }: { book: Book; format: B
           {st.path ? <code>{st.path}</code> : null}
         </p>
       ) : (
-        <p className="hint">{st.wanted ? `Mediarium looks for the ${FORMAT_WORD[format]} on your indexers and downloads the best one it finds.` : `Not wanted as an ${FORMAT_WORD[format]}.`}</p>
+        <p className="hint">
+          {st.wanted
+            ? format === 'ebook'
+              ? t('Mediarium looks for the ebook on your indexers and downloads the best one it finds.')
+              : t('Mediarium looks for the audiobook on your indexers and downloads the best one it finds.')
+            : format === 'ebook'
+              ? t('Not wanted as an ebook.')
+              : t('Not wanted as an audiobook.')}
+        </p>
       )}
-      <Switch checked={st.wanted} onChange={(v) => void setWanted(v)} label={`Want the ${FORMAT_WORD[format]}`} />
+      <Switch checked={st.wanted} onChange={(v) => void setWanted(v)} label={format === 'ebook' ? t('Want the ebook') : t('Want the audiobook')} />
       <div className="row-actions">
         {st.status === 'downloaded' && can(me, 'play') && (
           <button className="primary btn-with-icon" onClick={() => openBookApp(format === 'ebook' ? readPath(book.id) : listenPath(book.id))}>
-            <Icon name={format === 'ebook' ? 'book' : 'play'} size={16} /> {format === 'ebook' ? 'Read' : 'Listen'}
+            <Icon name={format === 'ebook' ? 'book' : 'play'} size={16} /> {format === 'ebook' ? t('Read') : t('Listen')}
           </button>
         )}
         {can(me, 'manage') && (
           <button className={`${st.status === 'downloaded' ? '' : 'primary '}btn-with-icon`} disabled={searching || !st.wanted} onClick={() => void searchNow()}>
-            <Icon name="search" size={16} /> {searching ? 'Searching…' : 'Search now'}
+            <Icon name="search" size={16} /> {searching ? t('Searching…') : t('Search now')}
           </button>
         )}
         {can(me, 'releases') && (
           <button className="btn-with-icon" onClick={() => (open ? setOpen(false) : showReleases())}>
-            <Icon name="list" size={16} /> {open ? 'Hide releases' : 'Choose a release'}
+            <Icon name="list" size={16} /> {open ? t('Hide releases') : t('Choose a release')}
           </button>
         )}
       </div>
@@ -230,10 +249,10 @@ function FormatPanel({ book, format, queue, onChanged }: { book: Book; format: B
         <div className="book-releases">
           {releaseError && <p className="error-text">{releaseError}</p>}
           {!releaseError && releases === null && <div className="skeleton" style={{ height: 120 }} />}
-          {releases && releases.length === 0 && <p className="hint">No matching releases found on your indexers right now.</p>}
+          {releases && releases.length === 0 && <p className="hint">{t('No matching releases found on your indexers right now.')}</p>}
           {releases && releases.length > 0 && (
             <div className="table-scroll">
-              <ReleaseTable results={releases} grabbing={grabbing} onGrab={grab} />
+              <ReleaseTable results={releases} grabbing={grabbing} onGrab={grab} onClose={() => setOpen(false)} />
             </div>
           )}
         </div>

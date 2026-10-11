@@ -12,7 +12,10 @@ import {
 import Switch from '../components/Switch'
 import { useToast } from '../components/Toast'
 import { formatBytes } from '../format'
-import { afterText, etaText, progressText, setText, totalLine, unitFor } from '../importText'
+import { afterText, etaText, progressText, setText, totalLine } from '../importText'
+import { plural, t } from '../i18n'
+import KindGlyph from '../components/KindGlyph'
+import '../import.css'
 import { useLive } from '../useLive'
 import { firstError, folderPath, required } from '../validate'
 import { FieldError, useValidation } from '../useValidation'
@@ -39,11 +42,11 @@ function startingKind(asked: string | null): Kind {
 // The review list can show just one kind of row, so a second pass over a big
 // library goes straight to what still needs a hand.
 const REVIEW_FILTERS: { id: string; label: string; test: (i: ImportItem) => boolean }[] = [
-  { id: 'all', label: 'All', test: () => true },
-  { id: 'unmatched', label: 'Unmatched', test: (i) => !i.inLibrary && i.match === 'unmatched' },
-  { id: 'check', label: 'Check match', test: (i) => !i.inLibrary && i.match === 'ambiguous' },
-  { id: 'matched', label: 'Matched', test: (i) => !i.inLibrary && i.match === 'matched' },
-  { id: 'library', label: 'Already in library', test: (i) => i.inLibrary },
+  { id: 'all', label: t('All'), test: () => true },
+  { id: 'unmatched', label: t('Unmatched'), test: (i) => !i.inLibrary && i.match === 'unmatched' },
+  { id: 'check', label: t('Check match'), test: (i) => !i.inLibrary && i.match === 'ambiguous' },
+  { id: 'matched', label: t('Matched'), test: (i) => !i.inLibrary && i.match === 'matched' },
+  { id: 'library', label: t('Already in library'), test: (i) => i.inLibrary },
 ]
 
 export default function ImportLibrary() {
@@ -75,7 +78,7 @@ export default function ImportLibrary() {
 
   const example = kind === 'movie' ? '/movies' : '/tv'
   const v = useValidation({
-    path: firstError(required(path, `Add the folder to scan, for example ${example}.`), folderPath(path, example)),
+    path: firstError(required(path, t('Add the folder to scan, for example {example}.', { example })), folderPath(path, example)),
   })
 
   const defaultsRef = useRef(defaults)
@@ -138,13 +141,13 @@ export default function ImportLibrary() {
   // Poll while the server is scanning and matching.
   useEffect(() => {
     if (!jobId || !(phase === 'scanning' || phase === 'matching')) return
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       api
         .getScan(jobId)
         .then(setJob)
         .catch((e) => setError(e instanceof Error ? e.message : String(e)))
     }, 700)
-    return () => clearInterval(t)
+    return () => clearInterval(timer)
   }, [jobId, phase])
 
   // When a scan first becomes ready, pre-select the confident matches.
@@ -246,28 +249,37 @@ export default function ImportLibrary() {
   const selectedCount = job ? job.items.filter((i) => checked[i.key] && chosen[i.key]).length : 0
   const scanning = job && (job.phase === 'scanning' || job.phase === 'matching')
   const runningHere = !!active?.batches.some((b) => b.running && b.kind === kind)
-  const what = kind === 'movie' ? 'movie' : 'TV show'
 
+  const step = batchId !== null ? 4 : job?.phase === 'ready' ? 3 : job && (job.phase === 'scanning' || job.phase === 'matching') ? 2 : 1
   return (
-    <div>
-      <h1 style={{ marginTop: 0 }}>Import existing library</h1>
-      <p style={{ color: 'var(--text-dim)' }}>
-        Point Mediarium at a folder of movies or TV shows. It matches the file and folder names to the right titles and lets you review before anything is
-        added. Your files stay where they are, and nothing is moved, renamed or deleted.
+    <div className="import-page">
+      <h1 className="imp-title">{t('Import existing library')}</h1>
+      <p className="imp-lede">
+        {t('Point Mediarium at a folder of movies or TV shows. It matches the file and folder names to the right titles and lets you review before anything is added. Your files stay where they are, and nothing is moved, renamed or deleted.')}
       </p>
+      <ol className="imp-steps" aria-label={t('Import')}>
+        {[t('Pick a folder'), t('Scan folder'), t('Check the matches'), t('Import')].map((label, i) => (
+          <li key={label} className={i + 1 === step ? 'now' : i + 1 < step ? 'done' : undefined} aria-current={i + 1 === step ? 'step' : undefined}>
+            <b>{String(i + 1).padStart(2, '0')}</b> {label}
+          </li>
+        ))}
+      </ol>
 
       {batchId === null && (
-        <section className="card grid-form" style={{ marginBottom: 24 }}>
-          <div className="view-switch">
-            <button className={kind === 'movie' ? 'active' : ''} onClick={() => chooseKind('movie')} disabled={!!scanning}>
-              Movies
+        <section className="card imp-start">
+          <div className="imp-kinds" role="radiogroup" aria-label={t('What it is')}>
+            <button role="radio" aria-checked={kind === 'movie'} className={`k-movie${kind === 'movie' ? ' active' : ''}`} onClick={() => chooseKind('movie')} disabled={!!scanning}>
+              <KindGlyph kind="movie" size={34} variant="solid" />
+              {t('Movies')}
             </button>
-            <button className={kind === 'tv' ? 'active' : ''} onClick={() => chooseKind('tv')} disabled={!!scanning}>
-              TV shows
+            <button role="radio" aria-checked={kind === 'tv'} className={`k-tv${kind === 'tv' ? ' active' : ''}`} onClick={() => chooseKind('tv')} disabled={!!scanning}>
+              <KindGlyph kind="tv" size={34} variant="solid" />
+              {t('TV shows')}
             </button>
           </div>
+          <div className="imp-folder">
           <label>
-            Folder
+            {t('Folder')}
             <input
               value={path}
               onChange={(e) => setPath(e.target.value)}
@@ -278,17 +290,20 @@ export default function ImportLibrary() {
             <FieldError v={v} name="path" />
           </label>
           <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', margin: 0 }}>
-            The path as the container sees it. Running in Docker? Mount the folder first.
+            {t('The path as the container sees it. Running in Docker? Mount the folder first.')}
           </p>
           {runningHere && (
             <p style={{ margin: 0 }}>
-              A {what} import is already running. It carries on in the background, so you can keep using Mediarium.{' '}
-              <Link to={`/import?kind=${kind}&batch=${active?.batches.find((b) => b.running && b.kind === kind)?.id}`}>See how it is going</Link>
+              {kind === 'movie'
+                ? t('A movie import is already running. It carries on in the background, so you can keep using Mediarium.')
+                : t('A TV show import is already running. It carries on in the background, so you can keep using Mediarium.')}{' '}
+              <Link to={`/import?kind=${kind}&batch=${active?.batches.find((b) => b.running && b.kind === kind)?.id}`}>{t('See how it is going')}</Link>
             </p>
           )}
-          <button className="primary" onClick={start} disabled={starting || !!scanning || runningHere}>
-            {starting ? 'Starting…' : 'Scan folder'}
+          <button className="primary btn-with-icon" onClick={start} disabled={starting || !!scanning || runningHere}>
+            {starting ? t('Starting…') : t('Scan folder')}
           </button>
+          </div>
         </section>
       )}
 
@@ -297,57 +312,65 @@ export default function ImportLibrary() {
       {batchId === null && job?.phase === 'failed' && <p className="error-text">{job.error}</p>}
 
       {batchId === null && job && (job.phase === 'scanning' || job.phase === 'matching') && (
-        <p>{job.phase === 'scanning' ? 'Scanning files…' : `Matching titles… ${job.done} / ${job.total}`}</p>
+        <div className="imp-working">
+          <span className="imp-spin" aria-hidden="true" />
+          <p>{job.phase === 'scanning' ? t('Scanning files…') : t('Matching titles… {done} / {total}', { done: job.done, total: job.total })}</p>
+          {job.phase === 'matching' && job.total > 0 && (
+            <div className="bar active" aria-hidden="true">
+              <span style={{ width: `${Math.max(3, (job.done / job.total) * 100)}%` }} />
+            </div>
+          )}
+        </div>
       )}
 
       {batchId === null && job && job.phase === 'ready' && (
         <section>
           {job.items.length === 0 ? (
-            <div className="empty-state">No {kind === 'movie' ? 'movies' : 'episodes'} found in that folder.</div>
+            <div className="empty-state">{kind === 'movie' ? t('No movies found in that folder.') : t('No episodes found in that folder.')}</div>
           ) : (
             <>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+              <div className="imp-found">
                 <strong>
-                  Found {job.items.length} {unitFor(kind, job.items.length)}
+                  {kind === 'tv' ? plural(job.items.length, 'Found {n} show', 'Found {n} shows') : plural(job.items.length, 'Found {n} movie', 'Found {n} movies')}
                 </strong>
                 <button
                   onClick={() =>
                     setChecked(Object.fromEntries(job.items.map((i) => [i.key, i.match === 'matched' && !i.inLibrary])))
                   }
                 >
-                  Select confident matches
+                  {t('Select confident matches')}
                 </button>
-                <button onClick={() => setChecked({})}>Select none</button>
+                <button onClick={() => setChecked({})}>{t('Select none')}</button>
               </div>
               <div className="import-options">
                 <Switch
                   checked={monitor}
                   onChange={setMonitor}
-                  label={kind === 'tv' ? 'Watch these titles for new episodes and better versions' : 'Watch these titles for better versions'}
+                  label={kind === 'tv' ? t('Watch these titles for new episodes and better versions') : t('Watch these titles for better versions')}
                   description={
                     kind === 'tv'
-                      ? "Downloads new episodes as they come out and replaces episodes below your quality profile's target."
-                      : "Replaces movies below your quality profile's target with a better version."
+                      ? t("Downloads new episodes as they come out and replaces episodes below your quality profile's target.")
+                      : t("Replaces movies below your quality profile's target with a better version.")
                   }
                 />
                 {kind === 'tv' && (
                   <Switch
                     checked={monitorMissing}
                     onChange={setMonitorMissing}
-                    label="Also look for missing episodes"
-                    description="Searches for and downloads the episodes you don't have, including new ones."
+                    label={t('Also look for missing episodes')}
+                    description={t("Searches for and downloads the episodes you don't have, including new ones.")}
                   />
                 )}
                 <p className="after">
-                  <strong>What happens next:</strong> {afterText(kind, monitor, kind === 'tv' ? monitorMissing : false)}
+                  <strong>{t('What happens next:')}</strong> {afterText(kind, monitor, kind === 'tv' ? monitorMissing : false)}
                 </p>
               </div>
 
               <button className="primary" disabled={selectedCount === 0 || confirming} onClick={confirmImport}>
-                {confirming ? 'Adding…' : `Import ${selectedCount} selected`}
+                {confirming ? t('Adding…') : t('Import {n} selected', { n: selectedCount })}
               </button>
 
-              <div className="chip-row" role="group" aria-label="Show" style={{ margin: '14px 0 10px' }}>
+              <div className="chip-row" role="group" aria-label={t('Show')} style={{ margin: '14px 0 10px' }}>
                 {REVIEW_FILTERS.map((f) => (
                   <button key={f.id} className={`chip${reviewFilter === f.id ? ' active' : ''}`} aria-pressed={reviewFilter === f.id} onClick={() => setReviewFilter(f.id)}>
                     {f.label} <small>{job.items.filter(f.test).length}</small>
@@ -355,13 +378,13 @@ export default function ImportLibrary() {
                 ))}
               </div>
 
-              <table className="data-table">
+              <table className="data-table imp-table">
                 <thead>
                   <tr>
                     <th style={{ width: 32 }}></th>
-                    <th>Found on disk</th>
-                    <th>Matched title</th>
-                    <th>Status</th>
+                    <th>{t('Found on disk')}</th>
+                    <th>{t('Matched title')}</th>
+                    <th>{t('Status')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -386,7 +409,7 @@ export default function ImportLibrary() {
           {job.skipped.length > 0 && (
             <details style={{ marginTop: 16 }}>
               <summary>
-                {job.skipped.length} {job.skipped.length === 1 ? "file wasn't" : "files weren't"} recognised
+                {plural(job.skipped.length, "{n} file wasn't recognised", "{n} files weren't recognised")}
               </summary>
               <ul style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-dim)' }}>
                 {job.skipped.map((s) => (
@@ -399,7 +422,7 @@ export default function ImportLibrary() {
       )}
 
       {batchId !== null && batch && <Report batch={batch} onAnother={another} onChanged={loadBatch} />}
-      {batchId !== null && !batch && !error && <p>Loading…</p>}
+      {batchId !== null && !batch && !error && <p>{t('Loading…')}</p>}
     </div>
   )
 }
@@ -411,11 +434,11 @@ function Report({ batch, onAnother, onChanged }: { batch: ImportBatchDetail; onA
   const episodes = batch.kind === 'tv'
   return (
     <section>
-      <h2 style={{ marginTop: 0 }}>{batch.running ? 'Importing your library' : 'Import finished'}</h2>
+      <h2 style={{ marginTop: 0 }}>{batch.running ? t('Importing your library') : t('Import finished')}</h2>
       {batch.running && (
         <div className="import-progress">
           <div>
-            <strong>{progressText(batch)}</strong> {eta} You can leave this page: the import carries on in the background.
+            <strong>{progressText(batch)}</strong> {eta} {t('You can leave this page: the import carries on in the background.')}
           </div>
           <div className="bar active" aria-hidden="true">
             <span style={{ width: `${Math.max(3, pct)}%` }} />
@@ -423,13 +446,13 @@ function Report({ batch, onAnother, onChanged }: { batch: ImportBatchDetail; onA
         </div>
       )}
       {batch.added > 0 && <WhatWasSet batch={batch} onChanged={onChanged} />}
-      <table className="data-table">
+      <table className="data-table imp-table">
         <thead>
           <tr>
-            <th>Title</th>
-            <th>{episodes ? 'Episodes added' : 'Added'}</th>
-            <th>Already in library</th>
-            <th>Notes</th>
+            <th>{t('Title')}</th>
+            <th>{episodes ? t('Episodes added') : t('Added')}</th>
+            <th>{t('Already in library')}</th>
+            <th>{t('Notes')}</th>
           </tr>
         </thead>
         <tbody>
@@ -440,13 +463,13 @@ function Report({ batch, onAnother, onChanged }: { batch: ImportBatchDetail; onA
       </table>
       <p className="import-total">{totalLine(batch)}</p>
       <p className="import-note">
-        Added means new to your library. Already in library means it was here before, so nothing changed.
-        {episodes && ' For shows, the numbers count episodes.'}
-        {batch.problems > 0 && ' The ones with problems are retried in the background.'}
+        {t('Added means new to your library. Already in library means it was here before, so nothing changed.')}
+        {episodes && ` ${t('For shows, the numbers count episodes.')}`}
+        {batch.problems > 0 && ` ${t('The ones with problems are retried in the background.')}`}
       </p>
       <p style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Link to={`/library?kind=${batch.kind}`}>Go to Library →</Link>
-        <button onClick={onAnother}>Import another folder</button>
+        <Link to={`/library?kind=${batch.kind}`}>{t('Go to Library →')}</Link>
+        <button onClick={onAnother}>{t('Import another folder')}</button>
       </p>
     </section>
   )
@@ -479,19 +502,19 @@ function WhatWasSet({ batch, onChanged }: { batch: ImportBatchDetail; onChanged:
   return (
     <div className="import-set">
       <p>
-        <strong>What was set:</strong> {setText(batch)}
-        {batch.running && (canWatch || canMissing) && ' You can change this when the import has finished.'}
+        <strong>{t('What was set:')}</strong> {setText(batch)}
+        {batch.running && (canWatch || canMissing) && ` ${t('You can change this when the import has finished.')}`}
       </p>
       {!batch.running && (canWatch || canMissing) && (
         <div className="import-set-actions">
           {canWatch && (
             <button className="primary" disabled={busy !== null} onClick={() => void run('watch')}>
-              {busy === 'watch' ? 'Working…' : 'Start monitoring these titles'}
+              {busy === 'watch' ? t('Working…') : t('Start monitoring these titles')}
             </button>
           )}
           {canMissing && (
             <button disabled={busy !== null} onClick={() => void run('missing')}>
-              {busy === 'missing' ? 'Working…' : 'Look for missing episodes'}
+              {busy === 'missing' ? t('Working…') : t('Look for missing episodes')}
             </button>
           )}
         </div>
@@ -519,7 +542,7 @@ function ReportRow({ item }: { item: ImportBatchItem }) {
       <td>{added}</td>
       <td>{already}</td>
       <td className={problem ? 'error-text' : undefined} style={problem ? undefined : { color: 'var(--text-dim)' }}>
-        {waiting && !item.note ? 'Getting details…' : item.note || (waiting ? 'Getting details…' : '')}
+        {waiting && !item.note ? t('Getting details…') : item.note || (waiting ? t('Getting details…') : '')}
       </td>
     </tr>
   )
@@ -541,8 +564,8 @@ function ReviewRow(props: {
 
   const summary =
     kind === 'tv'
-      ? `${item.fileCount} episode file${item.fileCount === 1 ? '' : 's'}${item.seasons && item.seasons.length ? ` · ${seasonRange(item.seasons)}` : ''}`
-      : `${item.fileCount > 1 ? `${item.fileCount} files · ` : ''}${item.quality && item.quality !== 'Unknown' ? item.quality + ' · ' : ''}${formatBytes(item.sizeBytes)}`
+      ? `${plural(item.fileCount, '{n} episode file', '{n} episode files')}${item.seasons && item.seasons.length ? ` · ${seasonRange(item.seasons)}` : ''}`
+      : `${item.fileCount > 1 ? `${t('{n} files', { n: item.fileCount })} · ` : ''}${item.quality && item.quality !== 'Unknown' ? item.quality + ' · ' : ''}${formatBytes(item.sizeBytes)}`
 
   return (
     <tr>
@@ -552,7 +575,7 @@ function ReviewRow(props: {
           checked={checked}
           disabled={!chosen}
           onChange={(e) => props.onCheck(e.target.checked)}
-          aria-label={`Import ${item.title}`}
+          aria-label={t('Import {title}', { title: item.title })}
         />
       </td>
       <td>
@@ -574,9 +597,9 @@ function ReviewRow(props: {
             ))}
           </select>
         ) : (
-          <span style={{ color: 'var(--text-dim)' }}>no match</span>
+          <span style={{ color: 'var(--text-dim)' }}>{t('no match')}</span>
         )}{' '}
-        <button onClick={() => setSearching((v) => !v)}>{searching ? 'Cancel' : 'Search…'}</button>
+        <button onClick={() => setSearching((v) => !v)}>{searching ? t('Cancel') : t('Search…')}</button>
         {searching && (
           <form
             style={{ display: 'flex', gap: 6, marginTop: 6 }}
@@ -587,17 +610,17 @@ function ReviewRow(props: {
             }}
           >
             <input value={query} onChange={(e) => setQuery(e.target.value)} />
-            <button className="primary">Go</button>
+            <button className="primary">{t('Go')}</button>
           </form>
         )}
         {item.error && <div className="error-text">{item.error}</div>}
       </td>
       <td>
         {item.inLibrary ? (
-          <span className="badge downloaded">already in library</span>
+          <span className="badge downloaded">{t('already in library')}</span>
         ) : (
           <span className={`badge ${item.match === 'matched' ? 'downloaded' : item.match === 'ambiguous' ? 'conflict' : 'failed'}`}>
-            {item.match === 'matched' ? 'matched' : item.match === 'ambiguous' ? 'check match' : 'unmatched'}
+            {item.match === 'matched' ? t('matched') : item.match === 'ambiguous' ? t('check match') : t('unmatched')}
           </span>
         )}
       </td>
@@ -606,5 +629,5 @@ function ReviewRow(props: {
 }
 
 function seasonRange(seasons: number[]): string {
-  return seasons.length === 1 ? `Season ${seasons[0]}` : `Seasons ${seasons[0]}–${seasons[seasons.length - 1]}`
+  return seasons.length === 1 ? t('Season {n}', { n: seasons[0] }) : t('Seasons {from}–{to}', { from: seasons[0], to: seasons[seasons.length - 1] })
 }

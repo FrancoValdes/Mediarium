@@ -1,0 +1,220 @@
+/* Settings: every page shares one kind of panel. Quiet glass with a rim,
+   one squared corner like the rest of the app, and the section name inside
+   the panel as a heading (never a pill cut into the border). A panel's
+   status (included, optional, connected) is the badge next to its name, not
+   a coloured bar across the top. Scoped to .settings-content. */
+
+.settings-content {
+  --set-panel: linear-gradient(180deg, color-mix(in srgb, var(--panel-top) 92%, transparent), color-mix(in srgb, var(--panel-bottom) 80%, transparent));
+  --set-rim: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px var(--rim), 0 22px 40px -30px var(--lift);
+}
+
+/* ---- Panels ----------------------------------------------------------- */
+.settings-content fieldset.group,
+.settings-content .settings-stack > section.card,
+.settings-content .settings-grid > section.card,
+.settings-content > section.card,
+.settings-content .settings-stack > .card {
+  position: relative; margin-top: 0; border: 0; border-top: 0;
+  border-radius: 22px 22px 22px 6px; padding: 20px 22px;
+  background: var(--set-panel); box-shadow: var(--set-rim);
+}
+.settings-content .service-card.is-required,
+.settings-content .service-card.is-optional,
+.settings-content .service-card.is-included { border-top: 0; }
+
+/* the section name, inside the panel */
+.settings-content .settings-stack > section.card > h2:first-child,
+.settings-content .settings-grid > section.card > h2:first-child,
+.settings-content > section.card > h2:first-child,
+.settings-content .settings-stack > .card > h2:first-child {
+  position: static; max-width: none; margin: 0 0 12px; padding: 0; border: 0; border-radius: 0; background: none;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  font-size: 1.04rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; color: var(--text);
+}
+.settings-content .settings-stack > section.card > h2:first-child::before,
+.settings-content .settings-grid > section.card > h2:first-child::before,
+.settings-content > section.card > h2:first-child::before,
+.settings-content .settings-stack > .card > h2:first-child::before {
+  content: ''; display: block; flex: none; width: 10px; height: 10px; border-radius: 3px 5px 5px 5px;
+  background: var(--sec); box-shadow: 0 0 10px color-mix(in srgb, var(--sec) 60%, transparent);
+}
+.settings-content fieldset.group > legend { font-size: 1.04rem; }
+.settings-content fieldset.group > legend svg { border-radius: 4px 9px 9px 9px; }
+
+/* status badges in a heading: small, mono, one squared corner */
+.settings-content h2 .badge, .settings-content legend .badge, .settings-content h2 .tag, .settings-content legend .tag {
+  font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 3px 8px 8px 8px;
+}
+
+/* boxes inside a panel (callouts, notes) follow the same corner rule */
+.settings-content .callout, .settings-content .info-box, .settings-content .note-box { border-radius: 4px 14px 14px 14px; }
+
+/* buttons and fields: tighter, with the one squared corner */
+.settings-content button:not(.seg button):not(.icon-btn):not(.switch):not(.link-btn):not([role='switch']),
+.settings-content .btn, .settings-content a.btn-link { border-radius: 4px 11px 11px 11px; }
+.settings-content input:not([type='checkbox']):not([type='radio']):not([type='range']), .settings-content select, .settings-content textarea { border-radius: 4px 11px 11px 11px; }
+
+/* ---- Tables: rows on the panel, readable columns ------------------------ */
+.settings-content .card table { display: table; width: 100%; border-collapse: separate; border-spacing: 0 6px; overflow: visible; }
+.settings-content .card table th {
+  text-align: left; font-family: var(--font-mono); font-size: 0.68rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-faint); padding: 0 12px 2px; border: 0; background: none;
+}
+.settings-content .card table td { padding: 12px; border: 0; background: color-mix(in srgb, var(--text) 3.5%, transparent); vertical-align: top; }
+.settings-content .card table td:first-child { border-radius: 4px 0 0 12px; }
+.settings-content .card table td:last-child { border-radius: 0 12px 12px 0; }
+.settings-content .card table tr:hover > td { background: color-mix(in srgb, var(--text) 5.5%, transparent); }
+
+/* quality profiles: the name column gets room, the actions stay on one line */
+.settings-content .profiles-table td:first-child { width: 34%; min-width: 240px; font-family: var(--font-display); font-weight: 700; font-size: 1rem; letter-spacing: -0.01em; }
+.settings-content .profiles-table td:first-child > div { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; margin-top: 3px; }
+.settings-content .profiles-table td:first-child .badge { font-family: var(--font-mono); font-size: 0.64rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; vertical-align: 2px; }
+.settings-content .profiles-table td:nth-child(3), .settings-content .profiles-table td:nth-child(4) { font-family: var(--font-mono); font-size: 0.8rem; }
+.settings-content .profiles-table td:first-child { width: 30%; }
+.settings-content .profiles-table td:nth-child(2) { min-width: 220px; overflow-wrap: normal; word-break: normal; }
+.settings-content .profiles-table td:last-child { text-align: right; width: 250px; white-space: normal !important; }
+.settings-content .profiles-table td:last-child button { padding: 5px 10px; font-size: 0.82rem; margin: 2px 0 2px 2px; }
+.settings-content .profiles-table tr.is-default > td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.settings-content .profiles-table tr.is-default > td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.settings-content .profiles-table tr.profile-edit-row > td { background: none; padding: 0 0 12px; }
+
+@media (max-width: 900px) {
+  .settings-content .profiles-table td:first-child { width: 100%; min-width: 0; }
+  .settings-content .card table td:first-child, .settings-content .card table td:last-child { border-radius: 0; }
+  .settings-content .profiles-table tr { border: 0; border-radius: 4px 14px 14px 14px; background: color-mix(in srgb, var(--text) 3.5%, transparent); }
+  .settings-content .profiles-table td { background: none; }
+  .settings-content .profiles-table td:last-child { text-align: left; }
+}
+
+/* Other apps: Radarr, Sonarr and Lidarr side by side on wide screens */
+.settings-content .other-apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.settings-content .other-apps > fieldset.group { margin: 0; background: color-mix(in srgb, var(--text) 3%, transparent); box-shadow: inset 0 0 0 1px var(--rim); padding: 16px 18px; }
+
+/* ---- Media types: each kind as its own shape, lit when switched on ------ */
+.settings-content .module-card {
+  position: relative; overflow: hidden; border: 0; border-radius: 22px 22px 22px 6px;
+  background: var(--set-panel); box-shadow: var(--set-rim);
+}
+.settings-content .module-card:hover { transform: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px color-mix(in srgb, var(--mc) 40%, var(--rim)), 0 22px 40px -30px var(--lift); }
+.settings-content .module-card.on {
+  background: radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--mc) 14%, transparent), transparent 60%), var(--set-panel);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px color-mix(in srgb, var(--mc) 45%, transparent), 0 22px 40px -26px color-mix(in srgb, var(--mc) 40%, var(--lift));
+}
+.settings-content .module-ico { width: auto; height: auto; border: 0; border-radius: 0; background: none; color: var(--mc); }
+.settings-content .module-card:not(.on) .module-ico { filter: grayscale(1) brightness(0.8); opacity: 0.6; }
+.settings-content .module-card.on .module-ico .kind-glyph { transform: rotate(-6deg); }
+.settings-content .module-card h2 { font-size: 1.3rem; letter-spacing: -0.02em; }
+.settings-content .module-state { font-family: var(--font-mono); font-weight: 500; font-size: 0.64rem; letter-spacing: 0.1em; border-radius: 3px 8px 8px 8px; }
+.settings-content .module-points li { font-size: 0.86rem; }
+.settings-content .module-card > footer { margin-top: auto; padding-top: 12px; border-top: 1px dashed color-mix(in srgb, var(--mc) 30%, var(--rim)); }
+
+/* ---- Move from other apps: each app a tile, its colour on the dot only -- */
+.settings-content .mig-app {
+  border: 0; border-radius: 4px 14px 14px 14px; padding: 14px;
+  background: color-mix(in srgb, var(--text) 3%, transparent); box-shadow: inset 0 0 0 1px var(--rim);
+  transition: box-shadow 0.16s var(--ease);
+}
+.settings-content .mig-app:hover, .settings-content .mig-app:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac) 50%, var(--rim)); }
+.settings-content .mig-app-head strong { font-family: var(--font-display); font-size: 1rem; letter-spacing: -0.01em; }
+.settings-content .mig-app-head small { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-faint); }
+.settings-content .mig-dot { box-shadow: 0 0 8px var(--ac); }
+.settings-content .mig-group > h3, .settings-content .mig-group > h4 { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+
+/* ---- About: what it does, as the steps a title goes through ------------- */
+.settings-content .about .feature-grid {
+  counter-reset: step; position: relative; gap: 0; padding-top: 6px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.settings-content .about .feature-grid > .tile {
+  counter-increment: step; position: relative; height: auto; padding: 26px 20px 24px 0; margin: 0; min-width: 0;
+  border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; animation: none;
+  border-top: 1px dashed color-mix(in srgb, var(--text) 18%, transparent);
+}
+.settings-content .about .feature-grid > .tile::after { display: none; }
+.settings-content .about .feature-grid > .tile::before {
+  content: counter(step, decimal-leading-zero); display: block; margin-bottom: 12px;
+  position: static; inset: auto; width: auto; height: auto; border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-mask: none; mask: none; opacity: 1;
+  font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.1em; color: var(--tc);
+}
+/* the dot where each step sits on the line */
+.settings-content .about .feature-grid > .tile > .tile-head::before {
+  content: ''; position: absolute; top: -5px; left: 0; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--tc); box-shadow: 0 0 0 4px var(--bg), 0 0 12px var(--tc);
+}
+/* All six steps in one row on a wide page: narrow, tall columns with the icon
+   above the title. The width is measured on the page, not the screen, so the
+   sidebar doesn't change the count. Three by two on a tablet, two by three on
+   a phone. */
+.feature-wrap { container-type: inline-size; }
+.settings-content .about .feature-grid .tile-head { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+.settings-content .about .feature-grid .tile-head h2 { font-size: 1.08rem; letter-spacing: -0.02em; flex: none; overflow-wrap: anywhere; }
+.settings-content .about .feature-grid .tile p { font-size: 0.9rem; max-width: none; line-height: 1.5; }
+@container (max-width: 899px) {
+  .settings-content .about .feature-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 559px) {
+  .settings-content .about .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-content .about .feature-grid > .tile { padding-right: 14px; }
+}
+.settings-content .about .feature-grid .tile-ico { width: 30px; height: 30px; border-radius: 4px 9px 9px 9px; }
+
+/* Three panels in a two-column row: the first two stack on the left and the
+   third runs the full height on the right, so no panel sits alone with an
+   empty half next to it. */
+@media (min-width: 1101px) {
+  .settings-content .half-cols:has(> :nth-child(3):last-child) { grid-template-rows: auto 1fr; align-items: start; }
+  .settings-content .half-cols > :nth-child(1):nth-last-child(3) { grid-column: 1; grid-row: 1; }
+  .settings-content .half-cols > :nth-child(2):nth-last-child(2) { grid-column: 1; grid-row: 2; }
+  .settings-content .half-cols > :nth-child(3):last-child { grid-column: 2; grid-row: 1 / span 2; }
+}
+
+/* Indexers: the Cloudflare card is a row of its own across the page; under it
+   the add form on the left and the list of indexers on the right, which has
+   the room it needs. */
+.settings-content .indexer-cols { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); grid-template-rows: auto auto; align-items: start; }
+.settings-content .indexer-cols > :nth-child(1) { grid-column: 1; grid-row: 1; }
+.settings-content .indexer-cols > :nth-child(2) { grid-column: 2; grid-row: 1; }
+.settings-content .indexer-cols > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
+.settings-content .flare-card .flare-field { margin-top: 4px; }
+@media (max-width: 1100px) {
+  .settings-content .indexer-cols { grid-template-columns: minmax(0, 1fr); }
+  .settings-content .indexer-cols > :nth-child(n) { grid-column: 1; grid-row: auto; }
+}
+
+/* Subtitle add-ons: one row per add-on, name and host on the left, buttons on the right. */
+.addon-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.addon-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px 12px 12px 12px; }
+.addon-name { display: grid; gap: 2px; min-width: 0; }
+.addon-host { font-family: var(--font-mono, monospace); font-size: 0.8rem; color: var(--text-dim); overflow-wrap: anywhere; }
+.addon-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.addon-card { align-self: start; align-content: start; }
+
+/* The wanted audio languages, best first. */
+.lang-order { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 6px; max-width: 460px; }
+.lang-order li { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border: 1px solid var(--border); border-radius: 6px 12px 12px 12px; background: var(--surface-2); }
+.lang-order .lang-n { font: 600 0.8rem var(--font-mono); color: var(--text-dim); min-width: 1.4ch; }
+.lang-order .lang-name { flex: 1; min-width: 0; }
+
+/* The connection test under a Usenet provider. */
+.server-probe { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
+.server-probe .probe-result { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 0.88rem; color: var(--text-dim); max-width: 640px; }
+
+/* Which kind of subtitle each language wants (Settings > Subtitles) */
+.subtitle-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 10px 24px; }
+.grid-form .subtitle-kind-row, .subtitle-kind-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.subtitle-kind-row > span { flex: 0 0 110px; }
+.subtitle-kind-row select { flex: 1; min-width: 0; }
+.grid-form fieldset { min-width: 0; }
+.subtitle-kind-row select { max-width: 100%; }
+
+/* A column of cards inside a two-column row, so a short card does not stretch to the height of a tall neighbour. */
+.settings-content .col-stack { display: grid; gap: 20px; align-content: start; min-width: 0; }
+
+/* A label with its text followed by a dropdown or box on the same line: the
+   two get some room between them, and when they wrap the box keeps a gap above. */
+label.field { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.settings-content label:not(.field):not(.check-hint):not(.grid-form label):not(.form-cols > label):not(.picker-row label):not(.switch-row) > :is(select, input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'])) {
+  margin: 4px 0 4px 10px;
+}

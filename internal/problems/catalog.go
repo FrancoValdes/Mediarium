@@ -84,6 +84,7 @@ const (
 	CodePar2Failed           = "par2.failed"
 	CodeIndexerRateLimited   = "indexer.rate_limited"
 	CodeIndexerAuthRefused   = "indexer.auth_refused"
+	CodeIndexerBlocked       = "indexer.blocked"
 	CodeIndexerUnreachable   = "indexer.unreachable"
 	CodeIndexerFailed        = "indexer.failed"
 	CodeIndexerFetchFailed   = "indexer.fetch_failed"
@@ -106,7 +107,9 @@ const (
 	CodeAppRestartedItself   = "app.restarted_itself"
 	CodeSubtitlesRateLimited = "subtitles.rate_limited"
 	CodeBackupFailed         = "backup.failed"
+	CodeCloudBackupFailed    = "backup.cloud_failed"
 	CodeDiskLow              = "disk.low"
+	CodeDownloadUnsafe       = "download.unsafe_files"
 )
 
 // Help is the plain-language help for one code.
@@ -122,14 +125,16 @@ type Help struct {
 }
 
 const (
-	pathDownloads    = "/settings/downloads"
-	pathIndexers     = "/settings/indexers"
-	pathMediaServers = "/settings/media-servers"
-	pathMedia        = "/settings/media"
-	pathMetadata     = "/settings/metadata"
-	pathNotify       = "/settings/notifications"
-	pathSystem       = "/settings/system"
-	pathSubtitles    = "/settings/subtitles"
+	pathDownloads     = "/settings/usenet"
+	pathDownloadRules = "/settings/download-rules"
+	pathIndexers      = "/settings/indexers"
+	pathMediaServers  = "/settings/media-servers"
+	pathMedia         = "/settings/media"
+	pathMetadata      = "/settings/metadata"
+	pathNotify        = "/settings/notifications"
+	pathSystem        = "/settings/system"
+	pathBackup        = "/settings/backup"
+	pathSubtitles     = "/settings/subtitles"
 )
 
 // catalog is the one table of every code and what to tell a person about it.
@@ -145,15 +150,20 @@ var catalog = []Help{
 		"The indexer didn't hand over the file.",
 		"Test the indexer in Settings. If it says its limit is reached, try again later.",
 		"Open indexers", pathIndexers},
+	{CodeDownloadUnsafe, LevelError, AreaDownloads,
+		"A release held programs or scripts",
+		"The release had files that run on a computer (like .exe, .scr or .bat) instead of just a video. That is how fake releases spread malware, so Mediarium did not use it.",
+		"Nothing to fix. The release is on the blocklist and Mediarium tries another one. To allow such releases anyway, switch off \"Reject releases that contain programs or scripts\" in Settings > Downloading.",
+		"Open Downloading settings", pathDownloadRules},
 	{CodeUsenetTooMany, LevelWarning, AreaUsenet,
 		"Too many connections to your Usenet provider",
 		"Your provider says this login has too many connections open.",
-		"Stop other programs (like SABnzbd) using the account, or lower the connections in Settings > Downloading > Usenet and torrents.",
+		"Stop other programs (like SABnzbd) using the account, or lower the connections in Settings > Downloading > Usenet.",
 		"Open Usenet settings", pathDownloads},
 	{CodeUsenetAuthRefused, LevelError, AreaUsenet,
 		"Your Usenet provider refused the login",
 		"The username and password weren't accepted, or the subscription has ended.",
-		"Check the login in Settings > Downloading > Usenet and torrents, and that your subscription is active.",
+		"Check the login in Settings > Downloading > Usenet, and that your subscription is active.",
 		"Open Usenet settings", pathDownloads},
 	{CodeUsenetUnreachable, LevelError, AreaUsenet,
 		"Can't reach your Usenet provider",
@@ -200,6 +210,11 @@ var catalog = []Help{
 		"The site didn't accept your API key or login.",
 		"Copy the key again from your account on that site.",
 		"Open indexers", pathIndexers},
+	{CodeIndexerBlocked, LevelWarning, AreaSearch,
+		"An indexer is turning Mediarium away",
+		"The site answered with a web page, usually a Cloudflare check, instead of results. That is not a wrong key.",
+		"Try again later; these blocks often pass. If it keeps happening, the site may only let certain apps in: ask its support, or add the indexer through Prowlarr or NZBHydra and use that in Mediarium.",
+		"Open indexers", pathIndexers},
 	{CodeIndexerUnreachable, LevelWarning, AreaSearch,
 		"Can't reach an indexer",
 		"The site didn't answer. It may be down or have moved.",
@@ -243,7 +258,7 @@ var catalog = []Help{
 	{CodeImportFileExists, LevelError, AreaImport,
 		"A file is already there",
 		"A file is already in the place this one should go.",
-		"Remove the old file, or set what happens with existing files in Settings > Library > Folders and file names.",
+		"Remove the old file, or set what happens with existing files in Settings > Library > Folders.",
 		"Open folders", pathMedia},
 	{CodeImportFailed, LevelError, AreaImport,
 		"An import failed",
@@ -294,12 +309,17 @@ var catalog = []Help{
 		"Downloads are waiting: the disk is nearly full",
 		"The downloads folder has less free space than the limit you set, so no new download starts.",
 		"Free some space, or lower \"Keep at least this much free\" in Settings > Downloading. Waiting downloads start by themselves once there is room.",
-		"Open Downloading settings", pathDownloads},
+		"Open Downloading settings", pathDownloadRules},
 	{CodeBackupFailed, LevelError, AreaSystem,
 		"The nightly backup was not saved",
 		"Mediarium couldn't save its automatic backup in the backups folder.",
 		"Check that the config folder has free space, then press Back up now in Settings > System.",
-		"Open System settings", pathSystem},
+		"Open backup settings", pathBackup},
+	{CodeCloudBackupFailed, LevelError, AreaSystem,
+		"The backup was not copied to the cloud",
+		"Mediarium saved its backup here but couldn't copy it to your cloud storage.",
+		"Press Test in Settings > System > Backup and restore to see what the storage says. Check the keys or password and that there's space left.",
+		"Open backup settings", pathBackup},
 	{CodeUpdateCheckFailed, LevelWarning, AreaUpdates,
 		"Could not check for updates",
 		"Mediarium couldn't check for a new version.",

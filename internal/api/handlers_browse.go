@@ -32,7 +32,7 @@ func (s *Server) handleDiscoverGenres(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []metadata.Genre{})
 		return
 	}
-	genres, err := s.TMDB().Genres(r.Context(), kind)
+	genres, err := s.displayTMDB().Genres(r.Context(), kind)
 	if err != nil {
 		writeUpstreamError(w, "load the genres", err)
 		return
@@ -125,7 +125,7 @@ func (s *Server) handleDiscoverList(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	if kind == "movie" {
-		p, err := s.TMDB().MovieList(ctx, list, page)
+		p, err := s.displayTMDB().MovieList(ctx, list, page)
 		if err != nil {
 			writeUpstreamError(w, "load the "+list+" movies", err)
 			return
@@ -133,7 +133,7 @@ func (s *Server) handleDiscoverList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.moviePagePayload(ctx, p))
 		return
 	}
-	p, err := s.TMDB().TVList(ctx, list, page)
+	p, err := s.displayTMDB().TVList(ctx, list, page)
 	if err != nil {
 		writeUpstreamError(w, "load the "+list+" shows", err)
 		return
@@ -188,7 +188,7 @@ func (s *Server) handleDiscoverBrowse(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	if kind == "movie" {
-		page, err := s.TMDB().DiscoverMovies(ctx, q)
+		page, err := s.displayTMDB().DiscoverMovies(ctx, q)
 		if err != nil {
 			writeUpstreamError(w, "browse titles", err)
 			return
@@ -196,7 +196,7 @@ func (s *Server) handleDiscoverBrowse(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.moviePagePayload(ctx, page))
 		return
 	}
-	page, err := s.TMDB().DiscoverTV(ctx, q)
+	page, err := s.displayTMDB().DiscoverTV(ctx, q)
 	if err != nil {
 		writeUpstreamError(w, "browse titles", err)
 		return

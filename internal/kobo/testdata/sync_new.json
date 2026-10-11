@@ -1,0 +1,132 @@
+[
+  {
+    "NewEntitlement": {
+      "BookEntitlement": {
+        "Accessibility": "Full",
+        "ActivePeriod": {
+          "From": "2026-10-09T12:30:00Z"
+        },
+        "Created": "2026-10-01T08:00:00Z",
+        "CrossRevisionId": "6d656469-6172-4975-8000-000000000007",
+        "Id": "6d656469-6172-4975-8000-000000000007",
+        "IsRemoved": false,
+        "IsHiddenFromArchive": false,
+        "IsLocked": false,
+        "LastModified": "2026-10-02T08:00:00Z",
+        "OriginCategory": "Imported",
+        "RevisionId": "6d656469-6172-4975-8000-000000000007",
+        "Status": "Active"
+      },
+      "BookMetadata": {
+        "Categories": [
+          "00000000-0000-0000-0000-000000000001"
+        ],
+        "CoverImageId": "6d656469-6172-4975-8000-000000000007",
+        "CrossRevisionId": "6d656469-6172-4975-8000-000000000007",
+        "CurrentDisplayPrice": {
+          "CurrencyCode": "USD",
+          "TotalAmount": 0
+        },
+        "CurrentLoveDisplayPrice": {
+          "TotalAmount": 0
+        },
+        "Description": "A hobbit goes out.",
+        "DownloadUrls": [
+          {
+            "Format": "KEPUB",
+            "Size": 123456,
+            "Url": "https://books.example/kobo/TOKEN/download/6d656469-6172-4975-8000-000000000007/kepub",
+            "Platform": "Generic"
+          }
+        ],
+        "EntitlementId": "6d656469-6172-4975-8000-000000000007",
+        "ExternalIds": [],
+        "Genre": "00000000-0000-0000-0000-000000000001",
+        "IsEligibleForKoboLove": false,
+        "IsInternetArchive": false,
+        "IsPreOrder": false,
+        "IsSocialEnabled": true,
+        "Language": "en",
+        "PhoneticPronunciations": {},
+        "PublicationDate": "1937-01-01T00:00:00Z",
+        "Publisher": {
+          "Imprint": "",
+          "Name": ""
+        },
+        "RevisionId": "6d656469-6172-4975-8000-000000000007",
+        "Title": "The Hobbit",
+        "WorkId": "6d656469-6172-4975-8000-000000000007",
+        "ContributorRoles": [
+          {
+            "Name": "J.R.R. Tolkien"
+          }
+        ],
+        "Contributors": [
+          "J.R.R. Tolkien"
+        ],
+        "Series": {
+          "Name": "Middle-earth",
+          "Number": 1,
+          "NumberFloat": 1,
+          "Id": "34afe31a-2b15-5e4e-853d-86814fcf014f"
+        }
+      },
+      "ReadingState": {
+        "EntitlementId": "6d656469-6172-4975-8000-000000000007",
+        "Created": "2026-10-01T08:00:00Z",
+        "LastModified": "2026-10-09T12:00:00Z",
+        "PriorityTimestamp": "2026-10-09T12:00:00Z",
+        "StatusInfo": {
+          "LastModified": "2026-10-09T12:00:00Z",
+          "Status": "Reading",
+          "TimesStartedReading": 1,
+          "LastTimeStartedReading": "2026-10-09T12:00:00Z"
+        },
+        "Statistics": {
+          "LastModified": "2026-10-09T12:00:00Z",
+          "SpentReadingMinutes": 25
+        },
+        "CurrentBookmark": {
+          "LastModified": "2026-10-09T12:00:00Z",
+          "ProgressPercent": 41.5,
+          "ContentSourceProgressPercent": 12,
+          "Location": {
+            "Value": "kobo.12.1",
+            "Type": "KoboSpan",
+            "Source": "OEBPS/ch3.xhtml"
+          }
+        }
+      }
+    }
+  },
+  {
+    "ChangedReadingState": {
+      "ReadingState": {
+        "EntitlementId": "6d656469-6172-4975-8000-000000000007",
+        "Created": "2026-10-01T08:00:00Z",
+        "LastModified": "2026-10-09T12:00:00Z",
+        "PriorityTimestamp": "2026-10-09T12:00:00Z",
+        "StatusInfo": {
+          "LastModified": "2026-10-09T12:00:00Z",
+          "Status": "Reading",
+          "TimesStartedReading": 1,
+          "LastTimeStartedReading": "2026-10-09T12:00:00Z"
+        },
+        "Statistics": {
+          "LastModified": "2026-10-09T12:00:00Z",
+          "SpentReadingMinutes": 25
+        },
+        "CurrentBookmark": {
+          "LastModified": "2026-10-09T12:00:00Z",
+          "ProgressPercent": 41.5,
+          "ContentSourceProgressPercent": 12,
+          "Location": {
+            "Value": "kobo.12.1",
+            "Type": "KoboSpan",
+            "Source": "OEBPS/ch3.xhtml"
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,11 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api } from './api'
+import { api, isViewer } from './api'
+import { useAuth } from './AuthContext'
 import type { AddTarget } from './components/AddDialog'
 import { useToast } from './components/Toast'
+import { t } from './i18n'
 
 // Discover's "Select" mode and the "Not interested" list, shared by every row
 // of posters on the page.
 export interface Picks {
+  // True for a viewer: the Not interested list is changed by accounts that can change things.
+  readOnly: boolean
   excluded: Set<string>
   notInterested: (t: AddTarget) => void
   showAgain: (kind: string, tmdbId: number) => void
@@ -26,6 +30,7 @@ export function usePicks(): Picks | null {
 
 export function PicksProvider({ children }: { children: ReactNode }) {
   const toast = useToast()
+  const readOnly = isViewer(useAuth().user)
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
   const [selecting, setSelectingState] = useState(false)
   const [picked, setPicked] = useState<Map<string, AddTarget>>(new Map())
@@ -38,12 +43,12 @@ export function PicksProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const notInterested = useCallback(
-    (t: AddTarget) => {
-      const key = pickKey(t)
+    (item: AddTarget) => {
+      const key = pickKey(item)
       setExcluded((s) => new Set(s).add(key))
       api
-        .addExclusion({ kind: t.kind, tmdbId: t.tmdbId, title: t.title, year: t.year })
-        .then(() => toast.success(`${t.title} won't be shown again. Undo it under Not interested at the top of Discover.`))
+        .addExclusion({ kind: item.kind, tmdbId: item.tmdbId, title: item.title, year: item.year })
+        .then(() => toast.success(t("{title} won't be shown again. Undo it under Not interested at the top of Discover.", { title: item.title })))
         .catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
     },
     [toast],
@@ -70,6 +75,7 @@ export function PicksProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Picks>(
     () => ({
+      readOnly,
       excluded,
       notInterested,
       showAgain,
@@ -82,7 +88,7 @@ export function PicksProvider({ children }: { children: ReactNode }) {
       toggle,
       clear: () => setPicked(new Map()),
     }),
-    [excluded, notInterested, showAgain, selecting, picked, toggle],
+    [readOnly, excluded, notInterested, showAgain, selecting, picked, toggle],
   )
   return <PicksContext.Provider value={value}>{children}</PicksContext.Provider>
 }

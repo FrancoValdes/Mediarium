@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { api } from '../api'
+import { t } from '../i18n'
 import Icon from './Icon'
 import { useToast } from './Toast'
 
@@ -9,12 +10,12 @@ import { useToast } from './Toast'
 
 // TagInput is a box that adds a tag on Enter or comma, suggesting the tags
 // already in use.
-export function TagInput({ suggestions, onAdd, placeholder = 'Add a tag', disabled }: { suggestions: string[]; onAdd: (tag: string) => void; placeholder?: string; disabled?: boolean }) {
+export function TagInput({ suggestions, onAdd, placeholder = t('Add a tag'), disabled }: { suggestions: string[]; onAdd: (tag: string) => void; placeholder?: string; disabled?: boolean }) {
   const [text, setText] = useState('')
   const list = useId()
   function commit() {
-    const t = text.replace(/,/g, ' ').trim()
-    if (t) onAdd(t)
+    const tag = text.replace(/,/g, ' ').trim()
+    if (tag) onAdd(tag)
     setText('')
   }
   return (
@@ -37,8 +38,8 @@ export function TagInput({ suggestions, onAdd, placeholder = 'Add a tag', disabl
           }
           if (v.endsWith(',')) {
             setText(v)
-            const t = v.slice(0, -1).trim()
-            if (t) onAdd(t)
+            const tag = v.slice(0, -1).trim()
+            if (tag) onAdd(tag)
             setText('')
             return
           }
@@ -65,11 +66,11 @@ export function TagChips({ tags, onRemove }: { tags: string[]; onRemove?: (tag: 
   if (tags.length === 0) return null
   return (
     <span className="tag-chips">
-      {tags.map((t) => (
-        <span key={t} className="tag-chip">
-          <Icon name="bookmark" size={11} /> {t}
+      {tags.map((tag) => (
+        <span key={tag} className="tag-chip">
+          <Icon name="bookmark" size={11} /> {tag}
           {onRemove && (
-            <button type="button" onClick={() => onRemove(t)} aria-label={`Remove the tag ${t}`} title={`Remove ${t}`}>
+            <button type="button" onClick={() => onRemove(tag)} aria-label={t('Remove the tag {tag}', { tag })} title={t('Remove {tag}', { tag })}>
               ×
             </button>
           )}
@@ -115,11 +116,11 @@ export default function TitleTags({ kind, id }: { kind: 'movie' | 'tv'; id: numb
   const lower = new Set(tags.map((t) => t.toLowerCase()))
   return (
     <div className="title-tags">
-      <span className="title-tags-label" title="Your own words to sort and filter your library. They also show up as collections on Plex, Jellyfin and Emby.">
-        Tags
+      <span className="title-tags-label" title={t('Your own words to sort and filter your library. They also show up as collections on Plex, Jellyfin and Emby.')}>
+        {t('Tags')}
       </span>
       <TagChips tags={tags} onRemove={(t) => void save(tags.filter((x) => x !== t))} />
-      <TagInput suggestions={all.filter((t) => !lower.has(t.toLowerCase()))} onAdd={(t) => !lower.has(t.toLowerCase()) && void save([...tags, t])} placeholder={tags.length === 0 ? 'Add a tag, like Kids or 4K' : 'Add a tag'} />
+      <TagInput suggestions={all.filter((t) => !lower.has(t.toLowerCase()))} onAdd={(t) => !lower.has(t.toLowerCase()) && void save([...tags, t])} placeholder={tags.length === 0 ? t('Add a tag, like Kids or 4K') : t('Add a tag')} />
     </div>
   )
 }
@@ -144,11 +145,11 @@ export function BulkTagMenu({ disabled, inSelection, onAdd, onRemove }: { disabl
   return (
     <div className="bulk-tags" ref={root}>
       <button className="btn-sm btn-with-icon" disabled={disabled} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <Icon name="bookmark" size={15} /> Tags
+        <Icon name="bookmark" size={15} /> {t('Tags')}
       </button>
       {open && (
-        <div className="bulk-tags-pop" role="dialog" aria-label="Tags for the chosen titles">
-          <strong>Add a tag to the chosen titles</strong>
+        <div className="bulk-tags-pop" role="dialog" aria-label={t('Tags for the chosen titles')}>
+          <strong>{t('Add a tag to the chosen titles')}</strong>
           <TagInput
             suggestions={all}
             onAdd={(t) => {
@@ -158,7 +159,7 @@ export function BulkTagMenu({ disabled, inSelection, onAdd, onRemove }: { disabl
           />
           {inSelection.length > 0 && (
             <>
-              <strong>Remove a tag from them</strong>
+              <strong>{t('Remove a tag from them')}</strong>
               <TagChips
                 tags={inSelection}
                 onRemove={(t) => {

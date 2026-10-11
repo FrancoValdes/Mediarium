@@ -17,7 +17,7 @@ test('an empty install lists what is missing, in order', () => {
   )
   assert.deepEqual(
     gaps.map((g) => g.to),
-    ['/settings/indexers', '/settings/downloads', '/settings/media-servers'],
+    ['/settings/indexers', '/settings/usenet', '/settings/media-servers'],
   )
   // A media server is optional: it never counts as missing.
   assert.deepEqual(

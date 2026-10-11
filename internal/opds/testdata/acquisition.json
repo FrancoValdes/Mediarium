@@ -1,0 +1,102 @@
+{
+  "metadata": {
+    "title": "All books",
+    "numberOfItems": 120,
+    "itemsPerPage": 50,
+    "currentPage": 2,
+    "modified": "2026-10-09T12:30:00Z"
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "/opds/books?page=2",
+      "type": "application/atom+xml;profile=opds-catalog;kind=acquisition"
+    },
+    {
+      "rel": "start",
+      "href": "/opds/",
+      "type": "application/atom+xml;profile=opds-catalog;kind=navigation"
+    },
+    {
+      "rel": "up",
+      "href": "/opds/",
+      "type": "application/atom+xml;profile=opds-catalog;kind=navigation"
+    },
+    {
+      "rel": "first",
+      "href": "/opds/books",
+      "type": "application/atom+xml;profile=opds-catalog;kind=acquisition"
+    },
+    {
+      "rel": "previous",
+      "href": "/opds/books",
+      "type": "application/atom+xml;profile=opds-catalog;kind=acquisition"
+    },
+    {
+      "rel": "next",
+      "href": "/opds/books?page=3",
+      "type": "application/atom+xml;profile=opds-catalog;kind=acquisition"
+    },
+    {
+      "rel": "last",
+      "href": "/opds/books?page=3",
+      "type": "application/atom+xml;profile=opds-catalog;kind=acquisition"
+    }
+  ],
+  "publications": [
+    {
+      "metadata": {
+        "@type": "http://schema.org/Book",
+        "title": "The Hobbit, or \"There and Back Again\"",
+        "author": [
+          "J.R.R. Tolkien"
+        ],
+        "identifier": "urn:mediarium:book:7",
+        "modified": "2026-10-09T12:30:00Z",
+        "published": "1937",
+        "description": "A hobbit goes <out> & comes back.\u0001",
+        "belongsTo": {
+          "series": [
+            {
+              "name": "Middle-earth",
+              "position": "1"
+            }
+          ]
+        }
+      },
+      "links": [
+        {
+          "rel": "http://opds-spec.org/acquisition/open-access",
+          "href": "/opds/books/7/download",
+          "type": "application/epub+zip",
+          "length": 123456
+        }
+      ],
+      "images": [
+        {
+          "href": "/opds/books/7/cover",
+          "type": "image/jpeg"
+        },
+        {
+          "href": "/opds/books/7/thumbnail",
+          "type": "image/jpeg"
+        }
+      ]
+    },
+    {
+      "metadata": {
+        "@type": "http://schema.org/Book",
+        "title": "No Author Book",
+        "identifier": "urn:mediarium:book:8",
+        "modified": "2026-10-09T12:30:00Z"
+      },
+      "links": [
+        {
+          "rel": "http://opds-spec.org/acquisition/open-access",
+          "href": "/opds/books/8/download",
+          "type": "application/pdf"
+        }
+      ]
+    }
+  ]
+}

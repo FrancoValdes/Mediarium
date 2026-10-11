@@ -1,0 +1,48 @@
+/* Settings > Indexers & Search > IRC announce */
+
+.irc-card { grid-column: 1 / -1; }
+.irc-card > p { margin: 0 0 12px; color: var(--text-dim); }
+
+.irc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 12px; margin-bottom: 14px; align-items: start; }
+
+.irc-conn { border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); padding: 12px 14px; display: grid; gap: 8px; min-width: 0; }
+.irc-conn.is-off { opacity: 0.85; }
+.irc-conn-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.irc-conn-top strong { font-size: 1rem; overflow-wrap: anywhere; }
+.irc-conn-top .switch-row { margin-left: auto; }
+.irc-meta { margin: 0; font-size: 0.86rem; color: var(--text-dim); overflow-wrap: anywhere; }
+.irc-state { display: inline-flex; align-items: center; gap: 6px; font-size: 0.86rem; }
+.irc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); flex: none; }
+.irc-state.ok .irc-dot { background: #3ecf8e; box-shadow: 0 0 0 3px color-mix(in srgb, #3ecf8e 25%, transparent); }
+.irc-state.warn .irc-dot { background: var(--warning); }
+.irc-state.bad .irc-dot { background: var(--danger); }
+.irc-problem { margin: 0; font-size: 0.86rem; color: var(--danger); overflow-wrap: anywhere; }
+.irc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.irc-log { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.irc-log table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.irc-log th, .irc-log td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.irc-log tr:last-child td { border-bottom: 0; }
+.irc-log td.rel { font-family: var(--font-mono); overflow-wrap: anywhere; min-width: 200px; }
+.irc-log td.when { white-space: nowrap; color: var(--text-dim); }
+.irc-decision { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--border); white-space: nowrap; }
+.irc-decision.grabbed, .irc-decision.would-grab { border-color: #3ecf8e; color: #3ecf8e; }
+.irc-decision.failed { border-color: var(--danger); color: var(--danger); }
+.irc-decision.skipped, .irc-decision.duplicate, .irc-decision.ignored { color: var(--text-dim); }
+
+.irc-editor { border-top: 1px solid var(--border); padding-top: 14px; display: grid; gap: 14px; }
+.irc-editor-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.irc-editor-cols > section { display: grid; gap: 12px; min-width: 0; }
+.irc-editor h3 { margin: 0; font-size: 1rem; }
+.irc-editor label { display: grid; gap: 4px; }
+.irc-editor label.check-hint { display: flex; }
+.irc-editor textarea { font-family: var(--font-mono); font-size: 0.84rem; min-height: 74px; resize: vertical; }
+.irc-row2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 12px; }
+.irc-test-out { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 10px 12px; display: grid; gap: 6px; font-size: 0.88rem; }
+.irc-test-out dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 0; }
+.irc-test-out dt { color: var(--text-dim); }
+.irc-test-out dd { margin: 0; overflow-wrap: anywhere; }
+.irc-test-out code { overflow-wrap: anywhere; }
+.irc-warn-text { color: var(--warning); font-size: 0.86rem; }
+
+@media (max-width: 960px) { .irc-editor-cols { grid-template-columns: minmax(0, 1fr); } }

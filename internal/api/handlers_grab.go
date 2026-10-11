@@ -91,7 +91,7 @@ func (s *Server) handleSearchGrab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.TMDB().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie info and lists).")
+		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie and show info).")
 		return
 	}
 
@@ -100,7 +100,7 @@ func (s *Server) handleSearchGrab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Couldn't work out a title from that release name.")
 		return
 	}
-	if release.Season > 0 {
+	if release.Season > 0 || release.Special {
 		if !s.requireModule(w, moduleTV) {
 			return
 		}
@@ -156,10 +156,10 @@ func (s *Server) grabRelease(movie library.Movie, releaseTitle, downloadURL stri
 // the movie is still running (a person grabbing by hand is always obeyed).
 // The release goes into the download line; it starts when a place is free.
 func (s *Server) grabMovie(movie library.Movie, releaseTitle, downloadURL string, sizeBytes int64, protocol indexers.Protocol, kind grabKind) (int64, error) {
-	if protocol == indexers.ProtocolTorrent && !s.torrentsEnabled() {
+	if protocol == indexers.ProtocolTorrent && !s.torrentReleasesOn() {
 		return 0, errTorrentsDisabled
 	}
-	if dest, err := s.buildDestPath(s.moviesRoot(), movie.Title, movie.Year, movie.TMDBID, releaseTitle, "check.mkv"); err == nil {
+	if dest, err := s.buildDestPath(s.movieRootFor(movie), movie.Title, movie.Year, movie.TMDBID, releaseTitle, "check.mkv"); err == nil {
 		if err := destWritable(filepath.Dir(dest)); err != nil {
 			return 0, err
 		}
@@ -200,6 +200,7 @@ func (s *Server) grabMovie(movie library.Movie, releaseTitle, downloadURL string
 		// From here the movie is taken, as an episode or an album is, even while
 		// its download waits for a free place.
 		_ = s.MovieRepo.SetStatus(movie.ID, library.StatusDownloading, "", "")
+		s.forgetHeldMovie(movie.ID) // nothing left to wait for
 	}
 	s.grabMu.Unlock()
 	if err != nil {

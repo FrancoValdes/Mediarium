@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Settings } from './api'
 import { useToast } from './components/Toast'
+import { t } from './i18n.ts'
 
 // Shared behaviour for settings that apply the moment you change them (a
 // switch, a checkbox): show the change immediately, save it, then trust what
@@ -56,7 +57,7 @@ export function useAutosaveSetting<T>(
         toast.success(describe(confirmed))
       } catch (e) {
         setValue(previous)
-        toast.error(`Not saved: ${e instanceof Error ? e.message : String(e)}`)
+        toast.error(t('Not saved: {error}', { error: e instanceof Error ? e.message : String(e) }))
       } finally {
         setSaving(false)
       }

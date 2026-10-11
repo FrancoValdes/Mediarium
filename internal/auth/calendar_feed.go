@@ -56,7 +56,7 @@ func (s *Service) UserForCalendarFeed(token string) (int64, error) {
 		userID int64
 		stored string
 	)
-	err := s.db.QueryRow(`SELECT user_id, token FROM calendar_feeds WHERE token = ?`, token).Scan(&userID, &stored)
+	err := s.db.QueryRow(`SELECT f.user_id, f.token FROM calendar_feeds f JOIN users u ON u.id = f.user_id WHERE f.token = ? AND u.disabled = 0`, token).Scan(&userID, &stored)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, ErrSessionNotFound
 	}

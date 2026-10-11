@@ -7,6 +7,7 @@ import { useGridColumns } from '../useGridColumns'
 import { BookAddDialog, BookCard } from './BookDiscover'
 import Switch from './Switch'
 import { useToast } from './Toast'
+import { plural, t } from '../i18n'
 
 // "Book 2 of <series>" on a book's page: every book of the series in reading
 // order, each with Add, and a switch to follow the series so its missing books
@@ -56,14 +57,14 @@ export default function BookSeries({ workKey, title, author }: { workKey: string
         toast.success(
           res.message ??
             (res.added > 0
-              ? `Following ${series.name}. ${res.added === 1 ? 'One book was' : `${res.added} books were`} added, and new ones will be too.`
-              : `Following ${series.name}. New books in it are added by themselves.`),
+              ? plural(res.added, 'Following {name}. One book was added, and new ones will be too.', 'Following {name}. {n} books were added, and new ones will be too.', { name: series.name })
+              : t('Following {name}. New books in it are added by themselves.', { name: series.name })),
         )
         const fresh = await api.bookSeries(workKey, title, author)
         setSeries(fresh.series)
       } else {
         await api.unfollowSeries(series.source, series.key)
-        toast.success(`Stopped following ${series.name}. Its books stay in your library.`)
+        toast.success(t('Stopped following {name}. Its books stay in your library.', { name: series.name }))
         setSeries({ ...series, followed: false })
       }
     } catch (e) {
@@ -79,16 +80,16 @@ export default function BookSeries({ workKey, title, author }: { workKey: string
     <section className="discover-rail book-series">
       <div className="rail-head">
         <h2>
-          {series ? (series.position ? `Book ${series.position} of ${series.name}` : series.name) : 'Series'}
-          {series && <span className="rail-hint">{series.entries.length} books</span>}
+          {series ? (series.position ? t('Book {n} of {series}', { n: series.position, series: series.name }) : series.name) : t('Series')}
+          {series && <span className="rail-hint">{plural(series.entries.length, '{n} book', '{n} books')}</span>}
         </h2>
         {series && mayFollow && (
           <Switch
             checked={series.followed}
             onChange={(v) => void follow(v)}
             disabled={busy}
-            label="Follow this series"
-            description="The missing books are added now, and new ones when they come out."
+            label={t('Follow this series')}
+            description={t('The missing books are added now, and new ones when they come out.')}
           />
         )}
       </div>
@@ -100,7 +101,7 @@ export default function BookSeries({ workKey, title, author }: { workKey: string
       {series && series.entries.length > shown.length && (
         <div className="rail-foot">
           <button className="btn-sm" onClick={() => setRows((r) => r + 2)}>
-            Show more
+            {t('Show more')}
           </button>
         </div>
       )}

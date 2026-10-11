@@ -4,6 +4,7 @@ package library
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -41,9 +42,19 @@ type Movie struct {
 	// plain words) and empty otherwise.
 	DetailsState string
 	DetailsNote  string
+	// CopyOf is the main movie's id when this row is a second copy of it (the
+	// same film kept again in another quality, in the copies folder); 0 for
+	// the main movie.
+	CopyOf int64
+	// ReleaseTitle is the release the file came from ("" when unknown, as for
+	// files that were imported from an existing library).
+	ReleaseTitle string
+	// RootPath is the library folder the movie's files go to (one of the
+	// movie folders in Settings); "" = the default folder.
+	RootPath string
 }
 
-const movieColumns = `id, tmdb_id, title, year, overview, poster_path, status, quality, file_path, monitored, COALESCE(release_date, ''), COALESCE(profile_id, 0), source_pref, COALESCE(added_by, 0), genres, no_upgrade, details_state, details_note`
+const movieColumns = `id, tmdb_id, title, year, overview, poster_path, status, quality, file_path, monitored, COALESCE(release_date, ''), COALESCE(profile_id, 0), source_pref, COALESCE(added_by, 0), genres, no_upgrade, details_state, details_note, COALESCE(copy_of, 0), release_title, root_path`
 
 type Repo struct {
 	db *sql.DB
@@ -62,8 +73,8 @@ func (r *Repo) Add(m Movie) (Movie, error) {
 		return Movie{}, err
 	}
 	res, err := r.db.Exec(
-		`INSERT INTO movies (tmdb_id, title, year, overview, poster_path, status, monitored, release_date, added_by, genres, no_upgrade) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m.TMDBID, m.Title, m.Year, m.Overview, m.PosterPath, string(m.Status), m.Monitored, m.ReleaseDate, nullID(m.AddedBy), genres, m.NoUpgrade,
+		`INSERT INTO movies (tmdb_id, title, year, overview, poster_path, status, monitored, release_date, added_by, genres, no_upgrade, root_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.TMDBID, m.Title, m.Year, m.Overview, m.PosterPath, string(m.Status), m.Monitored, m.ReleaseDate, nullID(m.AddedBy), genres, m.NoUpgrade, m.RootPath,
 	)
 	if err != nil {
 		return Movie{}, fmt.Errorf("insert movie: %w", err)
@@ -83,10 +94,11 @@ func (r *Repo) Get(id int64) (Movie, error) {
 
 // GetByTMDBID looks up a movie by its TMDB id — used by the movie detail
 // page to check whether a Discover title has already been added, without
-// needing its own library id (which doesn't exist until it's added).
+// needing its own library id (which doesn't exist until it's added). It
+// finds the main movie, never a second copy.
 func (r *Repo) GetByTMDBID(tmdbID int) (Movie, bool, error) {
 	m, err := r.scanOne(r.db.QueryRow(
-		`SELECT `+movieColumns+` FROM movies WHERE tmdb_id = ?`, tmdbID))
+		`SELECT `+movieColumns+` FROM movies WHERE tmdb_id = ? AND copy_of IS NULL`, tmdbID))
 	if err == sql.ErrNoRows {
 		return Movie{}, false, nil
 	}
@@ -96,9 +108,85 @@ func (r *Repo) GetByTMDBID(tmdbID int) (Movie, bool, error) {
 	return m, true, nil
 }
 
+// List lists the library's movies, second copies left out.
 func (r *Repo) List() ([]Movie, error) {
-	rows, err := r.db.Query(
-		`SELECT ` + movieColumns + ` FROM movies ORDER BY added_at DESC`)
+	return r.listMovies(`WHERE copy_of IS NULL ORDER BY added_at DESC`)
+}
+
+// ListWithCopies lists every movie row, second copies included: for the
+// jobs that work on files (searching, renaming, subtitles, sizes).
+func (r *Repo) ListWithCopies() ([]Movie, error) {
+	return r.listMovies(`ORDER BY added_at DESC`)
+}
+
+// ListCopies lists the second copies of a movie, oldest first.
+func (r *Repo) ListCopies(mainID int64) ([]Movie, error) {
+	return r.listMovies(`WHERE copy_of = ? ORDER BY id`, mainID)
+}
+
+// AddCopy adds a second copy of a movie in another quality profile: the
+// same film, missing and monitored, to be downloaded into the copies
+// folder. ErrCopyExists when that profile already has a copy.
+func (r *Repo) AddCopy(mainID, profileID int64) (Movie, error) {
+	m, err := r.Get(mainID)
+	if err != nil {
+		return Movie{}, err
+	}
+	if m.CopyOf != 0 {
+		return Movie{}, errors.New("that is already a second copy")
+	}
+	if m.ProfileID == profileID {
+		return Movie{}, ErrCopySameProfile
+	}
+	res, err := r.db.Exec(
+		`INSERT INTO movies (tmdb_id, title, year, overview, poster_path, status, monitored, release_date, added_by, genres, copy_of, profile_id, source_pref)
+		 SELECT tmdb_id, title, year, overview, poster_path, 'missing', 1, release_date, added_by, genres, id, ?, source_pref FROM movies WHERE id = ?
+		 AND NOT EXISTS (SELECT 1 FROM movies WHERE copy_of = ? AND profile_id = ?)`, profileID, mainID, mainID, profileID)
+	if err != nil {
+		return Movie{}, fmt.Errorf("add a second copy: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Movie{}, ErrCopyExists
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Movie{}, fmt.Errorf("get the copy's id: %w", err)
+	}
+	return r.Get(id)
+}
+
+// CopyCounts maps each main title to how many second copies it has. table
+// is "movies" or "series".
+func (r *Repo) CopyCounts(table string) (map[int64]int, error) {
+	if table != "movies" && table != "series" {
+		return nil, fmt.Errorf("unknown table %q", table)
+	}
+	rows, err := r.db.Query(`SELECT copy_of, COUNT(*) FROM ` + table + ` WHERE copy_of IS NOT NULL GROUP BY copy_of`)
+	if err != nil {
+		return nil, fmt.Errorf("count copies: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+var (
+	// ErrCopyExists means the title already has a copy in that profile.
+	ErrCopyExists = errors.New("there's already a copy in that quality")
+	// ErrCopySameProfile means the copy would use the main title's own profile.
+	ErrCopySameProfile = errors.New("the main copy already uses that quality")
+)
+
+func (r *Repo) listMovies(where string, args ...any) ([]Movie, error) {
+	rows, err := r.db.Query(`SELECT `+movieColumns+` FROM movies `+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list movies: %w", err)
 	}
@@ -142,6 +230,16 @@ func (r *Repo) SetProfile(id, profileID int64) error {
 	return nil
 }
 
+// SetRoot chooses the library folder a movie's next files go to ("" = the
+// default folder). Files already there stay where they are.
+func (r *Repo) SetRoot(id int64, root string) error {
+	_, err := r.db.Exec(`UPDATE movies SET root_path = ? WHERE id = ?`, root, id)
+	if err != nil {
+		return fmt.Errorf("set movie %d folder: %w", id, err)
+	}
+	return nil
+}
+
 // SetNoUpgrade turns the search for better versions of a movie off (or back on).
 func (r *Repo) SetNoUpgrade(id int64, noUpgrade bool) error {
 	_, err := r.db.Exec(`UPDATE movies SET no_upgrade = ? WHERE id = ?`, noUpgrade, id)
@@ -172,7 +270,7 @@ func (r *Repo) RecentlyAdded(limit int) ([]RecentItem, error) {
 		`SELECT kind, id, tmdb_id, title, year, poster, added_at, state FROM (
 			SELECT 'movie' AS kind, id, tmdb_id, title, COALESCE(year, 0) AS year, COALESCE(poster_path, '') AS poster, added_at,
 				CASE WHEN status IN ('downloaded', 'downloading') THEN status WHEN monitored = 0 THEN 'unmonitored' ELSE 'missing' END AS state
-			FROM movies
+			FROM movies WHERE copy_of IS NULL
 			UNION ALL
 			SELECT 'series', s.id, s.tmdb_id, s.title, COALESCE(s.year, 0), COALESCE(s.poster_path, ''), s.added_at,
 				CASE
@@ -183,7 +281,7 @@ func (r *Repo) RecentlyAdded(limit int) ([]RecentItem, error) {
 					WHEN s.monitored = 0 THEN 'unmonitored'
 					ELSE 'missing'
 				END
-			FROM series s
+			FROM series s WHERE s.copy_of IS NULL
 		) ORDER BY added_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list recently added: %w", err)
@@ -240,6 +338,14 @@ func (r *Repo) SetStatus(id int64, status Status, quality, filePath string) erro
 	return nil
 }
 
+// SetReleaseTitle records the release a movie's file came from.
+func (r *Repo) SetReleaseTitle(id int64, release string) error {
+	if _, err := r.db.Exec(`UPDATE movies SET release_title = ? WHERE id = ?`, release, id); err != nil {
+		return fmt.Errorf("set movie %d release: %w", id, err)
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -256,7 +362,7 @@ func (r *Repo) scanRow(scanner rowScanner) (Movie, error) {
 		filePath sql.NullString
 		genres   sql.NullString
 	)
-	err := scanner.Scan(&m.ID, &m.TMDBID, &m.Title, &m.Year, &m.Overview, &m.PosterPath, &status, &quality, &filePath, &m.Monitored, &m.ReleaseDate, &m.ProfileID, &m.SourcePref, &m.AddedBy, &genres, &m.NoUpgrade, &m.DetailsState, &m.DetailsNote)
+	err := scanner.Scan(&m.ID, &m.TMDBID, &m.Title, &m.Year, &m.Overview, &m.PosterPath, &status, &quality, &filePath, &m.Monitored, &m.ReleaseDate, &m.ProfileID, &m.SourcePref, &m.AddedBy, &genres, &m.NoUpgrade, &m.DetailsState, &m.DetailsNote, &m.CopyOf, &m.ReleaseTitle, &m.RootPath)
 	if err == sql.ErrNoRows {
 		return Movie{}, err
 	}

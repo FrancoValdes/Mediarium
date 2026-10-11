@@ -18,10 +18,16 @@ const userContextKey contextKey = "auth_user"
 // site). secure marks it Secure (HTTPS only); the caller sets it whenever the
 // visitor reached Mediarium over HTTPS, directly or through a trusted proxy.
 func SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time, secure bool) {
+	SetSessionCookieAt(w, token, expiresAt, secure, "/")
+}
+
+// SetSessionCookieAt is SetSessionCookie for an app served under a sub-path:
+// the cookie is limited to path, so other apps on the same address do not get it.
+func SetSessionCookieAt(w http.ResponseWriter, token string, expiresAt time.Time, secure bool, path string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    token,
-		Path:     "/",
+		Path:     path,
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
@@ -32,10 +38,15 @@ func SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time, 
 // ClearSessionCookie expires the session cookie; secure must match the way
 // it was set.
 func ClearSessionCookie(w http.ResponseWriter, secure bool) {
+	ClearSessionCookieAt(w, secure, "/")
+}
+
+// ClearSessionCookieAt is ClearSessionCookie for the path it was set at.
+func ClearSessionCookieAt(w http.ResponseWriter, secure bool, path string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     path,
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,

@@ -39,6 +39,10 @@ func (k Kind) Label() string {
 		return "Audiobookshelf"
 	case KindKavita:
 		return "Kavita"
+	case KindSilo:
+		return "Silo"
+	case KindWebhook:
+		return "Webhook"
 	}
 	return string(k)
 }
@@ -46,7 +50,7 @@ func (k Kind) Label() string {
 // ParseKind accepts a kind in any case.
 func ParseKind(s string) (Kind, bool) {
 	switch k := Kind(strings.ToLower(strings.TrimSpace(s))); k {
-	case KindPlex, KindJellyfin, KindEmby, KindAudiobookshelf, KindKavita:
+	case KindPlex, KindJellyfin, KindEmby, KindSilo, KindAudiobookshelf, KindKavita, KindWebhook:
 		return k, true
 	}
 	return "", false

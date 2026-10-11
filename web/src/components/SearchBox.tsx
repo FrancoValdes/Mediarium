@@ -9,6 +9,7 @@ import Icon from './Icon'
 import { MusicFallback, PosterFallback } from './PosterCard'
 import { resultState } from './state'
 import { isTypingTarget } from '../shortcuts'
+import { t } from '../i18n'
 
 // The always-visible search bar. It searches the movie and TV databases live
 // as you type and lists matches right under the box, with posters, so you can
@@ -213,7 +214,7 @@ export default function SearchBox() {
         <div className="searchbox-text">
           <strong>{r.title}</strong>
           <span>
-            <i className={`kind-dot kind-${r.kind}`} /> {r.kind === 'tv' ? 'TV show' : 'Movie'} · {r.year || '—'}
+            <i className={`kind-dot kind-${r.kind}`} /> {r.kind === 'tv' ? t('TV show') : t('Movie')} · {r.year || '—'}
           </span>
         </div>
         {st ? (
@@ -228,14 +229,17 @@ export default function SearchBox() {
               choose(r)
             }}
           >
-            <Icon name="plus" size={14} /> Add
+            <Icon name="plus" size={14} /> {t('Add')}
           </button>
         )}
       </div>
     )
   }
 
-  const placeholder = `Search ${[on('movies') && 'movies', on('tv') && (on('movies') ? 'shows' : 'TV shows'), musicOn && 'artists', booksOn && 'books'].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' and $1') || 'Mediarium'}`
+  const kinds = [on('movies') && t('movies'), on('tv') && (on('movies') ? t('shows') : t('TV shows')), musicOn && t('artists'), booksOn && t('books')].filter((k): k is string => !!k)
+  const placeholder = t('Search {what}', {
+    what: kinds.length > 1 ? t('{list} and {last}', { list: kinds.slice(0, -1).join(', '), last: kinds[kinds.length - 1] }) : kinds[0] || 'Mediarium',
+  })
 
   return (
     <div className="searchbox" ref={box}>
@@ -247,7 +251,7 @@ export default function SearchBox() {
         type="search"
         aria-label={placeholder}
         aria-keyshortcuts="/"
-        title="Press / to search"
+        title={t('Press / to search')}
         role="combobox"
         aria-expanded={showPanel}
         aria-controls="searchbox-results"
@@ -278,12 +282,12 @@ export default function SearchBox() {
             </>
           )}
           {error && <div className="searchbox-empty error-text">{error}</div>}
-          {nothingFound && <div className="searchbox-empty">Nothing found for “{q.trim()}”.</div>}
-          {results && results.some((r) => r.inLibrary) && <div className="searchbox-group">In your library</div>}
+          {nothingFound && <div className="searchbox-empty">{t('Nothing found for “{q}”.', { q: q.trim() })}</div>}
+          {results && results.some((r) => r.inLibrary) && <div className="searchbox-group">{t('In your library')}</div>}
           {results?.map((r, i) => r.inLibrary && row(r, i))}
-          {results && results.some((r) => !r.inLibrary) && <div className="searchbox-group">Add new</div>}
+          {results && results.some((r) => !r.inLibrary) && <div className="searchbox-group">{t('Add new')}</div>}
           {results?.map((r, i) => !r.inLibrary && row(r, i))}
-          {musicOn && artists && artists.length > 0 && <div className="searchbox-group">Artists</div>}
+          {musicOn && artists && artists.length > 0 && <div className="searchbox-group">{t('Artists')}</div>}
           {artists?.map((a, i) => (
             <div
               key={a.mbid}
@@ -302,8 +306,8 @@ export default function SearchBox() {
                 </span>
               </div>
               {a.artistId > 0 ? (
-                <span className="state-tag st-downloaded" title="Already in your library">
-                  <Icon name="check" size={12} /> In library
+                <span className="state-tag st-downloaded" title={t('Already in your library')}>
+                  <Icon name="check" size={12} /> {t('In library')}
                 </span>
               ) : (
                 <button
@@ -313,12 +317,12 @@ export default function SearchBox() {
                     chooseArtist(a)
                   }}
                 >
-                  <Icon name="plus" size={14} /> Add
+                  <Icon name="plus" size={14} /> {t('Add')}
                 </button>
               )}
             </div>
           ))}
-          {booksOn && bookHits && bookHits.length > 0 && <div className="searchbox-group">Books</div>}
+          {booksOn && bookHits && bookHits.length > 0 && <div className="searchbox-group">{t('Books')}</div>}
           {bookHits?.map((b, i) => (
             <div
               key={b.key}
@@ -332,12 +336,12 @@ export default function SearchBox() {
               <div className="searchbox-text">
                 <strong>{b.title}</strong>
                 <span>
-                  <i className="kind-dot kind-book" /> {[b.author, b.year].filter(Boolean).join(' · ') || 'Book'}
+                  <i className="kind-dot kind-book" /> {[b.author, b.year].filter(Boolean).join(' · ') || t('Book')}
                 </span>
               </div>
               {b.libraryId ? (
-                <span className="state-tag st-downloaded" title="Already in your library">
-                  <Icon name="check" size={12} /> In library
+                <span className="state-tag st-downloaded" title={t('Already in your library')}>
+                  <Icon name="check" size={12} /> {t('In library')}
                 </span>
               ) : (
                 <button
@@ -348,14 +352,14 @@ export default function SearchBox() {
                     setAddingBook(b)
                   }}
                 >
-                  <Icon name="plus" size={14} /> Add
+                  <Icon name="plus" size={14} /> {t('Add')}
                 </button>
               )}
             </div>
           ))}
           {results && results.length > 0 && (
             <button className="searchbox-all" onClick={seeAll}>
-              See all results for “{q.trim()}”
+              {t('See all results for “{q}”', { q: q.trim() })}
               <Icon name="open" size={15} />
             </button>
           )}

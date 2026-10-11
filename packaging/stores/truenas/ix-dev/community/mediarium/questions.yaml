@@ -51,6 +51,14 @@ questions:
             type: string
             default: "/data/media/tv"
             required: true
+        - variable: umask
+          label: UMASK (optional)
+          description: |
+            Advanced. The permissions new files and folders get, for example 022 or 002.</br>
+            Leave empty to keep the container's own setting.
+          schema:
+            type: string
+            default: ""
         - variable: additional_envs
           label: Additional Environment Variables
           schema:

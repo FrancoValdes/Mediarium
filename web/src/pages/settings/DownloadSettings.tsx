@@ -1,3 +1,6 @@
+import DebridCard from '../../components/DebridCard'
+import DownloadChecksCard, { UsenetRetentionCard } from '../../components/DownloadChecksCard'
+import DownloadClientCard from '../../components/DownloadClientCard'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type DownloadsStatus, type Settings, type UsenetServer } from '../../api'
@@ -8,14 +11,20 @@ import TestButton from '../../components/TestButton'
 import { useToast } from '../../components/Toast'
 import { useAutosaveSetting } from '../../useAutosave'
 import TorrentSection from './TorrentSection'
+import TorrentOptionsPanel from '../../components/TorrentOptionsPanel'
 import { useLive } from '../../useLive'
 import { useConfirm } from '../../components/ConfirmProvider'
+import { plural, t, tx } from '../../i18n'
+import InfoTip from '../../components/InfoTip'
+import TipLabel from '../../components/TipLabel'
 
-// Downloads: Mediarium downloads for itself. Usenet needs only your
+// Downloading: Mediarium downloads for itself. Usenet needs only your
 // provider's news-server account; torrents need nothing at all. There is no
 // separate download client program to install or connect (unlike Sonarr and
-// Radarr, which hand grabs to SABnzbd, qBittorrent and the like).
-export default function DownloadSettings() {
+// Radarr, which hand grabs to SABnzbd, qBittorrent and the like), though a
+// torrent client you already run can be connected (DownloadClientCard).
+// The settings are on three pages: the rules both share, Usenet and torrents.
+function useDownloadsState() {
   const toast = useToast()
   const [status, setStatus] = useState<DownloadsStatus | null>(null)
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -29,40 +38,55 @@ export default function DownloadSettings() {
   useLive(loadStatus, 10000)
   useEffect(loadSettings, [loadSettings])
 
-  const torrentEnabled = settings?.torrentEnabled !== false
-  const usenetOnly = settings?.defaultSources === 'usenet'
-  const torrentOff = !torrentEnabled
-
   // One click from a blurred section's notice: which sources to use.
-  async function useSources(value: 'both' | 'usenet' | 'torrent') {
+  async function chooseSources(value: 'both' | 'usenet' | 'torrent') {
     try {
       const saved = await api.putSettings({ defaultSources: value, torrentEnabled: value !== 'usenet' })
       setSettings(saved)
-      toast.success(value === 'both' ? 'Now downloading from Usenet and torrents.' : value === 'usenet' ? 'Now downloading from Usenet only.' : 'Now downloading from torrents only.')
+      toast.success(value === 'both' ? t('Now downloading from Usenet and torrents.') : value === 'usenet' ? t('Now downloading from Usenet only.') : t('Now downloading from torrents only.'))
       loadStatus()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     }
   }
-  const torrentOnly = settings?.defaultSources === 'torrent'
 
   async function setTorrentEnabled(v: boolean) {
     try {
       const saved = await api.putSettings({ torrentEnabled: v })
       setSettings(saved)
-      toast.success(v ? 'Torrent client turned on.' : 'Torrent client turned off.')
+      toast.success(v ? t('Torrent client turned on.') : t('Torrent client turned off.'))
       loadStatus()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
+  // The Usenet and torrent switches: each turns one downloader on or off.
+  // At least one stays on, because with both off nothing could download.
+  async function setSource(kind: 'usenet' | 'torrent', on: boolean) {
+    const torrentNow = settings?.defaultSources !== 'usenet' && settings?.torrentEnabled !== false
+    const usenetNow = settings?.defaultSources !== 'torrent'
+    const usenet = kind === 'usenet' ? on : usenetNow
+    const torrent = kind === 'torrent' ? on : torrentNow
+    if (!usenet && !torrent) {
+      toast.error(t('Keep at least one of Usenet and torrents on, or nothing could download.'))
+      return
+    }
+    await chooseSources(usenet && torrent ? 'both' : usenet ? 'usenet' : 'torrent')
+  }
+  return { status, settings, loadStatus, loadSettings, chooseSources, setTorrentEnabled, setSource }
+}
+
+// Settings > Downloading > Download rules: the rules that apply to Usenet and
+// torrents alike.
+export default function DownloadRulesSettings() {
+  const { settings, loadSettings, setTorrentEnabled } = useDownloadsState()
   return (
     <div className="settings-stack">
       <div className="half-cols span-all">
       <fieldset className="group folders">
         <legend>
-          <Icon name="download" size={14} /> Where to download from
+          <Icon name="download" size={14} /> <TipLabel help="downloads#the-downloading-pages">{t('Where to download from')}</TipLabel>
         </legend>
         <DefaultSourcesCard
           key={settings?.defaultSources ?? 'loading'}
@@ -76,106 +100,139 @@ export default function DownloadSettings() {
       </fieldset>
       <fieldset className="group folders">
         <legend>
-          <Icon name="list" size={14} /> Downloads at the same time
+          <Icon name="list" size={14} /> <TipLabel help="downloads#downloads-at-the-same-time-the-download-line">{t('Downloads at the same time')}</TipLabel>
         </legend>
         <DownloadsAtOnceCard />
       </fieldset>
       <fieldset className="group folders">
         <legend>
-          <Icon name="download" size={14} /> Speed and space
+          <Icon name="download" size={14} /> <TipLabel help="downloads#speed-and-space">{t('Speed, hours and free space')}</TipLabel>
         </legend>
         <SpeedAndSpaceCard />
       </fieldset>
+      <fieldset className="group folders">
+        <legend>
+          <Icon name="shield" size={14} /> <TipLabel help="downloads#checks-on-releases">{t('Checks on releases')}</TipLabel>
+        </legend>
+        <DownloadChecksCard />
+      </fieldset>
       </div>
+    </div>
+  )
+}
 
-      <div className="half-cols span-all">
-      <fieldset className={`group usenet${torrentOnly ? ' section-off' : ''}`}>
+// Settings > Downloading > Usenet: the provider login and the built-in downloader.
+export function UsenetSettings() {
+  const { status, settings, loadStatus, setSource } = useDownloadsState()
+  const torrentOnly = settings?.defaultSources === 'torrent'
+  return (
+    <div className="settings-stack">
+      <fieldset className={`group usenet span-all${torrentOnly ? ' section-off' : ''}`}>
         <legend>
           <Icon name="server" size={14} /> Usenet (NZB)
         </legend>
-        {torrentOnly && (
-          <SectionOffNotice
-            title="Usenet is not in use"
-            text="You chose torrents only, so Usenet is skipped."
-            actions={[
-              ['Use Usenet too', () => void useSources('both')],
-              ['Usenet only', () => void useSources('usenet')],
-            ]}
-          />
-        )}
-        <div className="stack-cols section-body">
+        <Switch
+          checked={!torrentOnly}
+          onChange={(v) => void setSource('usenet', v)}
+          label={t('Download from Usenet')}
+          description={t('Turn it off if you only use torrents.')}
+          showState
+        />
+        <div className="half-cols section-body" style={{ marginTop: 14 }}>
+          <div className="col-stack">
           <section className="card">
             <h2>
-              Downloader <span className="badge downloaded">built in</span>{' '}
-              {status && <span className={`badge ${status.usenet.ready ? 'downloaded' : 'missing'}`}>{status.usenet.ready ? 'ready' : 'needs your provider'}</span>}
+              <TipLabel help="downloads#usenet-connections">{t('Downloader')}</TipLabel> <span className="badge downloaded">{t('built in')}</span>{' '}
+              {status && <span className={`badge ${status.usenet.ready ? 'downloaded' : 'missing'}`}>{status.usenet.ready ? t('ready') : t('needs your provider')}</span>}
             </h2>
             <p style={{ color: 'var(--text-dim)' }}>
-              Built in, so there's no SABnzbd or NZBGet to set up. It only needs your Usenet provider's login{status && !status.usenet.ready ? ', which you add on the right.' : '.'}
+              {status && !status.usenet.ready
+                ? t("Built in, so there's no SABnzbd or NZBGet to set up. It only needs your Usenet provider's login, which you add in the next card.")
+                : t("Built in, so there's no SABnzbd or NZBGet to set up. It only needs your Usenet provider's login.")}
             </p>
           </section>
+          <UsenetRetentionCard />
+          </div>
           <UsenetServersSection onChange={loadStatus} />
         </div>
       </fieldset>
+    </div>
+  )
+}
 
-      <fieldset className={`group torrent${torrentOff ? ' disabled section-off' : ''}`}>
+// Settings > Downloading > Torrents: everything about downloading torrents.
+// The VPN and proxy have their own page next to this one.
+export function TorrentSettings() {
+  const { status, settings, setSource } = useDownloadsState()
+  const usenetOnly = settings?.defaultSources === 'usenet'
+  const torrentEnabled = settings?.torrentEnabled !== false && !usenetOnly
+  const torrentOff = !torrentEnabled
+  return (
+    <div className="settings-stack">
+      <fieldset className={`group torrent span-all${torrentOff ? ' disabled section-off' : ''}`}>
         <legend>
-          <Icon name="magnet" size={14} /> Torrents
+          <Icon name="magnet" size={14} /> {t('Torrents')}
         </legend>
-        {torrentOff && (
-          <SectionOffNotice
-            title="Torrents are switched off"
-            text={usenetOnly ? 'You chose Usenet only, so torrents are skipped.' : 'The torrent client is stopped.'}
-            actions={[
-              ['Use torrents too', () => void useSources('both')],
-              ['Torrents only', () => void useSources('torrent')],
-            ]}
-          />
-        )}
         <div className="section-body">
         <Switch
           checked={torrentEnabled}
-          onChange={(v) => void setTorrentEnabled(v)}
-          label="Use the built-in torrent client"
-          description={usenetOnly ? 'Off because you chose Usenet only.' : 'Turn it off if you only use Usenet.'}
+          onChange={(v) => void setSource('torrent', v)}
+          label={t('Download from torrents')}
+          description={t('Turn it off if you only use Usenet.')}
           showState
         />
         <fieldset disabled={torrentOff} className="plain-fieldset">
-          <div className="stack-cols" style={{ marginTop: 14 }}>
+          <div className="half-cols" style={{ marginTop: 14 }}>
+            <div className="col-stack">
             <section className="card">
               <h2>
-                Client <span className="badge downloaded">built in</span>{' '}
+                {t('Client')} <span className="badge downloaded">{t('built in')}</span>{' '}
                 {status && (
                   <span className={`badge ${torrentOff ? '' : status.torrent.ready ? 'downloaded' : 'missing'}`}>
-                    {torrentOff ? 'off' : status.torrent.ready ? 'ready' : 'waiting for the VPN'}
+                    {torrentOff ? t('off') : status.torrent.ready ? t('ready') : t('waiting for the VPN')}
                   </span>
                 )}
               </h2>
               <p style={{ color: 'var(--text-dim)' }}>
-                Built in too, so there's nothing to install and no login. Torrents come from the indexers you add under Settings &gt; Indexers &amp; Search.
+                {t("Built in too, so there's nothing to install and no login. Torrents come from the indexers you add under Settings > Indexers & Search.")}
                 {status?.torrent.vpnRequired && (
                   <>
                     {' '}
-                    The VPN kill switch is on, so torrents only run while a VPN is connected ({status.torrent.vpnConnected ? 'connected now' : 'not connected'}). <Link to="../vpn">VPN settings</Link>
+                    {status.torrent.vpnConnected
+                      ? t('The VPN kill switch is on, so torrents only run while a VPN is connected (connected now).')
+                      : t('The VPN kill switch is on, so torrents only run while a VPN is connected (not connected).')}{' '}
+                    <Link to="../vpn">{t('VPN settings')}</Link>
                   </>
                 )}
                 {status?.torrent.blockedByVpn && !status.torrent.vpnRequired && (
                   <>
                     {' '}
-                    Your VPN is on but not connected, so torrents wait for it. <Link to="../vpn">VPN settings</Link>
+                    {t('Your VPN is on but not connected, so torrents wait for it.')} <Link to="../vpn">{t('VPN settings')}</Link>
                   </>
                 )}
               </p>
               {status && status.torrent.vpnState === 'off' && !status.torrent.vpnRequired && !torrentOff && (
                 <div className="notice notice-warn">
-                  <strong>Use a VPN for torrents.</strong> Without one, everyone in the swarm can see your home IP address. <Link to="../vpn">Set up a VPN</Link>
+                  <strong>{t('Use a VPN for torrents.')}</strong> {t('Without one, everyone in the swarm can see your home IP address.')} <Link to="../vpn">{t('Set up a VPN')}</Link>
                 </div>
               )}
             </section>
             <TorrentSection status={status?.torrent ?? null} />
+            <StalledTorrentCard />
+            </div>
+            <div className="col-stack">
+            <section className="card">
+              <h2><TipLabel help="downloads#controls-of-the-built-in-torrent-client">{t('Torrent options')}</TipLabel></h2>
+              <TorrentOptionsPanel variant="settings" listenPort={status?.torrent.listenPort ?? 58264} />
+            </section>
+            </div>
           </div>
         </fieldset>
         </div>
       </fieldset>
+      <div className="half-cols span-all">
+        <DebridCard />
+        <DownloadClientCard />
       </div>
     </div>
   )
@@ -187,19 +244,24 @@ function DefaultSourcesCard({ onChanged }: { onChanged: (value: string) => void 
   const sources = useAutosaveSetting<string>(
     (s) => s.defaultSources ?? 'both',
     (v) => ({ defaultSources: v as 'both' | 'usenet' | 'torrent' }),
-    (saved) => `Saved: new titles download from ${saved === 'both' ? 'Usenet and torrents' : saved === 'usenet' ? 'Usenet only' : 'torrents only'}.`,
+    (saved) =>
+      saved === 'both'
+        ? t('Saved: new titles download from Usenet and torrents.')
+        : saved === 'usenet'
+          ? t('Saved: new titles download from Usenet only.')
+          : t('Saved: new titles download from torrents only.'),
     'both',
   )
   return (
     <div>
       <p style={{ color: 'var(--text-dim)', marginTop: 0 }}>
-        Used for every movie and show unless you change it on the title. Usenet wins when both are equally good.
+        {t('Used for every movie and show unless you change it on the title. Usenet wins when both are equally good.')}
       </p>
-      <div className="seg" role="radiogroup" aria-label="Default downloaders">
+      <div className="seg" role="radiogroup" aria-label={t('Default downloaders')}>
         {[
-          ['both', 'Usenet and torrents'],
-          ['usenet', 'Usenet only'],
-          ['torrent', 'Torrents only'],
+          ['both', t('Usenet and torrents')],
+          ['usenet', t('Usenet only')],
+          ['torrent', t('Torrents only')],
         ].map(([value, label]) => (
           <button
             key={value}
@@ -224,15 +286,15 @@ function DownloadsAtOnceCard() {
   const atOnce = useAutosaveSetting<number>(
     (s) => s.downloadsAtOnce ?? 1,
     (v) => ({ downloadsAtOnce: v }),
-    (saved) => (saved === 1 ? 'Saved: one download at a time.' : `Saved: up to ${saved} downloads at the same time.`),
+    (saved) => (saved === 1 ? t('Saved: one download at a time.') : t('Saved: up to {n} downloads at the same time.', { n: saved })),
     1,
   )
   return (
     <div>
       <p style={{ color: 'var(--text-dim)', marginTop: 0 }}>
-        Usenet and torrents share this number. The rest wait in line.
+        {t('Usenet and torrents share this number. The rest wait in line.')}
       </p>
-      <div className="seg" role="radiogroup" aria-label="Downloads at the same time">
+      <div className="seg" role="radiogroup" aria-label={t('Downloads at the same time')}>
         {[1, 2, 3, 4, 5].map((n) => (
           <button key={n} role="radio" aria-checked={atOnce.value === n} className={atOnce.value === n ? 'active' : ''} disabled={!atOnce.loaded || atOnce.saving} onClick={() => void atOnce.change(n)}>
             {n}
@@ -245,6 +307,7 @@ function DownloadsAtOnceCard() {
 
 const SPEEDS = [0, 1, 2, 5, 10, 20, 50, 100]
 const FREE = [0, 2, 5, 10, 20, 50]
+const STALL_HOURS = [1, 2, 3, 6, 12, 24, 48, 72, 0]
 const HOURS = Array.from({ length: 24 }, (_, h) => h)
 
 // A download speed limit (all day, or only between two hours) and how much
@@ -253,25 +316,25 @@ function SpeedAndSpaceCard() {
   const limit = useAutosaveSetting<number>(
     (s) => s.speedLimitMB ?? 0,
     (v) => ({ speedLimitMB: v }),
-    (v) => (v === 0 ? 'Saved: no speed limit.' : `Saved: downloads are limited to ${v} MB/s.`),
+    (v) => (v === 0 ? t('Saved: no speed limit.') : t('Saved: downloads are limited to {n} MB/s.', { n: v })),
     0,
   )
   const hours = useAutosaveSetting<string>(
     (s) => s.speedLimitHours ?? '',
     (v) => ({ speedLimitHours: v }),
-    (v) => (v === '' ? 'Saved: the limit applies all day.' : `Saved: the limit applies from ${v.split('-')[0]}:00 to ${v.split('-')[1]}:00.`),
+    (v) => (v === '' ? t('Saved: the limit applies all day.') : t('Saved: the limit applies from {from}:00 to {to}:00.', { from: v.split('-')[0], to: v.split('-')[1] })),
     '',
   )
   const free = useAutosaveSetting<number>(
     (s) => s.minFreeGB ?? 5,
     (v) => ({ minFreeGB: v }),
-    (v) => (v === 0 ? 'Saved: downloads start whatever the free space.' : `Saved: no new download starts with less than ${v} GB free.`),
+    (v) => (v === 0 ? t('Saved: downloads start whatever the free space.') : t('Saved: no new download starts with less than {n} GB free.', { n: v })),
     5,
   )
   const dlWindow = useAutosaveSetting<string>(
     (s) => s.downloadHours ?? '',
     (v) => ({ downloadHours: v }),
-    (v) => (v === '' ? 'Saved: downloads start at any time.' : `Saved: new downloads start from ${v.split('-')[0]}:00 to ${v.split('-')[1]}:00.`),
+    (v) => (v === '' ? t('Saved: downloads start at any time.') : t('Saved: new downloads start from {from}:00 to {to}:00.', { from: v.split('-')[0], to: v.split('-')[1] })),
     '',
   )
   const [from, to] = hours.value ? hours.value.split('-').map(Number) : [8, 23]
@@ -280,96 +343,163 @@ function SpeedAndSpaceCard() {
   return (
     <div>
       <label className="inline-field">
-        Limit download speed to
-        <select value={limit.value} disabled={busy} onChange={(e) => void limit.change(Number(e.target.value))}>
-          {SPEEDS.map((n) => (
-            <option key={n} value={n}>
-              {n === 0 ? 'no limit' : `${n} MB/s`}
-            </option>
-          ))}
-        </select>
+        {tx('Limit download speed to {speed}', {
+          speed: (
+            <span className="tip-last">
+              <select value={limit.value} disabled={busy} onChange={(e) => void limit.change(Number(e.target.value))}>
+                {SPEEDS.map((n) => (
+                  <option key={n} value={n}>
+                    {n === 0 ? t('no limit') : `${n} MB/s`}
+                  </option>
+                ))}
+              </select>
+              <InfoTip text={t('Caps Usenet and torrents together. Pick hours below to apply it only part of the day, so downloads run at full speed at night.')} learnMore="downloads#speed-and-space" />
+            </span>
+          ),
+        })}
       </label>
       {limit.value > 0 && (
         <div className="inline-field" style={{ marginTop: 10 }}>
           <label className="inline-field">
             <input type="checkbox" checked={hours.value !== ''} disabled={busy} onChange={(e) => void hours.change(e.target.checked ? '8-23' : '')} />
-            Only from
+            {tx('Only from {from} to {to}', {
+              from: (
+                <select aria-label={t('From')} value={from} disabled={busy || hours.value === ''} onChange={(e) => void hours.change(`${e.target.value}-${to === Number(e.target.value) ? (to + 1) % 24 : to}`)}>
+                  {HOURS.map((h) => (
+                    <option key={h} value={h}>
+                      {h}:00
+                    </option>
+                  ))}
+                </select>
+              ),
+              to: (
+                <select aria-label={t('To')} value={to} disabled={busy || hours.value === ''} onChange={(e) => void hours.change(`${from === Number(e.target.value) ? (from + 23) % 24 : from}-${e.target.value}`)}>
+                  {HOURS.map((h) => (
+                    <option key={h} value={h}>
+                      {h}:00
+                    </option>
+                  ))}
+                </select>
+              ),
+            })}
           </label>
-          <select aria-label="From" value={from} disabled={busy || hours.value === ''} onChange={(e) => void hours.change(`${e.target.value}-${to === Number(e.target.value) ? (to + 1) % 24 : to}`)}>
-            {HOURS.map((h) => (
-              <option key={h} value={h}>
-                {h}:00
-              </option>
-            ))}
-          </select>
-          to
-          <select aria-label="To" value={to} disabled={busy || hours.value === ''} onChange={(e) => void hours.change(`${from === Number(e.target.value) ? (from + 23) % 24 : from}-${e.target.value}`)}>
-            {HOURS.map((h) => (
-              <option key={h} value={h}>
-                {h}:00
-              </option>
-            ))}
-          </select>
         </div>
       )}
-      <p className="field-hint">Usenet and torrents share the limit. Outside the hours you choose, downloads run at full speed.</p>
+      <p className="field-hint">{t('Usenet and torrents share the limit. Outside the hours you choose, downloads run at full speed.')}</p>
       <div className="inline-field" style={{ marginTop: 14 }}>
         <label className="inline-field">
           <input type="checkbox" checked={dlWindow.value !== ''} disabled={busy} onChange={(e) => void dlWindow.change(e.target.checked ? '1-7' : '')} />
-          Only start downloads from
+          {tx('Only start downloads from {from} to {to}', {
+            from: (
+              <select aria-label={t('Downloads start from')} value={wFrom} disabled={busy || dlWindow.value === ''} onChange={(e) => void dlWindow.change(`${e.target.value}-${wTo === Number(e.target.value) ? (wTo + 1) % 24 : wTo}`)}>
+                {HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    {h}:00
+                  </option>
+                ))}
+              </select>
+            ),
+            to: (
+              <select aria-label={t('Downloads start until')} value={wTo} disabled={busy || dlWindow.value === ''} onChange={(e) => void dlWindow.change(`${wFrom === Number(e.target.value) ? (wFrom + 23) % 24 : wFrom}-${e.target.value}`)}>
+                {HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    {h}:00
+                  </option>
+                ))}
+              </select>
+            ),
+          })}
         </label>
-        <select aria-label="Downloads start from" value={wFrom} disabled={busy || dlWindow.value === ''} onChange={(e) => void dlWindow.change(`${e.target.value}-${wTo === Number(e.target.value) ? (wTo + 1) % 24 : wTo}`)}>
-          {HOURS.map((h) => (
-            <option key={h} value={h}>
-              {h}:00
-            </option>
-          ))}
-        </select>
-        to
-        <select aria-label="Downloads start until" value={wTo} disabled={busy || dlWindow.value === ''} onChange={(e) => void dlWindow.change(`${wFrom === Number(e.target.value) ? (wFrom + 23) % 24 : wFrom}-${e.target.value}`)}>
-          {HOURS.map((h) => (
-            <option key={h} value={h}>
-              {h}:00
-            </option>
-          ))}
-        </select>
       </div>
-      <p className="field-hint">Outside these hours new downloads wait in line and start when the time comes, for example to download only at night. A download that is already running finishes.</p>
+      <p className="field-hint">{t('Outside these hours new downloads wait in line and start when the time comes, for example to download only at night. A download that is already running finishes.')}</p>
       <label className="inline-field" style={{ marginTop: 14 }}>
-        Keep at least
-        <select value={free.value} disabled={busy} onChange={(e) => void free.change(Number(e.target.value))}>
-          {FREE.map((n) => (
-            <option key={n} value={n}>
-              {n === 0 ? 'no minimum' : `${n} GB`}
-            </option>
-          ))}
-        </select>
-        free in the downloads folder
+        {tx('Keep at least {size} free in the downloads folder', {
+          size: (
+            <select value={free.value} disabled={busy} onChange={(e) => void free.change(Number(e.target.value))}>
+              {FREE.map((n) => (
+                <option key={n} value={n}>
+                  {n === 0 ? t('no minimum') : `${n} GB`}
+                </option>
+              ))}
+            </select>
+          ),
+        })}
       </label>
-      <p className="field-hint">With less free space than this, no new download starts. They wait and start by themselves once there is room.</p>
+      <p className="field-hint">{t('With less free space than this, no new download starts. They wait and start by themselves once there is room.')}</p>
     </div>
   )
 }
 
-// Shown over a blurred Usenet or torrent section that is not in use.
-function SectionOffNotice({ title, text, actions }: { title: string; text: string; actions: [string, () => void][] }) {
+// How long a torrent may get no data before Mediarium gives up on it.
+function StalledTorrentCard() {
+  const stall = useAutosaveSetting<number>(
+    (s) => s.torrentStallHours ?? -1,
+    (v) => ({ torrentStallHours: v }),
+    (v) => (v < 0 ? t('Saved: a torrent is given up on after the usual time.') : v === 0 ? t('Saved: Mediarium never gives up on a torrent that gets no data.') : t('Saved: a torrent that gets no data for {n} hours is given up on.', { n: v })),
+    -1,
+  )
   return (
-    <div className="section-off-notice" role="note">
-      <strong>{title}</strong>
-      <p>{text}</p>
-      <div className="row-actions">
-        {actions.map(([label, run], i) => (
-          <button key={label} className={i === 0 ? 'primary' : ''} onClick={run}>
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
+    <section className="card">
+      <h2><TipLabel help="downloads#stalled-torrents">{t('Stalled torrents')}</TipLabel></h2>
+      <label className="inline-field">
+        {tx('Give up on a torrent that gets no data for {time}', {
+          time: (
+            <select value={stall.value} disabled={stall.saving} onChange={(e) => void stall.change(Number(e.target.value))}>
+              <option value={-1}>{t('the usual time (2 hours, 6 with a download client)')}</option>
+              {STALL_HOURS.map((n) => (
+                <option key={n} value={n}>
+                  {n === 0 ? t('never') : n === 1 ? t('1 hour') : t('{n} hours', { n })}
+                </option>
+              ))}
+            </select>
+          ),
+        })}
+      </label>
+      <p className="field-hint">{t('A torrent that has got nothing for that long is removed, its release goes on the blocklist and Mediarium searches for another one.')}</p>
+    </section>
   )
 }
 
 function serverLabel(s: UsenetServer): string {
-  return s.priority === 0 ? 'Primary' : `Backup ${s.priority}`
+  return s.priority === 0 ? t('Primary') : t('Backup {n}', { n: s.priority })
+}
+
+// "Find the right number": opens connections one by one to see how many the
+// provider lets this login have, and offers to set that number.
+function ConnectionProbe({ server, onApply }: { server: UsenetServer; onApply: (n: number) => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<{ accepted: number; refused: boolean; message: string } | null>(null)
+  async function run() {
+    setBusy(true)
+    setError('')
+    setResult(null)
+    try {
+      setResult(await api.probeUsenetServer(server.id))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="server-probe">
+      <button onClick={() => void run()} disabled={busy} title={t('Opens connections one by one to see how many your provider allows at once')}>
+        {busy ? t('Trying connections…') : t('Find the right number')}
+      </button>
+      {error && <span className="error-text">{error}</span>}
+      {result && (
+        <span className="probe-result">
+          {result.message}
+          {result.refused && result.accepted > 0 && result.accepted !== server.connections && (
+            <button className="primary btn-sm" onClick={() => void onApply(result.accepted)}>
+              {t('Use {n}', { n: result.accepted })}
+            </button>
+          )}
+        </span>
+      )}
+    </div>
+  )
 }
 
 function UsenetServersSection({ onChange }: { onChange: () => void }) {
@@ -412,10 +542,20 @@ function UsenetServersSection({ onChange }: { onChange: () => void }) {
     }
   }
 
+  async function setConnections(s: UsenetServer, n: number) {
+    try {
+      await api.updateUsenetServer(s.id, { ...s, password: '', connections: n })
+      toast.success(t('{name} now uses {n} connections.', { name: s.name, n }))
+      reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   async function toggle(s: UsenetServer) {
     try {
       await api.updateUsenetServer(s.id, { ...s, password: '', enabled: !s.enabled })
-      toast.success(s.enabled ? `${s.name} disabled.` : `${s.name} enabled.`)
+      toast.success(s.enabled ? t('{name} disabled.', { name: s.name }) : t('{name} enabled.', { name: s.name }))
       reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -423,7 +563,7 @@ function UsenetServersSection({ onChange }: { onChange: () => void }) {
   }
 
   async function remove(s: UsenetServer) {
-    if (!(await confirm({ title: `Remove the server "${s.name}"?`, body: <p>Downloads stop using it. You can add it again later.</p>, confirmLabel: 'Remove server', danger: true }))) return
+    if (!(await confirm({ title: t('Remove the server "{name}"?', { name: s.name }), body: <p>{t('Downloads stop using it. You can add it again later.')}</p>, confirmLabel: t('Remove server'), danger: true }))) return
     try {
       await api.deleteUsenetServer(s.id)
       reload()
@@ -448,15 +588,15 @@ function UsenetServersSection({ onChange }: { onChange: () => void }) {
 
   return (
     <section className="card">
-      <h2>Your Usenet provider</h2>
+      <h2><TipLabel help="downloads#usenet-connections">{t('Your Usenet provider')}</TipLabel></h2>
       <p style={{ color: 'var(--text-dim)' }}>
-        The login your Usenet provider gave you. Add a second provider as a <em>backup</em>, ideally on a different backbone, to fill in articles the first one is missing.
+        {tx('The login your Usenet provider gave you. Add a second provider as a {backup}, ideally on a different backbone, to fill in articles the first one is missing.', { backup: <em>{t('backup')}</em> })}
       </p>
       {error && <p className="error-text">{error}</p>}
 
       {servers !== null && servers.length === 0 && !editing && (
         <p>
-          <strong>No Usenet provider yet.</strong> NZB downloads need one, torrents don't.
+          <strong>{t('No Usenet provider yet.')}</strong> {t("NZB downloads need one, torrents don't.")}
         </p>
       )}
       {servers !== null && servers.length > 0 && (
@@ -467,17 +607,18 @@ function UsenetServersSection({ onChange }: { onChange: () => void }) {
                 <div className="server-name">
                   <strong>{s.name}</strong>
                   <span className={`badge ${s.priority === 0 ? 'downloaded' : ''}`}>{serverLabel(s)}</span>
-                  {!s.enabled && <span className="badge">disabled</span>}
+                  {!s.enabled && <span className="badge">{t('disabled')}</span>}
                 </div>
                 <div className="server-host">
-                  {s.host}:{s.port} {s.useSsl ? '(SSL)' : '(no SSL)'} · {s.connections} {s.connections === 1 ? 'connection' : 'connections'}
+                  {s.host}:{s.port} {s.useSsl ? '(SSL)' : t('(no SSL)')} · {plural(s.connections, '{n} connection', '{n} connections')}
                 </div>
+                {s.enabled && <ConnectionProbe server={s} onApply={(n) => setConnections(s, n)} />}
               </div>
               <div className="server-actions">
                 <TestButton run={() => api.testUsenetServer(s.id)} />
-                <button onClick={() => setEditing(edit(s))}>Edit</button>
-                <button onClick={() => toggle(s)}>{s.enabled ? 'Disable' : 'Enable'}</button>
-                <button onClick={() => remove(s)}>Remove</button>
+                <button onClick={() => setEditing(edit(s))}>{t('Edit')}</button>
+                <button onClick={() => toggle(s)}>{s.enabled ? t('Disable') : t('Enable')}</button>
+                <button onClick={() => remove(s)}>{t('Remove')}</button>
               </div>
             </div>
           ))}
@@ -486,18 +627,18 @@ function UsenetServersSection({ onChange }: { onChange: () => void }) {
 
       {editing ? (
         <div>
-          <h3 style={{ marginTop: 0 }}>{editing.id !== undefined ? `Edit ${editing.name || 'server'}` : 'Add your Usenet provider'}</h3>
+          <h3 style={{ marginTop: 0 }}>{editing.id !== undefined ? (editing.name ? t('Edit {name}', { name: editing.name }) : t('Edit server')) : t('Add your Usenet provider')}</h3>
           <UsenetServerForm
             key={editing.id ?? 'new'}
             initial={editing}
-            submitLabel={editing.id !== undefined ? 'Save server' : 'Add server'}
+            submitLabel={editing.id !== undefined ? t('Save server') : t('Add server')}
             onSubmit={save}
             onCancel={() => setEditing(null)}
           />
         </div>
       ) : (
         <button className="primary" onClick={() => setEditing(blankServer(servers && servers.length > 0 ? Math.max(...servers.map((s) => s.priority)) + 1 : 0))}>
-          {servers && servers.length > 0 ? 'Add a backup provider…' : 'Add your Usenet provider…'}
+          {servers && servers.length > 0 ? t('Add a backup provider…') : t('Add your Usenet provider…')}
         </button>
       )}
     </section>

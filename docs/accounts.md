@@ -2,10 +2,11 @@
 
 Give the people you live with their own login. They can find and add movies and shows without being able to change how Mediarium is set up.
 
-There are two roles:
+There are three roles:
 
 - **Admin.** Can do everything. The account made in the setup wizard is an admin.
 - **Basic user.** Can find, add and follow titles, but can't see or change settings, indexers, download servers, the VPN, notifications, backups or other accounts. (The API calls this role `member`.)
+- **Viewer.** Can look and play, never change anything. See [Viewers](#viewers). (The API calls this role `viewer`.)
 
 Accounts that existed before roles were added became admins, so nobody lost access.
 
@@ -59,24 +60,57 @@ A basic user without **Add titles themselves** still sees Discover and the searc
 - New requests can reach you by notification: tick **Requests** on a notification under Settings > Connections > Notifications.
 - Asking twice for the same title, or for something already in the library, is refused with a message.
 
+### The request portal settings
+
+Under **Settings > Account & Access > Requests and reports**, the **Requests** card holds four things. All of them are off or unlimited until you change them.
+
+**Tell people when their request is answered.** Switch it on and the person who asked gets a message when their request is approved, declined (with your note) and when the title is ready to watch in the library, and when a problem they reported is answered. Messages go:
+
+- by **email**, to the address on their account, through the email server of an email notification you already set up under Settings > Connections > Notifications (the message keeps that notification's server and login and only changes who it goes to). Without an email notification, or without an address on the account, nothing is sent by email;
+- to the **phones and browsers** the person allowed notifications on, under **Your profile > Messages about your requests > Also send them to this device**. Push needs Mediarium opened over https (see [notifications.md](./notifications.md)).
+
+The card on someone's profile has a switch, **Send me these messages**, for people who don't want them. It shows only while the setting above is on. "Ready to watch" is noticed within about ten minutes of the first file arriving (for a show, its first episode). Requests approved before you switched messages on are not announced afterwards.
+
+**Limit requests.** Set how many requests each person may make over **the last day** or **the last week** (a sliding window, not a calendar day). Empty or 0 means no limit. Waiting and approved requests count; declined requests and requests taken back do not. Someone who is out of requests is told when a place frees up. Under the default limit, each person who has to ask has a menu: follow the default, **No limit**, or **A number of their own**. People see how many they have left at the top of **Activity > Requests**, for example "3 of 5 requests left this week". Admins are never limited, and neither is anyone who can add titles themselves (they don't make requests).
+
+**4K requests.** Switch on **Let people ask for a 4K copy** and choose the quality profile of that copy (the built-in **4K & over**, say). This uses [second copies](./library.md): you also need a folder for second copies under Settings > Library > Folders, for movies and for shows. The Add dialog of someone who has to ask then offers **Ask for a 4K copy as well**, and a title already in the library has an **Ask for a 4K copy** button on its page. The request shows a **4K** tag. When you approve it, the title is added the usual way if it is not in the library yet, and then a second copy in the 4K quality is added next to it and searched for. A title that is already in the library only gets the copy. A title whose own quality is already the 4K one doesn't need a copy, and one that has a 4K copy can't be asked for again.
+
+**Problem reports.** Switch on **Let people report a problem with a title**. Every account then has a **Report a problem** button on movie and show pages in the library: what is wrong (wrong file, no sound or wrong audio, bad subtitles, bad picture, something else), for a show which episode, and a few words. Reports are listed under **Activity > Reports**, which shows only when reports are on. Admins see everyone's with who reported them, answer with **Resolve** and an optional comment (the person is told, when messages are on), can **Reopen** or remove one, and are told of new ones through notifications that have **Requests** ticked. A person sees their own reports and your answers. The same person can't report the same thing twice while it is open, and has at most 20 open reports.
+
 ## What a basic user sees
 
-- Under **Settings** there are two pages: their own profile (name, email, password and API keys) and About and credits. Any other settings address lands on their profile. The profile menu in the top-right corner calls it **Your profile**.
+- Under **Settings** they have **General** (app language and light or dark), their own **Your profile**, **Security** (passkeys, two-step sign-in, API keys), **Linked services** (not for view-only accounts), Statistics and About and credits. Any other settings address lands on General. The profile menu in the top-right corner has **Your profile** and **App language**.
 - The **Library** has no Select, Import existing, Remove or quality-profile controls.
 - **Activity** shows the queue and history, with a Retry button on failed and stopped downloads. There's no Pause, Resume, Stop, Remove, Clear finished, Blocklist or conflict button, and no Blocklist tab. A download waiting for a decision about an existing file is listed as waiting for an administrator.
 - The **Dashboard** leaves out setup warnings, folder locations and links into settings.
 - On the Wanted tab of Upcoming they can get subtitles (when subtitles are switched on), but not mark them as not needed.
 
+## Viewers
+
+A viewer can open the library, Discover, the calendar and Activity, and play what is already there, but nothing they do changes anything. It is for someone you want to show the library to, or for a screen on the wall.
+
+- A viewer can't add or request titles, search for releases, retry or pause downloads, change monitoring or tags, or get subtitles. The buttons are hidden, and the server refuses the calls anyway ("This account can only look, not change anything.").
+- A viewer doesn't see the buttons for things that change something: asking for a 4K copy, reporting a problem, making a playlist or putting music on one, marking a title as not interested, and the ListenBrainz, e-reader and request message cards on the profile page. They can still open and play the playlists other people shared.
+- A viewer can't see settings, other accounts, API keys, the secret calendar address or the Plex watchlist connection, and can't make API keys.
+- A viewer can still change their own name, email and password, set up two-step sign-in and passkeys, and keep their place in a book.
+- This holds for every route, in one place: the route table refuses any call that changes something before the handler runs. A test walks every route of the server to prove it. An API key made by a viewer follows the role, so it can't change anything either.
+
+Pick **Viewer** when you add an account, or change the role of an existing one under **Edit**. Single sign-on and directory sign-in can make new accounts viewers too (see [Ways to sign in](#ways-to-sign-in)).
+
+## Read-only API keys
+
+When you make an API key under **Settings > Account & Access > Security > API keys**, tick **Read-only**. A read-only key can only be used for `GET` requests; every other request is refused with `403` ("This API key is read-only"), including on the Radarr, Sonarr and Lidarr style endpoints. It is meant for dashboards and monitoring scripts, such as Homarr or a status page, that only need to look. A read-only key of an admin can still read what an admin can read, so keep it as private as any other key. It is marked "read-only" in the key list. You can't change an existing key into a read-only one: make a new one and revoke the old one.
+
 ## The account list
 
-Admins manage accounts in **Settings > Accounts** (the profile menu has a shortcut). The page shows your own details and Change password side by side, then the **Accounts** list, then **Add an account**, and your API keys at the bottom. Each account has a card with its name and username, an **Admin** or **Basic user** badge, its email address and when it last signed in ("Signed in 3 days ago", "Never signed in"). Your own card is marked **You**.
+Everyone has their own pages under **Settings > Account & Access** (the profile menu has a shortcut): **Your profile** (name, email and Change password side by side), **Security** (passkeys, two-step sign-in and your API keys) and **Linked services** (the Plex watchlist, ListenBrainz and your e-reader). The language of the app is under **Settings > General**. Admins also have **Settings > Account & Access > All accounts** (the **Accounts** list, then **Add an account**), **Requests and reports** and **Ways to sign in** (including sign-in through your reverse proxy). Each account has a card with its name and username, an **Admin** or **Basic user** badge, its email address and when it last signed in ("Signed in 3 days ago", "Never signed in"). Your own card is marked **You**.
 
 **Revoke** stops an API key working straight away. A revoked key stays in the list, so you can see it was there. Press **Delete** next to a revoked key to take it off the list for good. Scripts: `DELETE /api/auth/api-keys/{id}` revokes, and `DELETE /api/auth/api-keys/{id}?remove=true` deletes a key that is already revoked (an active key answers 409).
 
 ## Adding a family account
 
 1. Sign in as an admin.
-2. Open **Settings > Accounts** and fill in **Add an account**: a username (3 to 32 characters: letters, numbers, dots, dashes and underscores), optionally a name and email address, a password (8 to 72 characters; the eye button shows what you typed), and a role. **Basic user** can find, add and download movies and shows. **Admin** has full control.
+2. Open **Settings > Account & Access > All accounts** and fill in **Add an account**: a username (3 to 32 characters: letters, numbers, dots, dashes and underscores), optionally a name and email address, a password (8 to 72 characters; the eye button shows what you typed), and a role. **Basic user** can find, add and download movies and shows. **Admin** has full control.
 3. Tell them the username and password. They can change the password from their profile.
 
 **What is checked.** Every account form points out a problem under the field when you leave it, or when you press the button, and nothing is sent until it's fixed. The server enforces the same rules, so they hold for scripts too: usernames of 3 to 32 characters with only letters, numbers, dots, dashes and underscores; an optional email address that looks like `name@example.com`; a name of up to 100 characters; passwords of 8 to 72 characters. Only a username you change is checked, so an older username with other characters keeps working.
@@ -87,7 +121,7 @@ The activity list says who added a title, for example "Night Harbour added to li
 
 An admin can do the following for any other account, using the buttons on its card:
 
-- **Edit**: change the name, email address or role. It applies straight away, including to that person's open sessions.
+- **Edit**: change the name, email address or role. It applies straight away, including to that person's open sessions. Tick **Turn this account off** to stop the account without deleting it: its open sessions end at once, its API keys stop working, and it can't sign in (a right password is told "This account is turned off"). Untick it to bring it back. Nothing it added is touched. The card shows an **Off** badge.
 - **Edit**, again: set a new password, for example when a basic user has forgotten theirs. That signs the account out everywhere. Leave the field empty to keep the current password. (Changing your own password from your profile also signs out every other browser, but not this one.)
 - **Remove**: delete the account, after a confirmation. Its sessions and API keys stop working at once. Titles it added stay in the library.
 
@@ -95,16 +129,145 @@ If something can't be done (the username is taken, or it would leave no admin), 
 
 Two rules stop you from locking yourself out:
 
-- There is always at least one admin. The last admin can't be deleted or made a basic user.
-- An admin can't delete their own account or remove their own admin role. Ask another admin, or make someone else an admin first. On your own card, Remove is greyed out and the role can't be changed.
+- There is always at least one admin who can sign in. The last one can't be deleted, turned off, or made a basic user or viewer.
+- An admin can't delete or turn off their own account, or remove their own admin role. Ask another admin, or make someone else an admin first. On your own card, Remove is greyed out and the role can't be changed.
+
+## Two-step sign-in
+
+Each person can add a second step to signing in: after the password, Mediarium asks for the six-digit code from an authenticator app on their phone (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden, Authy and the like). Someone who learns the password still can't get in without the phone.
+
+It is **off** until each person switches it on for themselves under **Settings > Account & Access > Security > Two-step sign-in**. Mediarium suggests it (on the dashboard and on the profile page) once it can be reached from outside your home: when a public address or sign-in through a proxy is set, or someone signed in from outside your home network in the last 30 days. It never forces it.
+
+Setting it up:
+
+1. Press **Set up two-step sign-in**.
+2. In your authenticator app, add an account and scan the QR code (or type in the key shown under it).
+3. Enter the six-digit code the app shows and press **Switch on**.
+4. Save the ten **recovery codes** that appear (Copy or Download). Each one signs you in once instead of an app code, for when the phone is lost. They are shown only this once; **New recovery codes** (with your password) makes a fresh set and stops the old ones.
+
+Signing in then takes the password and the code. **Can't use your app?** on that screen takes a recovery code instead. A code works once, and the phone's clock should be set automatically: a code is good for about a minute and a half.
+
+If someone loses their phone and their recovery codes, an administrator can press **Two-step off** on their card in the account list. If you are the only administrator, run this on the machine that runs Mediarium (swap 1000:1000 for your PUID:PGID):
+
+```bash
+docker exec -it -u 1000:1000 mediarium /app/app reset-two-step <username>
+```
+
+API keys and sign-in through a reverse proxy don't use two-step sign-in: a key is its own secret, and the proxy does its own sign-in.
 
 ## Signing in through your reverse proxy
 
 If a proxy such as Authelia or Authentik already asks everyone to log in, Mediarium can take the user name from it so nobody signs in twice. It is off by default and set under **Sign in through your reverse proxy** on this page, with the header name and your proxy's address. The names must match the accounts here. See [security.md](./security.md#sign-in-through-your-reverse-proxy).
 
+## Ways to sign in
+
+Besides the username and password of an account made here, there are three more ways in: **single sign-on** with an OpenID Connect provider, **directory sign-in** (LDAP or Active Directory) and **passkeys**. All of them are **off** until an administrator switches them on, under **Settings > Account & Access > All accounts**. Nothing changes for an existing install until then, and the password form stays where it is unless you turn it off yourself (see [Turning password sign-in off](#turning-password-sign-in-off)).
+
+Accounts that come from single sign-on or the directory have **no password here**. Mediarium never stores or sees the password of a directory account beyond the one moment it is checked. So while that way to sign in is switched off (or `MEDIARIUM_DISABLE_SSO` is set), those accounts can't sign in at all; they come back as soon as it is on again. These accounts show a **Single sign-on** or **Directory** badge in the account list. Their name and email are updated each time they sign in, they can't change a password or set up two-step sign-in here (the provider does that), and an admin can't set a password for them.
+
+### Single sign-on
+
+You can use any OpenID Connect provider: Authelia, Authentik, Keycloak, Pocket ID, Google and others. People press **Sign in with <name>** on the sign-in page, sign in at the provider, and come back signed in.
+
+1. **Set the address you open Mediarium at** under **Settings > General > Address of Mediarium** (for example `https://mediarium.example.com`). Mediarium builds the return address from it, never from what a browser sends. Without it single sign-on can't be switched on.
+2. **Add Mediarium to your provider** as a client (an "application"): type *confidential*, the authorization code flow, and the redirect address the card shows under **Redirect address to enter at the provider** (it ends in `/api/auth/oidc/callback`). Ask for the scopes `openid profile email`, and `groups` too if you want to use groups. Copy the client ID and the client secret.
+3. Open **Settings > Account & Access > Ways to sign in > Single sign-on (OpenID Connect)**. Fill in the name for the button, the provider's address (the *issuer*), the client ID and the secret. Press **Test the provider**: Mediarium reads the provider's setup and says what it found, then tick **Turn on single sign-on** and **Save**.
+
+The issuer has to be written exactly as the provider reports it, including a closing slash if there is one:
+
+| Provider | Issuer |
+|---|---|
+| Authelia | `https://auth.example.com` |
+| Authentik | `https://auth.example.com/application/o/<application-slug>/` (with the slash) |
+| Keycloak | `https://keycloak.example.com/realms/<realm>` |
+| Pocket ID | `https://id.example.com` |
+| Google | `https://accounts.google.com` |
+
+(Check yours against the "OpenID configuration" address of the provider: the `issuer` it lists is what goes here.)
+
+**What is checked on every sign-in.** The sign-in uses the authorization code flow with PKCE (S256). Mediarium makes a random `state` and a `nonce` for each sign-in, each good once and for ten minutes, and ties them to the browser that started the sign-in with a short-lived cookie, so a sign-in someone else started can't be finished in your browser. The ID token must be signed by the provider's own keys (found through its published key set), carry the issuer and audience Mediarium expects, not be expired, and carry the nonce. Anything else is refused and the person sees a short message on the sign-in page, never text from the provider.
+
+**Accounts.**
+
+- **Make an account the first time someone signs in** (off by default): the account gets the user name from the `preferred_username` claim (or the part of the email before the `@`), made to fit the rules. If another account already has that name, a number is added (`sam-2`): a new sign-in never takes over an existing account. **Role for new accounts** is Basic user or Viewer.
+- **Administrator group**: people in this group (in the `groups` claim) are admins, checked at every sign-in. Take someone out of the group and their next sign-in makes them a basic user again. The last admin who can sign in is never demoted this way.
+- **Only this group may sign in** and **Only these email domains** (for example `example.com`) limit who gets in at all, new accounts and returning ones alike. Use the domain list with a provider anyone can register at, such as Google.
+- Without **Make an account...**, only people who already have an account can sign in: the sign-in page says "there's no account for you here yet".
+- An account is tied to the provider's own id for the person (the issuer and the `sub` claim), never to the name or the email address, which can change hands. Moving to a different provider therefore makes new accounts.
+
+**Linking an existing account.** Two ways:
+
+- A person with a password here can open **Settings > Account & Access > Security** and press **Link to <name>**. After that, **Sign in with <name>** lands on their account, and their password keeps working. **Unlink** takes it away again.
+- **Link a first sign-in to an existing account with the same email address** (off by default): when the provider says the email address is verified, and exactly one account here has it, that account is linked. A sign-in with an unverified address is refused. An admin account is never linked this way, because whoever controls an email address at the provider would otherwise control an admin: an admin links their account from their own profile. Only turn this on if your provider checks email addresses.
+
+If something goes wrong the sign-in page tells you in a sentence, for example "That sign-in took too long, or was started in another browser" or "Your email address isn't verified". The Mediarium log has one line with the short reason (never a code, token or secret).
+
+### Directory sign-in (LDAP and Active Directory)
+
+People use the normal sign-in form with their directory user name and password. Mediarium looks the person up with a service account, then asks the directory to check the password by signing in as that person. The password is used once and dropped.
+
+Open **Settings > Account & Access > Ways to sign in > Directory sign-in** and fill in:
+
+- **Server address**: `ldaps://ldap.example.com:636` is best. For `ldap://` tick **StartTLS** so the connection is encrypted before any password is sent. Sending passwords without encryption has to be ticked on purpose and is not recommended. The server's certificate is checked. For a directory with its own certificate authority, paste that CA certificate under **Attribute names and the certificate**; there is also a box to skip the check, which you should not use.
+- **Base DN**: where people are, for example `ou=people,dc=example,dc=com`.
+- **Bind account (DN) and password**: the account that looks people up. Give it read-only access to the people only. The password is kept encrypted and is never shown again.
+- **User filter**: how a typed name finds one person; `{username}` stands for what was typed. To limit who may sign in, add conditions to it.
+
+| Directory | User filter | Attributes to change |
+|---|---|---|
+| OpenLDAP, LLDAP, GLAuth, FreeIPA | `(&(objectClass=person)(uid={username}))` | FreeIPA: id attribute `ipaUniqueID` |
+| Active Directory | `(&(objectClass=user)(sAMAccountName={username})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))` | user name `sAMAccountName`, name `displayName`, id `objectGUID` |
+
+Sign in by email as well as name with a filter such as `(&(objectClass=person)(|(uid={username})(mail={username})))`.
+
+- **Administrator group filter** (optional): a filter that finds the person's membership, where `{dn}` stands for the person. People it finds are admins, checked at every sign-in. For OpenLDAP: `(&(objectClass=groupOfNames)(cn=mediarium-admins)(member={dn}))`. For Active Directory, including nested groups: `(&(objectClass=group)(cn=Mediarium Admins)(member:1.2.840.113556.1.4.1941:={dn}))`.
+- **Make an account the first time someone signs in** and **Role for new accounts** work as for single sign-on.
+
+Press **Find this person** under **Try it** to check the setup before you switch it on: it connects, signs in the bind account, looks the person up and shows the DN, name, email, the id that will be used and whether they would be an admin. Add their password to check that as well. Nothing is saved and nobody is signed in. Switching it on needs a complete setup and a bind account the directory accepts.
+
+How it behaves:
+
+- A name that belongs to an account with a password here signs in with that password and never goes to the directory. A name nobody has here goes to the directory. A directory person can't take over a local account with the same name; they are told the name is taken.
+- The account is found by the directory's own id for the person (`entryUUID`, `objectGUID`...), so a rename in the directory is followed and an old name given to someone else doesn't reach the old person's account.
+- It has the same limits as a password sign-in: five wrong tries per address per 15 minutes, and 25 per user name from all addresses together. A wrong password and an unknown user look exactly the same. An empty password is refused before the directory is asked (some directories would otherwise treat it as a good anonymous sign-in).
+- What is typed is escaped before it goes into the search, so characters like `*`, `(`, `)` and `\` can't change what is searched for.
+- If the directory can't be reached the person is told so ("The directory couldn't be reached") and it doesn't count as a wrong password.
+- Every step has a time limit (ten seconds by default).
+
+**Keep in mind:** Mediarium only asks the directory when someone signs in. Taking a person out of the directory (or out of a group in the user filter) stops new sign-ins, but a session they already have lasts until it ends (up to 7 days). To cut it at once, turn their account off in Mediarium (**Edit > Turn this account off**).
+
+### Passkeys
+
+A passkey signs you in with your fingerprint, face or device PIN, with no password to type. It is a key pair kept in your phone, computer or security key; Mediarium keeps only the public half.
+
+- An admin switches passkeys on under **Ways to sign in**. They need the address you open Mediarium at (**Settings > General > Address of Mediarium**), starting with `https://` and with a host name, not an IP address. `http://localhost` works too, for testing. The browser ties every passkey to that host name and only offers it on pages opened at that address: opened at a different address, passkeys don't show up.
+- Each person adds passkeys on **Settings > Account & Access > Security > Passkeys**: **Add a passkey**, confirm with your password, then confirm on your device. Add one for each device, name them, rename them, and remove one when you lose a device. An account can have up to 20.
+- On the sign-in page **Sign in with a passkey** needs no user name: the browser shows the passkeys it has for Mediarium.
+- A passkey always checks the person too (PIN, fingerprint or face), so a passkey sign-in counts as a second step and doesn't ask for an authenticator code.
+- A passkey keeps a counter that goes up with every use. If a sign-in comes in with a counter that did not go up, the passkey may have been copied, and the sign-in is refused. Many passkeys that sync between devices always report 0; those are fine.
+- Only accounts with a password here can have passkeys. A passkey would outlive the account being turned off at the provider or in the directory.
+
+### Turning password sign-in off
+
+If everyone signs in another way, an admin can turn the password form off: **Ways to sign in > Turn off password sign-in**. The sign-in page then only shows the other ways. This can't be done by accident:
+
+- It only works while you are signed in **through single sign-on, the directory or a passkey** as an admin, so you know a way in works. Otherwise Mediarium says why and does nothing.
+- It can't be switched off with an API key.
+- It is on again by itself whenever no other way to sign in is working (single sign-on or the directory switched off, passkeys without their address).
+- Sessions that are already open aren't ended. API keys keep working.
+
+### If you are locked out
+
+Set `MEDIARIUM_DISABLE_SSO=1` on the container and restart it. Single sign-on and directory sign-in are off and the password form is on, whatever is saved, for as long as it is set. Nothing is changed in the settings, so when you take the variable away they apply again. Passkeys are not affected, since they are not a way to get locked out of an account with a password. Reset a forgotten password with the command below. Anyone who can set an environment variable on the container can already read the database, so this adds no new way in.
+
+```yaml
+environment:
+  - MEDIARIUM_DISABLE_SSO=1
+```
+
 ## A forgotten administrator password
 
-The sign-in page has a **Forgot your password?** line. There's no email reset. Another administrator can set a new password in **Settings > Accounts**, and the command below is for the only administrator.
+The sign-in page has a **Forgot your password?** line. There's no email reset. Another administrator can set a new password in **Settings > Account & Access > All accounts**, and the command below is for the only administrator.
 
 If the only admin has forgotten their password, reset it from the command line on the machine running Mediarium. There is deliberately no way to do this over the web.
 
@@ -130,6 +293,13 @@ It asks for the new password twice (at least 8 characters) and signs that accoun
 - An add from an account that has to ask answers `202` with `{"requested": true, "request": {...}, "message": "..."}`.
 - `GET /api/requests` (an admin gets everyone's, anyone else their own, with a `pending` count), `POST /api/requests/{id}/approve` and `POST /api/requests/{id}/decline` with `{"note": "..."}` (admins), `DELETE /api/requests/{id}` (an admin, or the person for their own waiting request).
 
-- Roles are stored in `users.is_admin` (1 for an admin, 0 for a basic user). The API reports both `role` (`"admin"` or `"member"`) and `isAdmin`.
+- The request portal: `GET /api/requests/settings` and `PUT /api/requests/settings` (admins) hold `notifyRequester`, `quotaCount`, `quotaPeriod` (`day` or `week`), `fourK`, `fourKProfileId` and `reports`, and `quotas` (an object of account id to limit: -1 follows the default, 0 is no limit) on the way in; they are kept as one JSON setting, `requests.options`. `GET /api/requests/status` (any account) returns the caller's `quota` (`limit`, `used`, `left`, `period`, `resetsAt`), whether 4K can be asked for (`fourK.movie`, `fourK.tv`) and whether reports are on. An add with `"fourK": true` from an account that has to ask makes a 4K request. A request over the limit answers `429`.
+- Problem reports: `GET /api/issues` (admins get all, others their own), `POST /api/issues` (`kind` `movie` or `tv`, `itemId` the library id, `category`, optional `episode` and `message`), `POST /api/issues/{id}/resolve` with `{"comment": "..."}`, `POST /api/issues/{id}/reopen` and `DELETE /api/issues/{id}` (admins).
+- Messages to people: `GET /api/auth/request-notices`, `PUT /api/auth/request-notices` (`{"enabled": true}`), `POST /api/auth/request-notices/devices` (`subscription`, `name`) and `DELETE /api/auth/request-notices/devices/{id}`, each for the signed-in account.
+
+- Roles are stored in `users.is_admin` (1 for an admin) and `users.is_viewer` (1 for a viewer, never together with `is_admin`). The API reports both `role` (`"admin"`, `"member"` or `"viewer"`) and `isAdmin`. `POST /api/users` and `PUT /api/users/{id}` take `role` and, on update, `disabled`. Accounts also report `disabled` and `source` (`"local"`, `"oidc"` or `"ldap"`).
+- `POST /api/auth/api-keys` takes `readOnly: true`; the key list reports it. A read-only key gets `403` on anything but `GET` and `HEAD`.
+- Sign-in: `GET /api/auth/methods` (public: what the sign-in page offers), `GET /api/auth/oidc/start` and `GET /api/auth/oidc/callback` (the browser's way through single sign-on), `POST /api/auth/passkey/login/begin` and `.../finish` (passkey sign-in). Signed in: `GET/POST/PUT/DELETE /api/auth/passkeys...`, `POST/DELETE /api/auth/oidc/link`. Admins, in a browser session only for changes: `GET/PUT /api/auth/sign-in`, `GET/PUT /api/auth/oidc`, `POST /api/auth/oidc/test`, `GET/PUT /api/auth/ldap`, `POST /api/auth/ldap/test`. Secrets (client secret, bind password) are never returned.
 - Accounts: `GET /api/users`, `POST /api/users`, `PUT /api/users/{id}`, `DELETE /api/users/{id}` (administrators only).
 - Which routes a basic user may call is decided in one place, `protectedRoutes` in `internal/api/server.go`: each route is registered on either the `member` or the `admin` group. A test lists every member route by name and fails when that list changes, or when a route is registered outside the two groups.
+- What a viewer or a read-only key may do is decided in one place too (`readOnlyAllows` in `internal/api/access.go`), before any handler runs. A test sends a changing request to every route as a viewer and as a read-only key and fails if one gets through.

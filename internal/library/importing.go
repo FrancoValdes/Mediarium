@@ -190,7 +190,7 @@ func registerMovie(tx *sql.Tx, batchID int64, opts ImportOptions, e ImportEntry,
 		id     int64
 		status string
 	)
-	err := tx.QueryRow(`SELECT id, status FROM movies WHERE tmdb_id = ?`, e.TMDBID).Scan(&id, &status)
+	err := tx.QueryRow(`SELECT id, status FROM movies WHERE tmdb_id = ? AND copy_of IS NULL`, e.TMDBID).Scan(&id, &status)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return ImportOutcome{}, fmt.Errorf("look up movie: %w", err)
 	}
@@ -229,7 +229,7 @@ func registerMovie(tx *sql.Tx, batchID int64, opts ImportOptions, e ImportEntry,
 func registerSeries(tx *sql.Tx, batchID int64, opts ImportOptions, e ImportEntry, now time.Time) (ImportOutcome, error) {
 	var id int64
 	created := false
-	err := tx.QueryRow(`SELECT id FROM series WHERE tmdb_id = ?`, e.TMDBID).Scan(&id)
+	err := tx.QueryRow(`SELECT id FROM series WHERE tmdb_id = ? AND copy_of IS NULL`, e.TMDBID).Scan(&id)
 	switch {
 	case err == nil:
 		// A show that is already there can still gain episodes from the
@@ -544,6 +544,10 @@ func (r *Repo) CompleteMovieImport(item ImportItem, d MovieDetails) error {
 	}
 	res, err := tx.Exec(`UPDATE movies SET title = ?, year = ?, overview = ?, poster_path = ?, release_date = ?, genres = ?, details_state = '', details_note = '' WHERE id = ?`,
 		d.Title, d.Year, d.Overview, d.PosterPath, d.ReleaseDate, genres, item.TitleID)
+	if err == nil {
+		_, err = tx.Exec(`UPDATE movies SET title = ?, year = ?, overview = ?, poster_path = ?, release_date = ?, genres = ? WHERE copy_of = ?`,
+			d.Title, d.Year, d.Overview, d.PosterPath, d.ReleaseDate, genres, item.TitleID)
+	}
 	if err != nil {
 		return fmt.Errorf("store movie details: %w", err)
 	}
@@ -625,8 +629,8 @@ func (r *Repo) CompleteSeriesImport(item ImportItem, d SeriesDetails, episodes [
 	if err != nil {
 		return out, err
 	}
-	if _, err := tx.Exec(`UPDATE series SET title = ?, year = ?, overview = ?, poster_path = ?, first_air_date = ?, genres = ?, details_state = '', details_note = '' WHERE id = ?`,
-		d.Title, d.Year, d.Overview, d.PosterPath, d.FirstAirDate, genres, item.TitleID); err != nil {
+	if _, err := tx.Exec(`UPDATE series SET title = ?, year = ?, overview = ?, poster_path = ?, first_air_date = ?, genres = ?, details_state = '', details_note = '' WHERE id = ? OR copy_of = ?`,
+		d.Title, d.Year, d.Overview, d.PosterPath, d.FirstAirDate, genres, item.TitleID, item.TitleID); err != nil {
 		return out, fmt.Errorf("store show details: %w", err)
 	}
 

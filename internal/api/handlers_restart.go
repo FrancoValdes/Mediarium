@@ -83,6 +83,7 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 	_ = s.QueueRepo.LogActivity(0, "update", msg)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "restarting": true, "safe": safe, "restartingIn": int(updateRestartDelay.Seconds())})
 	flush(w)
+	s.restartInPlace.Store(true)
 	s.restartSoon(updateRestartDelay)
 }
 

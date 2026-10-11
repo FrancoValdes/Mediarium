@@ -1,4 +1,5 @@
 import { api, ApiError, type DiscoverMovie } from './api'
+import { locale, t } from './i18n.ts'
 
 export type Kind = 'movie' | 'tv'
 export type ListName = 'trending' | 'popular' | 'upcoming' | 'similar'
@@ -64,17 +65,20 @@ export function sourceFromQuery(q: URLSearchParams): Source {
 }
 
 const LIST_TITLE: Record<ListName, [string, string]> = {
-  trending: ['Trending movies', 'Trending shows'],
-  popular: ['Popular movies', 'Popular shows'],
-  upcoming: ['Coming soon: movies', 'Coming soon: shows'],
-  similar: ['More movies like your library', 'More shows like your library'],
+  trending: [t('Trending movies'), t('Trending shows')],
+  popular: [t('Popular movies'), t('Popular shows')],
+  upcoming: [t('Coming soon: movies'), t('Coming soon: shows')],
+  similar: [t('More movies like your library'), t('More shows like your library')],
 }
 
 export function sourceTitle(src: Source, genreName?: string): string {
   if (src.list !== 'browse') return LIST_TITLE[src.list][src.kind === 'movie' ? 0 : 1]
-  const what = src.kind === 'movie' ? 'movies' : 'shows'
-  const years = src.yearFrom && src.yearTo ? ` from ${src.yearFrom} to ${src.yearTo}` : src.yearFrom ? ` from ${src.yearFrom}` : src.yearTo ? ` up to ${src.yearTo}` : ''
-  return `${genreName ? `${genreName} ${what}` : src.kind === 'movie' ? 'Movies' : 'Shows'}${years}`
+  const movie = src.kind === 'movie'
+  const what = genreName ? (movie ? t('{genre} movies', { genre: genreName }) : t('{genre} shows', { genre: genreName })) : movie ? t('Movies') : t('Shows')
+  if (src.yearFrom && src.yearTo) return t('{what} from {from} to {to}', { what, from: src.yearFrom, to: src.yearTo })
+  if (src.yearFrom) return t('{what} from {from}', { what, from: src.yearFrom })
+  if (src.yearTo) return t('{what} up to {to}', { what, to: src.yearTo })
+  return what
 }
 
 // "Coming 12 Oct" for a date still ahead, otherwise nothing.
@@ -83,5 +87,5 @@ export function comingLabel(date?: string): string | undefined {
   const d = new Date(`${date}T00:00:00`)
   if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return undefined
   const sameYear = d.getFullYear() === new Date().getFullYear()
-  return `Coming ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })}`
+  return t('Coming {date}', { date: d.toLocaleDateString(locale(), { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) }) })
 }

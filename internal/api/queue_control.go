@@ -90,7 +90,7 @@ func (s *Server) resumeItem(item queue.Item) error {
 	if item.Status != queue.StatusPaused {
 		return errors.New("This download isn't paused.")
 	}
-	if item.Protocol == queue.ProtocolTorrent && !s.torrentsEnabled() {
+	if item.Protocol == queue.ProtocolTorrent && !s.torrentReleasesOn() {
 		return errTorrentsDisabled
 	}
 	// Check that what it is for is still in the library before it goes back in line.
@@ -172,7 +172,7 @@ func (s *Server) preparePipeline(item queue.Item) (func(), error) {
 			return nil, errors.New("That show isn't in your library any more.")
 		}
 		season, episodes := resolveTVTarget(item.ReleaseTitle, item.Season, item.Episode)
-		if season == 0 {
+		if season == 0 && len(episodes) == 0 {
 			return nil, errors.New("Couldn't tell which season this download is for.")
 		}
 		targets, err := s.tvGrabTargets(series.ID, season, episodes)
@@ -467,7 +467,18 @@ type pauseAllResponse struct {
 	Paused int `json:"paused"`
 }
 
-// handlePauseAllQueue pauses every download that is running or waiting.
+// onlyProtocol reads ?protocol=usenet|torrent: pause or resume only the
+// downloads of that kind. Empty means all of them.
+func onlyProtocol(r *http.Request) queue.Protocol {
+	switch p := queue.Protocol(r.URL.Query().Get("protocol")); p {
+	case queue.ProtocolUsenet, queue.ProtocolTorrent:
+		return p
+	}
+	return ""
+}
+
+// handlePauseAllQueue pauses every download that is running or waiting, or
+// only the Usenet or only the torrent ones with ?protocol=.
 func (s *Server) handlePauseAllQueue(w http.ResponseWriter, r *http.Request) {
 	items, err := s.QueueRepo.List()
 	if err != nil {
@@ -478,8 +489,12 @@ func (s *Server) handlePauseAllQueue(w http.ResponseWriter, r *http.Request) {
 	defer queueControlMu.Unlock()
 	// Nothing waiting starts while the running ones wind down.
 	defer s.dispatch.Hold()()
+	only := onlyProtocol(r)
 	n := 0
 	for _, it := range items {
+		if only != "" && it.Protocol != only {
+			continue
+		}
 		if downloadInProgress(it.Status) && s.pauseItem(it) == nil {
 			n++
 		}
@@ -493,7 +508,8 @@ type resumeAllResponse struct {
 	Problem string `json:"problem,omitempty"` // why the first skipped one could not start
 }
 
-// handleResumeAllQueue puts every paused download back in the download line.
+// handleResumeAllQueue puts every paused download back in the download line
+// (or only the Usenet or only the torrent ones with ?protocol=).
 func (s *Server) handleResumeAllQueue(w http.ResponseWriter, r *http.Request) {
 	items, err := s.QueueRepo.List()
 	if err != nil {
@@ -503,12 +519,13 @@ func (s *Server) handleResumeAllQueue(w http.ResponseWriter, r *http.Request) {
 	queueControlMu.Lock()
 	defer queueControlMu.Unlock()
 	var out resumeAllResponse
+	only := onlyProtocol(r)
 	// Each one goes to the front of the line, so the newest is put back first
 	// and the oldest ends up first. Nothing starts until they are all back.
 	defer s.dispatch.Hold()()
 	sort.SliceStable(items, func(i, j int) bool { return items[i].ID > items[j].ID })
 	for _, it := range items {
-		if it.Status != queue.StatusPaused {
+		if it.Status != queue.StatusPaused || (only != "" && it.Protocol != only) {
 			continue
 		}
 		if err := s.resumeItem(it); err != nil {
@@ -660,7 +677,7 @@ func (s *Server) tidyOrphans() tidyResult {
 		}
 	}
 
-	if movies, err := s.MovieRepo.List(); err == nil {
+	if movies, err := s.MovieRepo.ListWithCopies(); err == nil {
 		for _, m := range movies {
 			switch {
 			case m.Status == library.StatusDownloading && !movieOpen[m.ID]:
@@ -672,7 +689,7 @@ func (s *Server) tidyOrphans() tidyResult {
 			}
 		}
 	}
-	if shows, err := s.MovieRepo.ListSeries(); err == nil {
+	if shows, err := s.MovieRepo.ListSeriesWithCopies(); err == nil {
 		for _, sr := range shows {
 			eps, err := s.MovieRepo.ListEpisodes(sr.ID)
 			if err != nil {

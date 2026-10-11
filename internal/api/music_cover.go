@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rdborg/mediarium/internal/cleanup"
+	"github.com/rdborg/mediarium/internal/fileperms"
 	"github.com/rdborg/mediarium/internal/music"
 	"github.com/rdborg/mediarium/internal/musicbrainz"
 )
@@ -223,6 +224,58 @@ func (s *Server) coverFor(ctx context.Context, album music.Album) (string, error
 	return s.cachedCover(ctx, album)
 }
 
+var warmingMusicCovers sync.Map // release group id -> struct{}, covers already being fetched
+
+// warmMusicCovers fetches the covers of a Discover page in the background, six
+// at a time, so the page finds them cached instead of waiting for the archive
+// one by one. It skips what is cached or already on its way.
+func (s *Server) warmMusicCovers(mbids []string) {
+	var todo []string
+	for _, id := range mbids {
+		id = strings.ToLower(id)
+		if !mbidPattern.MatchString(id) {
+			continue
+		}
+		dir := s.coverCacheDir()
+		if st, err := os.Stat(filepath.Join(dir, id+".img")); err == nil && st.Size() > 0 {
+			continue
+		}
+		if st, err := os.Stat(filepath.Join(dir, id+".none")); err == nil && time.Since(st.ModTime()) < coverMissingFor {
+			continue
+		}
+		if _, busy := warmingMusicCovers.LoadOrStore(id, struct{}{}); busy {
+			continue
+		}
+		todo = append(todo, id)
+	}
+	if len(todo) == 0 {
+		return
+	}
+	go func() {
+		sem := make(chan struct{}, 6)
+		var wg sync.WaitGroup
+		for _, id := range todo {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				defer warmingMusicCovers.Delete(id)
+				_, _ = s.cachedReleaseGroupCover(context.Background(), id)
+			}()
+		}
+		wg.Wait()
+	}()
+}
+
+// coverMissing answers for a release group that has no cover. Browsers keep
+// the answer for a while, so a grid full of albums without art does not ask
+// again on every visit.
+func coverMissing(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	http.NotFound(w, r)
+}
+
 // serveCoverFile sends an image with the headers that let a browser keep it.
 func serveCoverFile(w http.ResponseWriter, r *http.Request, path string) {
 	f, err := os.Open(path)
@@ -295,8 +348,10 @@ func (s *Server) handleReleaseGroupCover(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		if !errors.Is(err, musicbrainz.ErrNotFound) {
 			slog.Info("music: cover art unavailable", "releaseGroup", mbid, "err", err)
+			http.NotFound(w, r) // unreachable now, so ask again next time
+			return
 		}
-		http.NotFound(w, r)
+		coverMissing(w, r)
 		return
 	}
 	serveCoverFile(w, r, path)
@@ -374,5 +429,7 @@ func (s *Server) saveAlbumCover(ctx context.Context, album music.Album, folder s
 	}
 	if err := f.Close(); err != nil {
 		slog.Warn("music: write cover", "folder", folder, "err", err)
+		return
 	}
+	_ = fileperms.ApplyFile(filepath.Join(folder, name))
 }

@@ -4,11 +4,13 @@ import type { DiscoverMovie } from '../api'
 import { comingLabel, fetchPage, sourceToQuery, type Kind, type Source } from '../discoverSources'
 import { useGridColumns } from '../useGridColumns'
 import { useHideOwned } from '../useHideOwned'
+import { useNearViewport } from '../useNearViewport'
 import type { Owned } from '../useOwned'
 import type { AddTarget } from './AddDialog'
 import { pickKey, usePicks } from '../discoverPicks'
 import Icon from './Icon'
 import PosterCard from './PosterCard'
+import { t } from '../i18n'
 
 // The posters of one Discover list. Titles you already own say so and open
 // their page; the rest offer Add, which opens the usual add dialog.
@@ -38,7 +40,7 @@ export function DiscoverCards({ items, kind, owned, onAdd }: { items: DiscoverMo
               <div className="pcard-footer">
                 {libraryId ? (
                   <button className="btn-sm btn-with-icon" onClick={() => navigate(path)}>
-                    <Icon name="open" size={15} /> Open
+                    <Icon name="open" size={15} /> {t('Open')}
                   </button>
                 ) : picks?.selecting ? (
                   <button
@@ -46,15 +48,15 @@ export function DiscoverCards({ items, kind, owned, onAdd }: { items: DiscoverMo
                     aria-pressed={picks.picked.has(pickKey({ kind, tmdbId: m.tmdbId }))}
                     onClick={() => picks.toggle({ kind, tmdbId: m.tmdbId, title: m.title, year: m.year, posterUrl: m.posterUrl, overview: m.overview })}
                   >
-                    <Icon name="check" size={15} /> {picks.picked.has(pickKey({ kind, tmdbId: m.tmdbId })) ? 'Picked' : 'Pick'}
+                    <Icon name="check" size={15} /> {picks.picked.has(pickKey({ kind, tmdbId: m.tmdbId })) ? t('Picked') : t('Pick')}
                   </button>
                 ) : (
                   <>
                     <button className="primary btn-sm btn-with-icon" onClick={() => onAdd({ kind, tmdbId: m.tmdbId, title: m.title, year: m.year, posterUrl: m.posterUrl, overview: m.overview })}>
-                      <Icon name="plus" size={15} /> {coming ? 'Add early' : 'Add'}
+                      <Icon name="plus" size={15} /> {coming ? t('Add early') : t('Add')}
                     </button>
-                    {picks && (
-                      <button className="icon-btn not-interested" title="Not interested: don't show it again" aria-label={`Not interested in ${m.title}`} onClick={() => picks.notInterested({ kind, tmdbId: m.tmdbId, title: m.title, year: m.year })}>
+                    {picks && !picks.readOnly && (
+                      <button className="icon-btn not-interested" title={t("Not interested: don't show it again")} aria-label={t('Not interested in {title}', { title: m.title })} onClick={() => picks.notInterested({ kind, tmdbId: m.tmdbId, title: m.title, year: m.year })}>
                         <Icon name="x" size={14} />
                       </button>
                     )}
@@ -91,9 +93,12 @@ interface RailProps {
 // A Discover section that always shows whole rows: it measures how many
 // posters fit across and loads just enough pages to fill `rows` of them.
 // "Load more" adds rows in place; "Browse all" opens the list with pages.
-export default function DiscoverRail({ title, hint, kind, owned, onAdd, source, items: fixed, rows = 2, moreLabel = 'Browse all', headExtra }: RailProps) {
+export default function DiscoverRail({ title, hint, kind, owned, onAdd, source, items: fixed, rows = 2, moreLabel = t('Browse all'), headExtra }: RailProps) {
   const grid = useRef<HTMLDivElement>(null)
   const cols = useGridColumns(grid)
+  // Starts a screen or two before it is seen, and by itself within a few seconds of the page opening.
+  const [warm] = useState(() => 400 + Math.random() * 3000)
+  const near = useNearViewport(grid, 1600, warm)
   const [extra, setExtra] = useState(0)
   const want = cols * (rows + extra)
   const [items, setItems] = useState<DiscoverMovie[]>(fixed ?? [])
@@ -113,7 +118,7 @@ export default function DiscoverRail({ title, hint, kind, owned, onAdd, source, 
   }, [fixed])
 
   useEffect(() => {
-    if (!source || failed || busy.current || visible.length >= want || page >= pageLimit) return
+    if (!source || !near || failed || busy.current || visible.length >= want || page >= pageLimit) return
     busy.current = true
     fetchPage(source, page + 1)
       .then((r) => {
@@ -128,7 +133,7 @@ export default function DiscoverRail({ title, hint, kind, owned, onAdd, source, 
       .finally(() => {
         busy.current = false
       })
-  }, [source, failed, visible.length, want, page, totalPages, pageLimit])
+  }, [source, near, failed, visible.length, want, page, totalPages, pageLimit])
 
   const loading = !!source && page === 0 && !failed
   if (!loading && visible.length === 0) return null
@@ -156,8 +161,15 @@ export default function DiscoverRail({ title, hint, kind, owned, onAdd, source, 
       </div>
       {more && (
         <div className="rail-foot">
-          <button className="btn-sm btn-with-icon" onClick={() => setExtra((x) => x + 2)} disabled={fetching}>
-            <Icon name="plus" size={15} /> Load more
+          <button
+            className="btn-sm btn-with-icon"
+            onClick={() => {
+              setFailed(false)
+              setExtra((x) => x + 2)
+            }}
+            disabled={fetching}
+          >
+            <Icon name="plus" size={15} /> {failed ? t('Try again') : t('Load more')}
           </button>
         </div>
       )}

@@ -8,6 +8,9 @@ import Icon from '../components/Icon'
 import PosterCard, { PosterFallback } from '../components/PosterCard'
 import { describeState, type ItemState } from '../components/state'
 import { useToast } from '../components/Toast'
+import FilterToggle from '../components/FilterToggle'
+import { t } from '../i18n'
+import { useUrlState } from '../useUrlState'
 import { useModules } from '../ModulesContext'
 
 type Sort = 'added' | 'title' | 'author'
@@ -31,10 +34,10 @@ export function bookState(b: Book, f: BookFormat, queue: QueueItem[] = []): Item
 }
 
 const FILTERS: { id: string; label: string; test: (s: ItemState) => boolean }[] = [
-  { id: 'all', label: 'All', test: () => true },
-  { id: 'downloaded', label: 'Downloaded', test: (s) => s.key === 'downloaded' },
-  { id: 'downloading', label: 'Downloading', test: (s) => s.key === 'downloading' || s.key === 'pending' || s.key === 'paused' },
-  { id: 'missing', label: 'Waiting for a release', test: (s) => s.key === 'searching' },
+  { id: 'all', label: t('All'), test: () => true },
+  { id: 'downloaded', label: t('Downloaded'), test: (s) => s.key === 'downloaded' },
+  { id: 'downloading', label: t('Downloading'), test: (s) => s.key === 'downloading' || s.key === 'pending' || s.key === 'paused' },
+  { id: 'missing', label: t('Waiting for a release'), test: (s) => s.key === 'searching' },
 ]
 
 // The Ebooks or Audiobooks tab of the library: the books wanted in that
@@ -56,9 +59,15 @@ export default function BookLibrary({
   reload: () => void
   admin: boolean
 }) {
-  const [text, setText] = useState('')
-  const [filter, setFilter] = useState('all')
-  const [sort, setSort] = useState<Sort>('added')
+  // The search and filters live in the address, so Back from a book returns to the same list.
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [ui, patchUi] = useUrlState({ bq: '', bf: 'all', bs: 'added' })
+  const text = ui.bq
+  const setText = (v: string) => patchUi({ bq: v })
+  const filter = ui.bf
+  const setFilter = (v: string) => patchUi({ bf: v })
+  const sort = ui.bs as Sort
+  const setSort = (v: Sort) => patchUi({ bs: v })
   const [adding, setAdding] = useState(false)
   const [importing, setImporting] = useState(false)
   const [folder, setFolder] = useState('')
@@ -78,32 +87,34 @@ export default function BookLibrary({
     return list
   }, [books, mine, filter, text, sort, format, queue])
 
-  const word = FORMAT_PLURAL[format]
   return (
     <div>
-      <div className="toolbar">
+      <div className={`toolbar lib-toolbar collapsible${filtersOpen ? ' filters-open' : ''}`}>
         {switcher}
-        <input type="search" style={{ flex: "1 1 180px", minWidth: 0, maxWidth: 300 }} placeholder={`Find in your ${word}…`} value={text} onChange={(e) => setText(e.target.value)} aria-label={`Find in your ${word}`} />
+        <input type="search" placeholder={format === 'ebook' ? t('Find in your ebooks…') : t('Find in your audiobooks…')} value={text} onChange={(e) => setText(e.target.value)} aria-label={format === 'ebook' ? t('Find in your ebooks') : t('Find in your audiobooks')} />
+        <FilterToggle open={filtersOpen} onToggle={() => setFiltersOpen((o) => !o)} active={text.trim() !== '' || filter !== 'all'} />
+        <div className="fold">
         <Dropdown
-          label="Sort"
+          label={t('Sort')}
           value={sort}
           onChange={(v) => setSort(v as Sort)}
           options={[
-            { value: 'added', label: 'Recently added' },
-            { value: 'title', label: 'Title' },
-            { value: 'author', label: 'Author' },
+            { value: 'added', label: t('Recently added') },
+            { value: 'title', label: t('Title') },
+            { value: 'author', label: t('Author') },
           ]}
         />
         <div className="toolbar-end">
           {admin && (
             <button className="btn-with-icon" onClick={() => setImporting((v) => !v)} aria-expanded={importing}>
-              <Icon name={importing ? 'x' : 'folder'} size={16} /> {importing ? 'Close' : 'Import'}
+              <Icon name={importing ? 'x' : 'folder'} size={16} /> {importing ? t('Close') : t('Import')}
             </button>
           )}
-          <button className="primary btn-with-icon" onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
-            <Icon name={adding ? 'x' : 'plus'} size={16} /> {adding ? 'Close' : 'Add'}
-          </button>
         </div>
+        </div>
+        <button className="primary btn-with-icon toolbar-add" onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
+          <Icon name={adding ? 'x' : 'plus'} size={16} /> {adding ? t('Close') : t('Add')}
+        </button>
       </div>
 
       {importing && admin && <BookImport format={format} folder={folder} onDone={reload} />}
@@ -130,16 +141,16 @@ export default function BookLibrary({
           <Icon name={format === 'ebook' ? 'book' : 'headphones'} size={44} />
           {mine.length === 0 ? (
             <>
-              <p>No {word} yet.</p>
+              <p>{format === 'ebook' ? t('No ebooks yet.') : t('No audiobooks yet.')}</p>
               {!adding && (
                 <button className="primary btn-with-icon" onClick={() => setAdding(true)}>
-                  <Icon name="search" size={16} /> Find a book to add
+                  <Icon name="search" size={16} /> {t('Find a book to add')}
                 </button>
               )}
             </>
           ) : (
             <>
-              <p>Nothing matches these filters.</p>
+              <p>{t('Nothing matches these filters.')}</p>
               <button
                 className="btn-with-icon"
                 onClick={() => {
@@ -147,7 +158,7 @@ export default function BookLibrary({
                   setFilter('all')
                 }}
               >
-                Clear filters
+                {t('Clear filters')}
               </button>
             </>
           )}
@@ -160,6 +171,7 @@ export default function BookLibrary({
               <PosterCard
                 key={b.id}
                 to={`/book/${b.id}`}
+                kind={format === 'audiobook' ? 'audiobook' : 'book'}
                 poster={b.coverUrl}
                 title={b.title}
                 meta={[b.author || null, b.year ? String(b.year) : null, st.format ? st.format.toUpperCase() : null].filter(Boolean).join(' · ')}
@@ -169,8 +181,8 @@ export default function BookLibrary({
                   st.status === 'downloaded'
                     ? [
                         format === 'ebook'
-                          ? { icon: 'book', label: 'Read', onClick: () => openBookApp(readPath(b.id)) }
-                          : { icon: 'play', label: 'Listen', onClick: () => openBookApp(listenPath(b.id)) },
+                          ? { icon: 'book', label: t('Read'), onClick: () => openBookApp(readPath(b.id)) }
+                          : { icon: 'play', label: t('Listen'), onClick: () => openBookApp(listenPath(b.id)) },
                       ]
                     : undefined
                 }
@@ -193,6 +205,7 @@ function AddBook({ format, onAdded }: { format: BookFormat; onAdded: () => void 
   const [results, setResults] = useState<BookFound[] | null>(null)
   const [error, setError] = useState('')
   const [both, setBoth] = useState(false)
+  const [asked, setAsked] = useState<ReadonlySet<string>>(new Set())
   const [busy, setBusy] = useState('')
 
   useEffect(() => {
@@ -202,13 +215,18 @@ function AddBook({ format, onAdded }: { format: BookFormat; onAdded: () => void 
       return
     }
     setError('')
-    const t = setTimeout(() => {
+    // A slow answer for an earlier search must not replace the one for what is typed now.
+    let stale = false
+    const timer = setTimeout(() => {
       api
         .searchBooks(term)
-        .then(setResults)
-        .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+        .then((r) => !stale && setResults(r))
+        .catch((e) => !stale && setError(e instanceof Error ? e.message : String(e)))
     }, 350)
-    return () => clearTimeout(t)
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
   }, [q])
 
   async function add(f: BookFound) {
@@ -228,9 +246,10 @@ function AddBook({ format, onAdded }: { format: BookFormat; onAdded: () => void 
       })
       if (isRequested(b)) {
         toast.success(b.message)
+        setAsked((s) => new Set(s).add(f.key)) // the button stays off, so the same request isn't sent twice
         return
       }
-      toast.success(`${b.title} added. Mediarium is looking for it now.`)
+      toast.success(t('{title} added. Mediarium is looking for it now.', { title: b.title }))
       setResults((r) => r?.map((x) => (x.key === f.key ? { ...x, libraryId: b.id } : x)) ?? r)
       onAdded()
     } catch (e) {
@@ -243,15 +262,15 @@ function AddBook({ format, onAdded }: { format: BookFormat; onAdded: () => void 
   return (
     <section className="card book-add">
       <div className="book-add-head">
-        <input type="search" autoFocus placeholder="Title or author, for example The Hobbit" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a book" />
+        <input type="search" autoFocus placeholder={t('Title or author, for example The Hobbit')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Find a book')} />
         {otherOn && (
           <label className="check-inline">
-            <input type="checkbox" checked={both} onChange={(e) => setBoth(e.target.checked)} /> Get the {FORMAT_WORD[other]} too
+            <input type="checkbox" checked={both} onChange={(e) => setBoth(e.target.checked)} /> {other === 'ebook' ? t('Get the ebook too') : t('Get the audiobook too')}
           </label>
         )}
       </div>
       {error && <p className="error-text">{error}</p>}
-      {results !== null && results.length === 0 && <p className="hint">No books found. Try the author's name, or fewer words.</p>}
+      {results !== null && results.length === 0 && <p className="hint">{t("No books found. Try the author's name, or fewer words.")}</p>}
       {results && results.length > 0 && (
         <div className="book-results">
           {results.map((f) => (
@@ -263,18 +282,20 @@ function AddBook({ format, onAdded }: { format: BookFormat; onAdded: () => void 
               </span>
               {f.libraryId ? (
                 <Link className="btn-sm" to={`/book/${f.libraryId}`}>
-                  In your library
+                  {t('In your library')}
                 </Link>
+              ) : asked.has(f.key) ? (
+                <span className="btn-sm">{t('Requested')}</span>
               ) : (
                 <button className="btn-sm primary" disabled={busy !== ''} onClick={() => void add(f)}>
-                  {busy === f.key ? 'Adding…' : 'Add'}
+                  {busy === f.key ? t('Adding…') : t('Add')}
                 </button>
               )}
             </div>
           ))}
         </div>
       )}
-      <p className="hint">Book details and covers come from Open Library.</p>
+      <p className="hint">{t('Book details and covers come from Open Library.')}</p>
     </section>
   )
 }

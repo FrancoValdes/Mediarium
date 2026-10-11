@@ -410,24 +410,46 @@ func (c *Client) ReleaseGroupInfos(ctx context.Context, mbids []string) (map[str
 	}
 
 	out := map[string]ReleaseGroupInfo{}
+	// The batches are asked for a few at a time: a list of 200 is four requests, and one after another they took long
+	// enough on a slow day for the page to give up.
+	var (
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		firstErr error
+		sem      = make(chan struct{}, 4)
+	)
 	for start := 0; start < len(mbids); start += metadataBatch {
 		end := min(start+metadataBatch, len(mbids))
 		batch := append([]string(nil), mbids[start:end]...)
 		sort.Strings(batch) // the same set is the same cache key
-		q := url.Values{"release_group_mbids": {strings.Join(batch, ",")}, "inc": {"tag"}}
-		var resp map[string]entry
-		if err := c.get(ctx, "/1/metadata/release_group/", q, &resp); err != nil {
-			return out, err
-		}
-		for id, e := range resp {
-			g := genres(e.Tag.ReleaseGroup)
-			if len(g) == 0 {
-				g = genres(e.Tag.Artist)
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			q := url.Values{"release_group_mbids": {strings.Join(batch, ",")}, "inc": {"tag"}}
+			var resp map[string]entry
+			if err := c.get(ctx, "/1/metadata/release_group/", q, &resp); err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				return
 			}
-			out[id] = ReleaseGroupInfo{Type: e.ReleaseGroup.Type, Date: e.ReleaseGroup.Date, Genres: g}
-		}
+			mu.Lock()
+			defer mu.Unlock()
+			for id, e := range resp {
+				g := genres(e.Tag.ReleaseGroup)
+				if len(g) == 0 {
+					g = genres(e.Tag.Artist)
+				}
+				out[id] = ReleaseGroupInfo{Type: e.ReleaseGroup.Type, Date: e.ReleaseGroup.Date, Genres: g}
+			}
+		}()
 	}
-	return out, nil
+	wg.Wait()
+	return out, firstErr
 }
 
 // ---- cache ----

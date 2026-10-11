@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { t } from '../i18n'
 import Icon from './Icon'
 import { useToast } from './Toast'
 import { url as urlCheck } from '../validate'
+import TipLabel from './TipLabel'
 
 // The address you open Mediarium at. Messages use it for their "Open in
 // Mediarium" button; with none set they carry no link. Saves by itself a
@@ -36,9 +38,9 @@ export default function PublicAddress() {
       const s = await api.putSettings({ publicUrl: v })
       setStored(s.publicUrl ?? '')
       setText(s.publicUrl ?? '')
-      toast.success(v ? 'Saved: messages now link to Mediarium.' : 'Saved: messages carry no link.')
+      toast.success(v ? t('Saved: messages now link to Mediarium.') : t('Saved: messages carry no link.'))
     } catch (e) {
-      toast.error(`Not saved: ${e instanceof Error ? e.message : String(e)}`)
+      toast.error(t('Not saved: {error}', { error: e instanceof Error ? e.message : String(e) }))
       setText(stored)
     } finally {
       setBusy(false)
@@ -48,10 +50,10 @@ export default function PublicAddress() {
   return (
     <fieldset className="group folders span-all">
       <legend>
-        <Icon name="external" size={14} /> Link in messages
+        <Icon name="external" size={14} /> {t('Address of Mediarium')}
       </legend>
       <label className="field" htmlFor="public-address" style={{ display: 'grid', gap: 6, maxWidth: 480 }}>
-        <span>Address of Mediarium</span>
+        <TipLabel text={t('The full web address people use to reach Mediarium, such as https://media.example.com. Messages link to it, and passkeys and single sign-on need it.')}>{t('The address you open Mediarium at')}</TipLabel>
         <input
           id="public-address"
           value={text}
@@ -66,7 +68,7 @@ export default function PublicAddress() {
           aria-invalid={error ? true : undefined}
         />
       </label>
-      <small style={{ color: error ? 'var(--danger)' : 'var(--text-dim)' }}>{error ?? 'Emails and push messages get an Open in Mediarium button that goes here. Leave it empty for no link.'}</small>
+      <small style={{ color: error ? 'var(--danger)' : 'var(--text-dim)' }}>{error ?? t('Emails and push messages get an Open in Mediarium button that goes here, and passkeys and single sign-on need it. Leave it empty if you use none of those.')}</small>
     </fieldset>
   )
 }

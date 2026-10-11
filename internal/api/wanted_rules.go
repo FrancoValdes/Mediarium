@@ -16,44 +16,34 @@ func movieWantedMissing(m library.Movie) bool {
 	return m.Monitored && m.Status == library.StatusMissing && !fileExists(m.FilePath)
 }
 
-// episodeWantedMissing reports whether an episode belongs in Wanted >
-// Missing. today is a "YYYY-MM-DD" date.
-func episodeWantedMissing(sr library.Series, ep library.Episode, today string) bool {
-	if !sr.Monitored || !ep.Monitored || ep.Status != library.StatusMissing {
-		return false
-	}
-	aired := ep.AirDate != "" && ep.AirDate <= today
-	return aired && !fileExists(ep.FilePath)
-}
+// An episode belongs in Wanted > Missing when its show and it are monitored,
+// it is marked missing, it has aired by today and no file of it is on disk.
+// The library package's ListWantedEpisodes and MissingEpisodeFiles apply the
+// first three in SQL; the file check stays in Go.
 
 // wantedMissingCounts counts what Wanted > Missing would list.
+//
+// The database narrows it down to the titles marked missing (a handful of
+// columns, not whole rows), and the only thing left to check is the odd one
+// that still names a file: if that file is on disk, it is not wanted.
 func (s *Server) wantedMissingCounts() (movies, episodes int, err error) {
-	all, err := s.MovieRepo.List()
+	movieFiles, err := s.MovieRepo.MissingMovieFiles()
 	if err != nil {
-		return 0, 0, fmt.Errorf("list movies: %w", err)
+		return 0, 0, fmt.Errorf("list missing movies: %w", err)
 	}
-	for _, m := range all {
-		if movieWantedMissing(m) {
+	for _, path := range movieFiles {
+		if !fileExists(path) {
 			movies++
 		}
 	}
-	seriesList, err := s.MovieRepo.ListSeries()
-	if err != nil {
-		return 0, 0, fmt.Errorf("list series: %w", err)
-	}
 	today := time.Now().UTC().Format("2006-01-02")
-	for _, sr := range seriesList {
-		if !sr.Monitored {
-			continue
-		}
-		eps, err := s.MovieRepo.ListEpisodes(sr.ID)
-		if err != nil {
-			return 0, 0, fmt.Errorf("list episodes of %d: %w", sr.ID, err)
-		}
-		for _, ep := range eps {
-			if episodeWantedMissing(sr, ep, today) {
-				episodes++
-			}
+	episodeFiles, err := s.MovieRepo.MissingEpisodeFiles(today)
+	if err != nil {
+		return 0, 0, fmt.Errorf("list missing episodes: %w", err)
+	}
+	for _, path := range episodeFiles {
+		if !fileExists(path) {
+			episodes++
 		}
 	}
 	return movies, episodes, nil

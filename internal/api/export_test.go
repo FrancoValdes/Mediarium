@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/rdborg/mediarium/internal/animemap"
 	"github.com/rdborg/mediarium/internal/crypto"
 	"github.com/rdborg/mediarium/internal/library"
 	"github.com/rdborg/mediarium/internal/metadata"
@@ -74,6 +75,15 @@ func (s *Server) TestSetSubtitlesBaseURL(apiKey, baseURL string) {
 }
 
 func (s *Server) TestSubtitleSweepJob(ctx context.Context) { s.subtitleSweepJob(ctx) }
+
+// TestSetSubDLBaseURL points the SubDL client at a local fixture server
+// (searches and downloads both) and switches subtitles on.
+func (s *Server) TestSetSubDLBaseURL(apiKey, baseURL string) {
+	_ = s.Settings.Set(settings.KeySubtitlesEnabled, "1", false)
+	s.subsMu.Lock()
+	s.subdl = subtitles.NewSubDLWithBaseURL(apiKey, baseURL, baseURL)
+	s.subsMu.Unlock()
+}
 
 // TestScriptsDir is the folder scripts are picked from; TestNotifyImported
 // sends an "imported" event as an import does (and runs the chosen script).
@@ -152,4 +162,69 @@ func (s *Server) TestCheckFollowedSeries(ctx context.Context) {
 // TestSetBookReleaseDate sets a book's release date.
 func (s *Server) TestSetBookReleaseDate(id int64, date string) {
 	_ = s.BookRepo.SetReleaseDate(id, date)
+}
+
+// Private reports: point them at a test server and start the hourly count
+// afresh. The returned func puts the real address back.
+func SetFeedbackEndpointForTest(url string) func() {
+	old := feedbackEndpoint
+	feedbackEndpoint = url
+	feedbackLimit.Lock()
+	feedbackLimit.sent = nil
+	feedbackLimit.Unlock()
+	return func() { feedbackEndpoint = old }
+}
+
+func LeadingZeroBitsForTest(b []byte) int { return leadingZeroBits(b) }
+
+const (
+	FeedbackPowBits = feedbackPowBits
+	FeedbackPerHour = feedbackPerHour
+)
+
+// SetDebridURLForTest points the debrid services at a fake; the returned
+// function puts it back.
+func SetDebridURLForTest(u string) func() {
+	old := debridTestURL
+	debridTestURL = u
+	return func() { debridTestURL = old }
+}
+
+// SetDebridPollForTest makes the debrid status checks quick.
+func SetDebridPollForTest(d time.Duration) func() {
+	old := debridPoll
+	debridPoll = d
+	return func() { debridPoll = old }
+}
+
+// SetDownloadClientPollForTest makes the download client status checks quick.
+func SetDownloadClientPollForTest(d time.Duration) func() {
+	old := downloadClientPoll
+	downloadClientPoll = d
+	return func() { downloadClientPoll = old }
+}
+
+// TestAddonRoundTrip searches the subtitle add-ons for a movie by its TMDB id
+// and downloads the first result, the way a person picking it would.
+func (s *Server) TestAddonRoundTrip(ctx context.Context, tmdbID int, lang string) (results []subtitles.Result, data []byte, err error) {
+	q := subtitles.Query{TMDBID: tmdbID, Type: "movie", Language: lang}
+	results, err = s.findSubtitles(ctx, q, false)
+	if err != nil || len(results) == 0 {
+		return results, nil, err
+	}
+	it := subtitleItem{kind: "movie", tmdbID: tmdbID}
+	data, err = s.subtitleData(ctx, it, subtitlePick{source: results[0].Source, link: results[0].Link, lang: lang})
+	return results, data, err
+}
+
+// TestSetAnimeServices points the scene and anime numbering services at local
+// fixture servers (TheXEM, the anime list, AniList).
+func (s *Server) TestSetAnimeServices(xemURL, listsURL, anilistURL string) {
+	s.anime.once.Do(func() {})
+	svc := animemap.NewService(s.db, "Mediarium/test", filepath.Join(s.cfg.ConfigDir, "anime-cache"))
+	svc.Norm = normalizeTitle
+	svc.XEM.SetBase(xemURL)
+	svc.Lists.SetURL(listsURL)
+	svc.AniList.SetURL(anilistURL)
+	s.anime.svc = svc
 }

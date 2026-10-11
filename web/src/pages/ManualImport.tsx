@@ -3,8 +3,11 @@ import { Link } from 'react-router-dom'
 import { api, type ManualFile, type Movie, type Series } from '../api'
 import { formatBytes } from '../format'
 import Icon from '../components/Icon'
+import KindGlyph from '../components/KindGlyph'
 import Loading from '../components/Loading'
 import { useToast } from '../components/Toast'
+import { t, tc } from '../i18n'
+import '../import.css'
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
@@ -33,22 +36,24 @@ export default function ManualImport() {
 
   const left = (files ?? []).filter((f) => !done.has(f.path))
   return (
-    <div>
+    <div className="import-page">
       <div className="page-header">
-        <h1>Import a file by hand</h1>
+        <h1>{t('Import a file by hand')}</h1>
         <Link className="btn-link" to="/queue">
-          <Icon name="activity" size={15} /> Back to Activity
+          <Icon name="activity" size={15} /> {t('Back to Activity')}
         </Link>
       </div>
-      <p style={{ color: 'var(--text-dim)', marginTop: 0 }}>
-        Video files in the downloads folder{folder ? ` (${folder})` : ''}, biggest first. Choose what each one is, and Mediarium names it and puts it in your library. The title must be in your library already; add it first if it isn&apos;t.
+      <p className="imp-lede">
+        {folder
+          ? t("Video files in the downloads folder ({folder}), biggest first. Choose what each one is, and Mediarium names it and puts it in your library. The title must be in your library already; add it first if it isn't.", { folder })
+          : t("Video files in the downloads folder, biggest first. Choose what each one is, and Mediarium names it and puts it in your library. The title must be in your library already; add it first if it isn't.")}
       </p>
       {error && <p className="error-text">{error}</p>}
       {files === null && !error && <Loading height={140} />}
       {files !== null && left.length === 0 && (
         <div className="empty-state">
           <Icon name="check" size={44} />
-          <p>There are no video files waiting in the downloads folder.</p>
+          <p>{t('There are no video files waiting in the downloads folder.')}</p>
         </div>
       )}
       <div className="manual-list">
@@ -80,7 +85,7 @@ function ManualRow({ file: f, movies, series, onDone }: { file: ManualFile; movi
         kind === 'movie'
           ? await api.manualImport({ path: f.path, movieId: chosenMovie })
           : await api.manualImport({ path: f.path, seriesId: chosenShow, season: Number(season), episode: Number(episode) })
-      toast.success(`Imported to ${r.path}`)
+      toast.success(t('Imported to {path}', { path: r.path }))
       onDone()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -90,11 +95,18 @@ function ManualRow({ file: f, movies, series, onDone }: { file: ManualFile; movi
   }
 
   const ready = kind === 'movie' ? chosenMovie > 0 : chosenShow > 0 && Number(episode) > 0 && Number(season) >= 0
-  const guess = f.title ? ` · looks like ${f.title}${f.year ? ` (${f.year})` : ''}${f.season ? ` S${String(f.season).padStart(2, '0')}E${String(f.episode ?? 0).padStart(2, '0')}` : ''}` : ''
+  const guess = f.title
+    ? ` · ${t('looks like {what}', { what: `${f.title}${f.year ? ` (${f.year})` : ''}${f.season ? ` S${String(f.season).padStart(2, '0')}E${String(f.episode ?? 0).padStart(2, '0')}` : ''}` })}`
+    : ''
+  const slash = f.path.lastIndexOf('/')
   return (
-    <div className="card manual-row">
+    <div className={`card manual-row k-${kind === 'movie' ? 'movie' : 'tv'}`}>
+      <span className="manual-shape">
+        <KindGlyph kind={kind === 'movie' ? 'movie' : 'tv'} size={30} variant="solid" />
+      </span>
       <div className="manual-file">
-        <strong style={{ wordBreak: 'break-all' }}>{f.path}</strong>
+        <strong>{f.path.slice(slash + 1)}</strong>
+        {slash > 0 && <code>{f.path.slice(0, slash + 1)}</code>}
         <small>
           {formatBytes(f.size)}
           {f.quality ? ` · ${f.quality}` : ''}
@@ -102,17 +114,17 @@ function ManualRow({ file: f, movies, series, onDone }: { file: ManualFile; movi
         </small>
       </div>
       <div className="manual-pick">
-        <div className="seg" role="radiogroup" aria-label="What it is">
+        <div className="seg" role="radiogroup" aria-label={t('What it is')}>
           <button role="radio" aria-checked={kind === 'movie'} className={kind === 'movie' ? 'active' : ''} onClick={() => setKind('movie')}>
-            Movie
+            {t('Movie')}
           </button>
           <button role="radio" aria-checked={kind === 'episode'} className={kind === 'episode' ? 'active' : ''} onClick={() => setKind('episode')}>
-            Episode
+            {t('Episode')}
           </button>
         </div>
         {kind === 'movie' ? (
-          <select aria-label="Movie" value={chosenMovie} onChange={(e) => setMovieId(Number(e.target.value))}>
-            <option value={0}>Choose a movie…</option>
+          <select aria-label={t('Movie')} value={chosenMovie} onChange={(e) => setMovieId(Number(e.target.value))}>
+            <option value={0}>{t('Choose a movie…')}</option>
             {movies.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.title} ({m.year})
@@ -121,8 +133,8 @@ function ManualRow({ file: f, movies, series, onDone }: { file: ManualFile; movi
           </select>
         ) : (
           <>
-            <select aria-label="Show" value={chosenShow} onChange={(e) => setSeriesId(Number(e.target.value))}>
-              <option value={0}>Choose a show…</option>
+            <select aria-label={tc('tv', 'Show')} value={chosenShow} onChange={(e) => setSeriesId(Number(e.target.value))}>
+              <option value={0}>{t('Choose a show…')}</option>
               {series.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title}
@@ -130,15 +142,15 @@ function ManualRow({ file: f, movies, series, onDone }: { file: ManualFile; movi
               ))}
             </select>
             <label className="inline-field">
-              Season <input inputMode="numeric" value={season} onChange={(e) => setSeason(e.target.value)} style={{ width: 60 }} />
+              {t('Season')} <input inputMode="numeric" value={season} onChange={(e) => setSeason(e.target.value)} style={{ width: 60 }} />
             </label>
             <label className="inline-field">
-              Episode <input inputMode="numeric" value={episode} onChange={(e) => setEpisode(e.target.value)} style={{ width: 60 }} />
+              {t('Episode')} <input inputMode="numeric" value={episode} onChange={(e) => setEpisode(e.target.value)} style={{ width: 60 }} />
             </label>
           </>
         )}
         <button className="primary" disabled={!ready || busy} onClick={() => void run()}>
-          {busy ? 'Importing…' : 'Import'}
+          {busy ? t('Importing…') : t('Import')}
         </button>
       </div>
     </div>

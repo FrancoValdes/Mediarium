@@ -28,6 +28,41 @@ export default function ServiceIcon({ type, size = 26 }: { type: string; size?: 
         <path d="M10.3 17a1.8 1.8 0 0 0 3.4 0z" fill="#fff" />
       </>
     )
+  } else if (type === 'push') {
+    bg = '#2BB5A0'
+    glyph = (
+      <>
+        <rect x="8" y="4.5" width="8" height="15" rx="1.8" fill="#fff" />
+        <circle cx="12" cy="17" r="0.9" fill={bg} />
+        <path d="M10.2 9.6a1.8 1.8 0 0 1 3.6 0v1.6l.7 1.1h-5l.7-1.1z" fill={bg} />
+      </>
+    )
+  } else if (type === 'matrix') {
+    bg = '#0DBD8B'
+    glyph = (
+      <>
+        <path d="M7.5 5.5H5.8v13h1.7M16.5 5.5h1.7v13h-1.7" fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="square" />
+        <path d="M9 15.5v-6l3 3 3-3v6" fill="none" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </>
+    )
+  } else if (type === 'homeassistant') {
+    bg = '#18BCF2'
+    glyph = (
+      <>
+        <path d="M12 5 4.5 11.5h1.8V18h11.4v-6.5h1.8z" fill="#fff" />
+        <rect x="10.4" y="13" width="3.2" height="5" fill={bg} />
+      </>
+    )
+  } else if (type === 'apprise') {
+    bg = '#4E6E8E'
+    glyph = (
+      <>
+        <path d="M6 7.5h12a1.5 1.5 0 0 1 1.5 1.5v5.5A1.5 1.5 0 0 1 18 16h-6l-3.5 2.5V16H6a1.5 1.5 0 0 1-1.5-1.5V9A1.5 1.5 0 0 1 6 7.5z" fill="#fff" />
+        <circle cx="8.8" cy="11.8" r="0.9" fill={bg} />
+        <circle cx="12" cy="11.8" r="0.9" fill={bg} />
+        <circle cx="15.2" cy="11.8" r="0.9" fill={bg} />
+      </>
+    )
   } else if (type === 'pushover') {
     bg = '#249DF1'
     glyph = (

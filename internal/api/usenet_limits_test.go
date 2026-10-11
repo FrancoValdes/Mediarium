@@ -139,3 +139,30 @@ func TestServerChangesReachTheDownloaderAtOnce(t *testing.T) {
 		t.Fatal("a removed server is still in use by the downloader")
 	}
 }
+
+// "Find the right number" says plainly what a provider that refuses everything
+// means, and what a provider that lets every connection in means; an unknown
+// server is a 404.
+func TestFindTheRightNumberOfConnections(t *testing.T) {
+	_, base, client := newServerWithDB(t)
+
+	full, fullPort := refusingNNTP(t, false, "502 Too many connections.")
+	created := postJSON[map[string]any](t, client, base+"/api/usenet-servers", map[string]any{
+		"name": "Full", "host": full, "port": fullPort, "useSsl": false, "username": "u", "password": "p", "connections": 6,
+	}, http.StatusCreated)
+	res := postJSON[map[string]any](t, client, fmt.Sprintf("%s/api/usenet-servers/%d/probe", base, int64(created["id"].(float64))), nil, http.StatusOK)
+	if res["refused"] != true || res["accepted"] != float64(0) || !strings.Contains(res["message"].(string), "refused even the first connection") {
+		t.Fatalf("a full provider: %+v", res)
+	}
+
+	open, openPort := newArticleNNTPServer(t, nil)
+	created = postJSON[map[string]any](t, client, base+"/api/usenet-servers", map[string]any{
+		"name": "Open", "host": open, "port": openPort, "useSsl": false, "username": "u", "password": "p", "connections": 4, "priority": 1,
+	}, http.StatusCreated)
+	res = postJSON[map[string]any](t, client, fmt.Sprintf("%s/api/usenet-servers/%d/probe", base, int64(created["id"].(float64))), nil, http.StatusOK)
+	if res["refused"] != false || res["accepted"] != float64(4) || res["requested"] != float64(4) {
+		t.Fatalf("an open provider: %+v", res)
+	}
+
+	postJSON[map[string]any](t, client, base+"/api/usenet-servers/9999/probe", nil, http.StatusNotFound)
+}

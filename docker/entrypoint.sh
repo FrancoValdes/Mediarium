@@ -20,6 +20,28 @@ APP_TO_RUN="$IMAGE_BIN"
 
 say() { echo "Mediarium: $*" >&2; }
 
+# ---- UMASK ---------------------------------------------------------------------
+# UMASK works as in the linuxserver.io images: an optional octal value (for
+# example 022 or 002) that is set before the app starts, so the files and
+# folders it creates get the permissions you want. Like there, it takes
+# permissions away from the usual 666 for files and 777 for folders: 022 gives
+# files 644 and folders 755, 002 gives 664 and 775. Unset leaves the container's
+# own umask (022) alone. A value that is not one to four octal digits is ignored
+# with a note. The permissions can also be set in Settings > Library > Folders
+# and file names, which applies them to what Mediarium puts in the library and
+# does not depend on the umask.
+apply_umask() {
+  [ -n "${UMASK:-}" ] || return 0
+  case "$UMASK" in
+    *[!0-7]*) say "ignoring UMASK=$UMASK: it has to be octal digits only, for example 022."; return 0 ;;
+  esac
+  if [ "${#UMASK}" -gt 4 ]; then
+    say "ignoring UMASK=$UMASK: it has to be at most four octal digits, for example 022."
+    return 0
+  fi
+  umask "$UMASK" || say "could not set UMASK=$UMASK."
+}
+
 # run_as is redefined below when this script starts as root.
 run_as() { "$@"; }
 
@@ -126,6 +148,7 @@ if [ "$(id -u)" != "0" ]; then
       n=$((n - 1))
     done
   fi
+  apply_umask
   exec "$@"
 fi
 
@@ -217,6 +240,7 @@ if [ "$APP_TO_RUN" != "$IMAGE_BIN" ]; then
   done
 fi
 
+apply_umask
 if command -v su-exec >/dev/null 2>&1; then
   exec su-exec "${PUID}:${PGID}" "$@"
 fi

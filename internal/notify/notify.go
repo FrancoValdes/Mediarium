@@ -57,6 +57,11 @@ func doJSONPost(ctx context.Context, client *http.Client, url string, body any) 
 // log (see WithSteps) every stage is written to it, again without the URL:
 // only the server's name shows.
 func doJSONPostHeaders(ctx context.Context, client *http.Client, target string, body any, headers map[string]string) error {
+	return doJSONSend(ctx, client, http.MethodPost, target, body, headers)
+}
+
+// doJSONSend is doJSONPostHeaders for any method (Matrix sends with PUT).
+func doJSONSend(ctx context.Context, client *http.Client, method, target string, body any, headers map[string]string) error {
 	var raw []byte
 	switch v := body.(type) {
 	case []byte:
@@ -78,7 +83,7 @@ func doJSONPostHeaders(ctx context.Context, client *http.Client, target string, 
 		steps.Add(true, "Preparing the message for %s", host)
 		ctx = traceRequest(ctx, steps, host, &failed)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(raw))
 	if err != nil {
 		steps.Add(false, "The address is not valid")
 		return fmt.Errorf("build request: %w", redactURLError(err))
@@ -181,6 +186,8 @@ func statusText(code int, body string) string {
 		what = "Not found: check the address, topic or chat"
 	case code == 413:
 		what = "The message was too large"
+	case code == 424:
+		what = "The server could not deliver the message to one of its services"
 	case code == 429:
 		what = "Too many messages: try again in a while"
 	case code >= 500:

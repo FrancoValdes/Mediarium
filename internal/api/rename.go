@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/rdborg/mediarium/internal/cleanup"
+	"github.com/rdborg/mediarium/internal/fileperms"
 	"github.com/rdborg/mediarium/internal/parser"
 )
 
@@ -26,6 +27,7 @@ type renameItem struct {
 	Title string `json:"title"`
 	From  string `json:"from"`
 	To    string `json:"to"`
+	root  string // the library folder the file stays inside
 }
 
 // renamePlan lists every library file whose name differs from what the
@@ -33,29 +35,33 @@ type renameItem struct {
 func (s *Server) renamePlan(kind string) ([]renameItem, error) {
 	var out []renameItem
 	if kind == "" || kind == "movie" {
-		movies, err := s.MovieRepo.List()
+		movies, err := s.MovieRepo.ListWithCopies()
 		if err != nil {
 			return nil, err
 		}
 		for _, m := range movies {
-			if m.FilePath == "" {
+			root := s.movieRootFor(m)
+			if m.FilePath == "" || root == "" {
 				continue
 			}
-			to, err := s.buildDestPath(s.moviesRoot(), m.Title, m.Year, m.TMDBID, strings.TrimSuffix(filepath.Base(m.FilePath), filepath.Ext(m.FilePath)), m.FilePath)
+			to, err := s.buildDestPath(root, m.Title, m.Year, m.TMDBID, strings.TrimSuffix(filepath.Base(m.FilePath), filepath.Ext(m.FilePath)), m.FilePath)
 			if err != nil {
 				return nil, err
 			}
 			if to != m.FilePath {
-				out = append(out, renameItem{Kind: "movie", ID: m.ID, Title: movieLabel(m), From: m.FilePath, To: to})
+				out = append(out, renameItem{Kind: "movie", ID: m.ID, Title: movieLabel(m), From: m.FilePath, To: to, root: root})
 			}
 		}
 	}
 	if kind == "" || kind == "tv" {
-		shows, err := s.MovieRepo.ListSeries()
+		shows, err := s.MovieRepo.ListSeriesWithCopies()
 		if err != nil {
 			return nil, err
 		}
 		for _, sr := range shows {
+			if s.seriesRootFor(sr) == "" {
+				continue
+			}
 			eps, err := s.MovieRepo.ListEpisodes(sr.ID)
 			if err != nil {
 				return nil, err
@@ -72,7 +78,7 @@ func (s *Server) renamePlan(kind string) ([]renameItem, error) {
 					return nil, err
 				}
 				if to != ep.FilePath {
-					out = append(out, renameItem{Kind: "episode", ID: ep.ID, Title: fmt.Sprintf("%s S%02dE%02d", sr.Title, ep.Season, ep.Episode), From: ep.FilePath, To: to})
+					out = append(out, renameItem{Kind: "episode", ID: ep.ID, Title: fmt.Sprintf("%s S%02dE%02d", sr.Title, ep.Season, ep.Episode), From: ep.FilePath, To: to, root: s.seriesRootFor(sr)})
 				}
 			}
 		}
@@ -136,11 +142,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			continue // already right, or gone
 		}
-		root := s.moviesRoot()
-		if p.Kind == "episode" {
-			root = s.tvRoot()
-		}
-		if err := renameWithSidecars(root, p.From, p.To); err != nil {
+		if err := renameWithSidecars(p.root, p.From, p.To); err != nil {
 			res.Failed = append(res.Failed, fmt.Sprintf("%s: %v", p.Title, err))
 			continue
 		}
@@ -192,7 +194,7 @@ func renameWithSidecars(root, from, to string) error {
 	}
 	oldStem := strings.TrimSuffix(filepath.Base(from), filepath.Ext(from))
 	newStem := strings.TrimSuffix(filepath.Base(to), filepath.Ext(to))
-	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+	if err := fileperms.MkdirAll(filepath.Dir(to)); err != nil {
 		return err
 	}
 	for _, f := range files {

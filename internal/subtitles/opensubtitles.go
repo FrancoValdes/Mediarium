@@ -214,6 +214,16 @@ type Result struct {
 	DownloadsAll int
 	Rating       float64
 	HashMatch    bool // timed against the exact video file searched with (Query.MovieHash)
+
+	// HearingImpaired: the subtitle also describes sounds (SDH). ForeignPartsOnly:
+	// it holds only the lines in a foreign language (a "forced" track). Where a
+	// source doesn't say, these are read from the release's name.
+	HearingImpaired  bool
+	ForeignPartsOnly bool
+
+	Source   string   // where it comes from: SourceOpenSubtitles (empty) or SourceSubDL
+	Link     string   // SubDL's download path; OpenSubtitles uses FileID
+	Releases []string // other releases the subtitle is said to fit (SubDL)
 }
 
 type searchResponse struct {
@@ -224,7 +234,10 @@ type searchResponse struct {
 			DownloadCount int     `json:"download_count"`
 			Ratings       float64 `json:"ratings"`
 			HashMatch     bool    `json:"moviehash_match"`
-			Files         []struct {
+			// OpenSubtitles marks both on every result.
+			HearingImpaired  bool `json:"hearing_impaired"`
+			ForeignPartsOnly bool `json:"foreign_parts_only"`
+			Files            []struct {
 				FileID int `json:"file_id"`
 			} `json:"files"`
 		} `json:"attributes"`
@@ -242,6 +255,13 @@ type Query struct {
 	Type         string // "movie" or "episode"; empty = any
 	Language     string // e.g. "en", "pt-BR"
 	MovieHash    string // the video's FileHash: results made for that exact file come back marked
+	Filename     string // the video's file name, for sources that match by it
+	FileSize     int64  // the video's size in bytes
+
+	// Which kind of subtitle is wanted (see Profile.Apply). The zero values ask
+	// for what searches always asked for: anything.
+	Forced bool     // only a forced track (foreign parts only)
+	Full   FullMode // for a full subtitle: FullNormal or FullSDH narrow the search
 }
 
 // Find searches for subtitles matching q.
@@ -270,6 +290,18 @@ func (c *Client) Find(ctx context.Context, q Query) ([]Result, error) {
 	}
 	if q.MovieHash != "" {
 		v.Set("moviehash", q.MovieHash)
+	}
+	// OpenSubtitles filters on the two flags itself: include (the default),
+	// exclude or only. The answer is filtered again by the caller, so a source
+	// that ignores these still gives the right subtitle.
+	switch {
+	case q.Forced:
+		v.Set("foreign_parts_only", "only")
+	case q.Full == FullNormal:
+		v.Set("hearing_impaired", "exclude")
+		v.Set("foreign_parts_only", "exclude")
+	case q.Full == FullSDH:
+		v.Set("hearing_impaired", "only")
 	}
 	return c.search(ctx, v)
 }
@@ -323,12 +355,14 @@ func (c *Client) search(ctx context.Context, q url.Values) ([]Result, error) {
 			continue
 		}
 		out = append(out, Result{
-			FileID:       d.Attributes.Files[0].FileID,
-			Language:     d.Attributes.Language,
-			Release:      d.Attributes.Release,
-			DownloadsAll: d.Attributes.DownloadCount,
-			Rating:       d.Attributes.Ratings,
-			HashMatch:    d.Attributes.HashMatch,
+			FileID:           d.Attributes.Files[0].FileID,
+			Language:         d.Attributes.Language,
+			Release:          d.Attributes.Release,
+			DownloadsAll:     d.Attributes.DownloadCount,
+			Rating:           d.Attributes.Ratings,
+			HashMatch:        d.Attributes.HashMatch,
+			HearingImpaired:  d.Attributes.HearingImpaired,
+			ForeignPartsOnly: d.Attributes.ForeignPartsOnly,
 		})
 	}
 	return out, nil

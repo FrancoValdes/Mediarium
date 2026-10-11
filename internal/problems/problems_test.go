@@ -143,7 +143,8 @@ func TestCodeFor(t *testing.T) {
 		{"too many", errors.New("Your Usenet provider says there are too many connections on this login."), problems.CodeUsenetTooMany},
 		{"auth", errors.New("the download failed: news.example.com: The provider refused this username and password."), problems.CodeUsenetAuthRefused},
 		{"unreachable", errors.New("the download failed: dial tcp: lookup news.example.com: no such host"), problems.CodeUsenetUnreachable},
-		{"missing parts", errors.New("the download failed: 12 articles couldn't be found on your Usenet servers and the release has no PAR2 files to repair it"), problems.CodeUsenetMissingParts},
+		{"missing parts found by the check before downloading", errors.New("the download failed: Checked 48 articles; 9 of them are not on your Usenet servers"), problems.CodeUsenetMissingParts},
+		{"missing parts",errors.New("the download failed: 12 articles couldn't be found on your Usenet servers and the release has no PAR2 files to repair it"), problems.CodeUsenetMissingParts},
 		{"par2", errors.New("repairing the download failed: par2 repair x: exit status 2"), problems.CodePar2Failed},
 		{"password", errors.New("couldn't unpack the download: archive is password protected"), problems.CodeUnpackPassword},
 		{"7z", errors.New("couldn't unpack the download: the 7z tool is not installed, so .7z archives can't be unpacked"), problems.CodeUnpackToolMissing},
@@ -171,10 +172,11 @@ func TestCodeFor(t *testing.T) {
 
 func TestIndexerMediaServerAndUsenetCodes(t *testing.T) {
 	idx := map[string]string{
-		"newznab error 429: too many requests":              problems.CodeIndexerRateLimited,
-		"API limit reached for today":                       problems.CodeIndexerRateLimited,
-		"newznab error 100: Incorrect user credentials":     problems.CodeIndexerAuthRefused,
-		"HTTP 403 from the site":                            problems.CodeIndexerAuthRefused,
+		"newznab error 429: too many requests":          problems.CodeIndexerRateLimited,
+		"API limit reached for today":                   problems.CodeIndexerRateLimited,
+		"newznab error 100: Incorrect user credentials": problems.CodeIndexerAuthRefused,
+		"HTTP 403 from the site":                        problems.CodeIndexerAuthRefused,
+		"newznab request to NZBFinder: unexpected status 403: <!DOCTYPE html> <!--[if lt IE 7]> <html class=\"no-js": problems.CodeIndexerBlocked,
 		"Get https://x: context deadline exceeded":          problems.CodeIndexerUnreachable,
 		"dial tcp 1.2.3.4:443: connect: connection refused": problems.CodeIndexerUnreachable,
 		"the site returned no results table":                problems.CodeIndexerFailed,

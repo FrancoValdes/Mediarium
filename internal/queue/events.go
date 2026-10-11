@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 // Level is how an item event is shown: info, warn or error.
@@ -139,6 +140,59 @@ func (r *Repo) SeriesEvents(seriesID int64, limit int) ([]Event, error) {
 // AlbumEvents returns an album's events, newest first, at most limit.
 func (r *Repo) AlbumEvents(albumID int64, limit int) ([]Event, error) {
 	return r.itemEvents("album_id", albumID, limit)
+}
+
+// LastMovieSearches returns the newest "searched" event of each of the given
+// movies, keyed by movie id. A movie that was never searched is left out.
+func (r *Repo) LastMovieSearches(movieIDs []int64) (map[int64]Event, error) {
+	return r.lastSearches("movie_id", movieIDs)
+}
+
+// LastAlbumSearches is LastMovieSearches for albums.
+func (r *Repo) LastAlbumSearches(albumIDs []int64) (map[int64]Event, error) {
+	return r.lastSearches("album_id", albumIDs)
+}
+
+// LastSeriesSearches is LastMovieSearches for shows.
+func (r *Repo) LastSeriesSearches(seriesIDs []int64) (map[int64]Event, error) {
+	return r.lastSearches("series_id", seriesIDs)
+}
+
+// lastSearches finds the newest "searched" event of every id in one statement
+// per few hundred ids, instead of asking for each title's events one by one.
+func (r *Repo) lastSearches(col string, ids []int64) (map[int64]Event, error) {
+	out := make(map[int64]Event, len(ids))
+	const chunk = 400
+	for start := 0; start < len(ids); start += chunk {
+		part := ids[start:min(start+chunk, len(ids))]
+		args := make([]any, len(part))
+		for i, id := range part {
+			args[i] = id
+		}
+		rows, err := r.db.Query(`SELECT a.`+col+`, a.created_at, a.event_type, a.message, a.level FROM activity a
+			WHERE a.event_type = 'searched' AND a.`+col+` IN (`+strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")+`)
+			AND a.id = (SELECT b.id FROM activity b WHERE b.`+col+` = a.`+col+` AND b.event_type = 'searched' ORDER BY b.created_at DESC, b.id DESC LIMIT 1)`, args...)
+		if err != nil {
+			return nil, fmt.Errorf("list last searches: %w", err)
+		}
+		for rows.Next() {
+			var id int64
+			var e Event
+			var level string
+			if err := rows.Scan(&id, &e.At, &e.Kind, &e.Message, &level); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan last search: %w", err)
+			}
+			e.Level = Level(level)
+			out[id] = e
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (r *Repo) itemEvents(col string, id int64, limit int) ([]Event, error) {

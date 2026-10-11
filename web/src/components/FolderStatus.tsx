@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type FolderCheck } from '../api'
 import { formatBytes } from '../format'
+import { t } from '../i18n'
 
 // Live check of a folder path as it is typed: does it exist, can Mediarium
 // write to it, is it mapped to the device (Docker), and how much room is left.
@@ -66,14 +67,14 @@ export default function FolderStatus({ path, suggest, onUse }: { path: string; s
     <div className="folder-status">
       <div className="folder-badges">
         {!r.exists ? (
-          <span className="badge failed">folder not found</span>
+          <span className="badge failed">{t('folder not found')}</span>
         ) : (
           <>
-            <span className={`badge ${r.writable ? 'downloaded' : 'failed'}`}>{r.writable ? 'writable' : 'read-only'}</span>
-            {r.mountKnown && <span className={`badge ${r.mounted ? 'downloaded' : 'missing'}`}>{r.mounted ? 'Mapped to your device' : 'not a mapped folder'}</span>}
+            <span className={`badge ${r.writable ? 'downloaded' : 'failed'}`}>{r.writable ? t('writable') : t('read-only')}</span>
+            {r.mountKnown && <span className={`badge ${r.mounted ? 'downloaded' : 'missing'}`}>{r.mounted ? t('Mapped to your device') : t('not a mapped folder')}</span>}
             {r.totalBytes > 0 && (
               <span className="badge">
-                {formatBytes(r.freeBytes)} free of {formatBytes(r.totalBytes)}
+                {t('{free} free of {total}', { free: formatBytes(r.freeBytes), total: formatBytes(r.totalBytes) })}
               </span>
             )}
           </>
@@ -81,9 +82,9 @@ export default function FolderStatus({ path, suggest, onUse }: { path: string; s
       </div>
       {useAlt ? (
         <p className="folder-warn">
-          This folder isn&apos;t mapped to your device. Your other folders are in {offer.slice(0, offer.lastIndexOf('/')) || '/'}, so {offer} works without changing your compose file.{' '}
+          {t("This folder isn't mapped to your device. Your other folders are in {dir}, so {path} works without changing your compose file.", { dir: offer.slice(0, offer.lastIndexOf('/')) || '/', path: offer })}{' '}
           <button className="btn-sm primary" disabled={busy} onClick={() => (alt.exists ? onUse(offer) : void create(offer))}>
-            {busy ? 'Creating…' : `Use ${offer}`}
+            {busy ? t('Creating…') : t('Use {path}', { path: offer })}
           </button>
         </p>
       ) : (
@@ -96,7 +97,7 @@ export default function FolderStatus({ path, suggest, onUse }: { path: string; s
       {!r.exists && r.canCreate && !useAlt && (
         <div>
           <button className="btn-sm primary" disabled={busy} onClick={() => void create(path.trim())}>
-            {busy ? 'Creating…' : 'Create this folder'}
+            {busy ? t('Creating…') : t('Create this folder')}
           </button>
         </div>
       )}

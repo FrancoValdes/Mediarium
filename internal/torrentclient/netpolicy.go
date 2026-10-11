@@ -1,6 +1,7 @@
 package torrentclient
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -27,7 +28,7 @@ import (
 //     Mediarium's outgoing connections (netguard): cloud metadata and other
 //     link-local addresses are refused, even through a redirect or a host name
 //     that resolves there. Local and LAN addresses stay reachable.
-func applyNetworkPolicy(tcfg *torrent.ClientConfig, tunnel TunnelDialer) {
+func applyNetworkPolicy(tcfg *torrent.ClientConfig, tunnel TunnelDialer, allowLocal bool) {
 	if tunnel != nil {
 		tcfg.HTTPDialContext = tunnel.DialContext
 		tcfg.TrackerDialContext = tunnel.DialContext
@@ -47,10 +48,29 @@ func applyNetworkPolicy(tcfg *torrent.ClientConfig, tunnel TunnelDialer) {
 		}
 		return
 	}
-	dial := netguard.Dialer(30 * time.Second).DialContext
+	// Trackers, web seeds and metadata addresses come from torrents that
+	// strangers wrote. Unless the person allowed it, they may not point at the
+	// home network or this machine, so a hostile torrent can't make Mediarium
+	// call something there.
+	control := netguard.ControlPublic
+	if allowLocal {
+		control = netguard.Control
+	}
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: control}
+	dial := dialer.DialContext
 	tcfg.HTTPDialContext = dial
-	tcfg.TrackerDialContext = dial
-	tr := netguard.Transport()
+	// A tracker's answer is small. Capping what is read from a tracker
+	// connection keeps a hostile one from sending the endless nesting that
+	// the bencode decoder in the engine can't handle.
+	tcfg.TrackerDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := dial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &cappedConn{Conn: c, left: maxTrackerReply}, nil
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = dial
 	tr.MaxConnsPerHost = 10
 	tcfg.WebTransport = tr
 	tcfg.TrackerListenPacket = func(network, addr string) (net.PacketConn, error) {
@@ -58,8 +78,30 @@ func applyNetworkPolicy(tcfg *torrent.ClientConfig, tunnel TunnelDialer) {
 		if err != nil {
 			return nil, err
 		}
-		return guardedPacketConn{pc}, nil
+		return guardedPacketConn{PacketConn: pc, allowLocal: allowLocal}, nil
 	}
+}
+
+// maxTrackerReply is the most that is read from one tracker connection. Real
+// announce and scrape answers are a few kilobytes.
+const maxTrackerReply = 1 << 20
+
+// cappedConn stops reading after left bytes.
+type cappedConn struct {
+	net.Conn
+	left int64
+}
+
+func (c *cappedConn) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		return 0, errors.New("the tracker's answer is far too big")
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.Conn.Read(p)
+	c.left -= int64(n)
+	return n, err
 }
 
 var errUDPTrackersOffWithVPN = errors.New("UDP trackers are not used while the VPN is on (they cannot go through the tunnel); HTTP trackers still work")
@@ -85,12 +127,16 @@ func (c *udpOffConn) SetDeadline(time.Time) error           { return nil }
 func (c *udpOffConn) SetReadDeadline(time.Time) error       { return nil }
 func (c *udpOffConn) SetWriteDeadline(time.Time) error      { return nil }
 
-// guardedPacketConn refuses to send to the addresses netguard blocks.
-type guardedPacketConn struct{ net.PacketConn }
+// guardedPacketConn refuses to send to the addresses netguard blocks, and,
+// unless allowLocal, to private and loopback addresses.
+type guardedPacketConn struct {
+	net.PacketConn
+	allowLocal bool
+}
 
 func (g guardedPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if ua, ok := addr.(*net.UDPAddr); ok {
-		if a, ok := netip.AddrFromSlice(ua.IP); ok && netguard.Blocked(a) {
+		if a, ok := netip.AddrFromSlice(ua.IP); ok && (netguard.Blocked(a) || (!g.allowLocal && netguard.NotPublic(a))) {
 			return 0, netguard.ErrBlocked
 		}
 	}

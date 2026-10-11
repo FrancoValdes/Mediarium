@@ -81,3 +81,43 @@ func TestProfileLanguage(t *testing.T) {
 		t.Error("plain English should rank above Italian and English")
 	}
 }
+
+func TestFitLanguageSeveralLanguages(t *testing.T) {
+	rank := func(title, preferred string) (int, bool) {
+		fit := quality.FitLanguage(parser.Parse(title), preferred)
+		return fit.Rank, fit.Accepted
+	}
+	// German first, Italian second: each is taken, German ranks above Italian,
+	// and a language that is on neither list is not.
+	de, okDE := rank("Movie.2020.GERMAN.1080p.BluRay.x264-GRP", "German,Italian")
+	it, okIT := rank("Movie.2020.ITA.1080p.BluRay.x264-GRP", "German,Italian")
+	fr, okFR := rank("Movie.2020.FRENCH.1080p.BluRay.x264-GRP", "German,Italian")
+	if !okDE || !okIT || okFR || fr != 0 || de <= it {
+		t.Errorf("German %d/%v, Italian %d/%v, French %d/%v", de, okDE, it, okIT, fr, okFR)
+	}
+	// A multi release with one of the languages counts.
+	if _, ok := rank("Movie.2020.MULTi.ITA.ENG.1080p.BluRay.x264-GRP", "German,Italian"); !ok {
+		t.Error("a multi release holding Italian should be accepted")
+	}
+	// One language keeps the old numbers.
+	if r, ok := rank("Movie.2020.1080p.BluRay.x264-GRP", "English"); r != 3 || !ok {
+		t.Errorf("single language: %d/%v", r, ok)
+	}
+}
+
+func TestResolveOriginal(t *testing.T) {
+	for _, tc := range []struct{ list, orig, want string }{
+		{"Original,English", "Japanese", "Japanese,English"},
+		{"English,Original", "English", "English"},
+		{"Original,English", "", "English"},
+		{"Original", "", ""},
+		{"English", "Japanese", "English"},
+	} {
+		if got := quality.ResolveOriginal(tc.list, tc.orig); got != tc.want {
+			t.Errorf("ResolveOriginal(%q, %q) = %q, want %q", tc.list, tc.orig, got, tc.want)
+		}
+	}
+	if quality.LanguageName("ja") != "Japanese" || quality.LanguageName("xx") != "" {
+		t.Error("LanguageName")
+	}
+}

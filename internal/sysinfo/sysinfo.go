@@ -86,7 +86,11 @@ type Sampler struct {
 }
 
 // New returns a Sampler reading the real system.
-func New() *Sampler { return &Sampler{started: time.Now(), root: "/"} }
+func New() *Sampler { return &Sampler{started: processStart, root: "/"} }
+
+// processStart is when this program started. The Sampler is made on the first
+// request for the numbers, which can be hours later.
+var processStart = time.Now()
 
 type cpuTimes struct{ busy, total uint64 }
 
@@ -167,15 +171,48 @@ func (s *Sampler) Snapshot() Snapshot {
 	if s.hasCached {
 		snap.App.CPUPercent = s.cached.appPct
 	}
-	if used, ok := readUint(s.path("/sys/fs/cgroup/memory.current")); ok {
-		snap.App.MemoryBytes = used
-	} else if used, ok := readUint(s.path("/sys/fs/cgroup/memory/memory.usage_in_bytes")); ok {
+	if used, ok := s.containerMemory(); ok {
 		snap.App.MemoryBytes = used
 	}
 	if limit, ok := readUint(s.path("/sys/fs/cgroup/memory.max")); ok && (snap.Memory == nil || limit < snap.Memory.TotalBytes) {
 		snap.App.LimitBytes = limit
 	}
 	return snap
+}
+
+// containerMemory is the container's memory in use, counted the way
+// `docker stats` does: the cgroup's usage without the file cache the kernel
+// can drop at any time. Every file Mediarium writes or reads stays in that
+// cache, so counting it would make a few hours of downloads look like a
+// memory leak of several gigabytes.
+func (s *Sampler) containerMemory() (uint64, bool) {
+	if used, ok := readUint(s.path("/sys/fs/cgroup/memory.current")); ok {
+		return used - min(used, statField(s.path("/sys/fs/cgroup/memory.stat"), "inactive_file")), true
+	}
+	if used, ok := readUint(s.path("/sys/fs/cgroup/memory/memory.usage_in_bytes")); ok {
+		return used - min(used, statField(s.path("/sys/fs/cgroup/memory/memory.stat"), "total_inactive_file")), true
+	}
+	return 0, false
+}
+
+// statField reads one "name value" line of a cgroup memory.stat file; 0 when
+// the file or the line is missing.
+func statField(path, name string) uint64 {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && f[0] == name {
+			n, err := strconv.ParseUint(f[1], 10, 64)
+			if err != nil {
+				return 0
+			}
+			return n
+		}
+	}
+	return 0
 }
 
 // read takes every CPU counter at once.

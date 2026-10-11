@@ -2,10 +2,12 @@
 // pending, added, failed) so every screen can be judged with realistic content.
 // It only fakes what the app READS; nothing is written to your library or
 // database, and turning it off restores your real data.
+import { withBase, withoutBase } from './base'
 import type {
   ActivityEntry,
   CalendarEntry,
   DashboardData,
+  DashRecent,
   DiscoverMovie,
   Episode,
   Movie,
@@ -122,6 +124,30 @@ const series: Series[] = SERIES_SEEDS.map((s) => ({
   downloadedCount: s.have,
 }))
 
+// Recently added titles for the dashboard, newest first, with where each stands.
+const demoRecent: DashRecent[] = [
+  ...MOVIE_SEEDS.slice(0, 12).map((m, i) => ({
+    kind: 'movie' as const,
+    id: m.id,
+    tmdbId: 9000 + m.id,
+    title: m.title,
+    year: m.year,
+    posterUrl: m.noPoster ? undefined : poster(m.id),
+    at: ago(20 + i * 50),
+    state: m.state === 'downloaded' ? ('downloaded' as const) : m.state === 'downloading' ? ('downloading' as const) : ('missing' as const),
+  })),
+  ...SERIES_SEEDS.slice(0, 4).map((s, i) => ({
+    kind: 'series' as const,
+    id: s.id,
+    seriesId: s.id,
+    title: s.title,
+    year: s.year,
+    posterUrl: s.noPoster ? undefined : poster(s.id),
+    at: ago(400 + i * 60),
+    state: s.state === 'downloading' ? ('downloading' as const) : s.have === s.episodes ? ('downloaded' as const) : s.have > 0 ? ('partial' as const) : ('missing' as const),
+  })),
+]
+
 const queue: QueueItem[] = [
   { id: 1, movieId: 1, tmdbId: 9001, title: 'Saltwind: Part Two', protocol: 'usenet', releaseTitle: 'Saltwind.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR10Plus.H.265-KESTREL', sizeBytes: 21.4e9, status: 'downloading', progressPct: 63, addedAt: ago(38), posterUrl: poster(1) },
   { id: 2, movieId: 7, tmdbId: 9007, title: 'Northbound', protocol: 'torrent', releaseTitle: 'Northbound.2014.1080p.BluRay.x264-LUMEN', sizeBytes: 9.1e9, status: 'downloading', progressPct: 12, addedAt: ago(9), posterUrl: poster(7) },
@@ -178,15 +204,21 @@ const discoverPool = (offset: number, tv: boolean): DiscoverMovie[] => {
 }
 
 const calendar: CalendarEntry[] = [
-  { kind: 'episode', id: 1, seriesId: 102, title: 'Salt & Static', subtitle: 'S03E09 · Second Service', releaseDate: day(1), status: 'missing' },
-  { kind: 'episode', id: 2, seriesId: 104, title: 'Ember Road', subtitle: 'S02E05 · The Long Fuse', releaseDate: day(2), status: 'missing' },
-  { kind: 'movie', id: 3, movieId: 10, title: 'Tidewalker', releaseDate: day(3), status: 'downloading' },
-  { kind: 'episode', id: 4, seriesId: 101, title: 'The Clean Floor', subtitle: 'S03E01 · Season premiere', releaseDate: day(5), status: 'missing' },
-  { kind: 'movie', id: 5, movieId: 9, title: 'Night Warden', releaseDate: day(6), status: 'missing' },
-  { kind: 'episode', id: 6, seriesId: 105, title: 'Paper Ghosts', subtitle: 'S04E02 · Cold Desk', releaseDate: day(8), status: 'missing' },
-  { kind: 'episode', id: 7, seriesId: 106, title: 'Glass Orchard', subtitle: 'S03E01 · New chapter', releaseDate: day(12), status: 'missing' },
-  { kind: 'movie', id: 8, movieId: 8, title: 'The Quiet Signal', releaseDate: day(-2), status: 'downloaded' },
-  { kind: 'episode', id: 9, seriesId: 103, title: 'The Cartographer’s Daughter', subtitle: 'S02E01 · Return', releaseDate: day(-4), status: 'downloaded' },
+  { kind: 'episode', id: 1, seriesId: 102, season: 3, episode: 9, title: 'Salt & Static', subtitle: 'S03E09 · Second Service', releaseDate: day(1), status: 'missing', posterUrl: poster(102) },
+  { kind: 'episode', id: 2, seriesId: 104, season: 2, episode: 5, title: 'Ember Road', subtitle: 'S02E05 · The Long Fuse', releaseDate: day(2), status: 'missing', posterUrl: poster(104) },
+  { kind: 'movie', id: 3, movieId: 10, tmdbId: 9010, title: 'Tidewalker', releaseDate: day(3), status: 'downloading', posterUrl: poster(10) },
+  { kind: 'episode', id: 4, seriesId: 101, season: 3, episode: 1, title: 'The Clean Floor', subtitle: 'S03E01 · Season premiere', releaseDate: day(5), status: 'missing', posterUrl: poster(101) },
+  { kind: 'album', id: 21, albumId: 22, artistId: 2, title: 'Mira Calloway — Slow Weather', subtitle: 'Album', releaseDate: day(5), status: 'missing', posterUrl: poster(221) },
+  { kind: 'episode', id: 10, seriesId: 106, season: 3, episode: 2, title: 'Glass Orchard', subtitle: 'S03E02 · Root Cellar', releaseDate: day(5), status: 'missing', posterUrl: poster(106) },
+  { kind: 'book', id: 31, bookId: 8, title: 'Robert Louis Stevenson — Treasure Island', subtitle: 'Audiobook', releaseDate: day(5), status: 'missing' },
+  { kind: 'movie', id: 5, movieId: 9, tmdbId: 9009, title: 'Night Warden', releaseDate: day(6), status: 'missing', posterUrl: poster(9) },
+  { kind: 'episode', id: 6, seriesId: 105, season: 4, episode: 2, title: 'Paper Ghosts', subtitle: 'S04E02 · Cold Desk', releaseDate: day(8), status: 'missing' },
+  { kind: 'episode', id: 7, seriesId: 106, season: 3, episode: 1, title: 'Glass Orchard', subtitle: 'S03E01 · New chapter', releaseDate: day(12), status: 'missing', posterUrl: poster(106) },
+  { kind: 'book', id: 32, bookId: 5, title: 'Bram Stoker — Dracula', subtitle: 'Ebook and audiobook', releaseDate: day(15), status: 'missing' },
+  { kind: 'episode', id: 11, seriesId: 102, season: 3, episode: 8, title: 'Salt & Static', subtitle: 'S03E08 · Back of House', releaseDate: day(-1), status: 'downloading', posterUrl: poster(102) },
+  { kind: 'movie', id: 8, movieId: 8, tmdbId: 9008, title: 'The Quiet Signal', releaseDate: day(-2), status: 'downloaded', posterUrl: poster(8) },
+  { kind: 'episode', id: 9, seriesId: 103, season: 2, episode: 1, title: 'The Cartographer’s Daughter', subtitle: 'S02E01 · Return', releaseDate: day(-4), status: 'downloaded', posterUrl: poster(103) },
+  { kind: 'episode', id: 12, seriesId: 104, season: 2, episode: 4, title: 'Ember Road', subtitle: 'S02E04 · Harvest', releaseDate: day(-6), status: 'missing', posterUrl: poster(104) },
 ]
 
 const wantedMissing: WantedItem[] = [
@@ -220,15 +252,20 @@ function dashboard(real: DashboardData | null): DashboardData {
     folders: [
       { key: 'movies', label: 'Movies', path: '/movies', exists: true, writable: true, freeBytes: 3.1e12, totalBytes: 8e12, mounted: true, mountKnown: true, warnings: [], libraryBytes: 0.95e12, items: movies.length, itemsLabel: 'movies', hardlinks: true },
       { key: 'tv', label: 'TV shows', path: '/tv', exists: true, writable: true, freeBytes: 3.1e12, totalBytes: 8e12, mounted: true, mountKnown: true, warnings: [], libraryBytes: 0.47e12, items: 79, itemsLabel: 'episodes', hardlinks: true },
+      { key: 'music', label: 'Music', path: '/music', exists: true, writable: true, freeBytes: 3.1e12, totalBytes: 8e12, mounted: true, mountKnown: true, warnings: [], libraryBytes: 0, items: 41, itemsLabel: 'albums', hardlinks: true },
+      { key: 'ebooks', label: 'Ebooks', path: '/books/ebooks', exists: true, writable: true, freeBytes: 3.1e12, totalBytes: 8e12, mounted: true, mountKnown: true, warnings: [], libraryBytes: 0, items: 12, itemsLabel: 'books', hardlinks: true },
+      { key: 'audiobooks', label: 'Audiobooks', path: '', exists: false, writable: false, freeBytes: 0, totalBytes: 0, mounted: false, mountKnown: false, warnings: [], libraryBytes: 0, items: 0, itemsLabel: '', off: true },
       { key: 'downloads', label: 'Downloads', path: '/downloads', exists: true, writable: true, freeBytes: 3.1e12, totalBytes: 8e12, mounted: true, mountKnown: true, warnings: [], libraryBytes: 0, items: 3, itemsLabel: 'active' },
     ],
     active: [],
-    recentlyAdded: [...movies.slice(0, 6).map((m, i) => ({ kind: 'movie' as const, id: m.id, tmdbId: m.tmdbId, title: m.title, year: m.year, posterUrl: m.posterUrl, at: ago(20 + i * 50) })), ...series.slice(0, 3).map((s, i) => ({ kind: 'series' as const, id: s.id, seriesId: s.id, title: s.title, year: s.year, posterUrl: s.posterUrl, at: ago(400 + i * 60) }))],
+    recentlyAdded: demoRecent.slice(0, 12),
+    recentInLibrary: demoRecent.filter((r) => r.state === 'downloaded' || r.state === 'partial'),
+    recentToCome: demoRecent.filter((r) => r.state !== 'downloaded' && r.state !== 'partial'),
     recentDownloads: [
       ...recent(movies.filter((m) => m.status === 'downloaded').slice(0, 3)),
       { kind: 'series', id: 103, seriesId: 103, title: 'The Cartographer’s Daughter', subtitle: 'S01E10', posterUrl: poster(103), quality: '1080p WEB', sizeBytes: 3.1e9, at: ago(2970) },
     ],
-    upcoming: calendar.filter((c) => c.releaseDate >= day(0)).slice(0, 5),
+    upcoming: calendar.filter((c) => c.releaseDate >= day(0) && (c.kind === 'movie' || c.kind === 'episode')).slice(0, 5),
     // The demo shows a set-up install: the real "not set up yet" warnings would hide the sample content.
     health: (real?.health ?? []).filter((h) => h.level === 'info'),
     setup: { indexers: 2, usenetServers: 1, vpnConnected: true, torrentsReady: true, mediaServers: 1 },
@@ -332,7 +369,7 @@ export function installDemo() {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname + input.search : input.url
     const method = (init?.method ?? 'GET').toUpperCase()
     const u = new URL(url, window.location.origin)
-    const p = u.pathname
+    const p = withoutBase(u.pathname)
     if (!p.startsWith('/api/')) return real(input, init)
     const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -383,7 +420,7 @@ export function installDemo() {
           { kind: 'episode', id: 202, seriesId: 101, title: 'The Clean Floor', subtitle: 'S02E04 · Hollow', missing: ['en'] },
         ])
       case p === '/api/subtitles/quota':
-        return json({ hasKey: true, hasAccount: false, limit: 5, used: 3, remaining: 2, windowHours: 24, resetsAt: new Date(Date.now() + 6 * 3600e3).toISOString(), source: 'estimated', missingItems: 5, missingFiles: 6, daysToFinish: 2, exceeded: false, message: 'You have 6 subtitles to get but 2 downloads left today. At 5 a day that takes 2 days. A free OpenSubtitles account raises it to about 20 a day.' })
+        return json({ hasKey: true, hasSource: true, sourcesSetUp: true, hasAccount: false, limit: 5, used: 3, remaining: 2, windowHours: 24, resetsAt: new Date(Date.now() + 6 * 3600e3).toISOString(), source: 'estimated', missingItems: 5, missingFiles: 6, daysToFinish: 2, exceeded: false, message: 'You have 6 subtitles to get but 2 downloads left today. At 5 a day that takes 2 days. A free OpenSubtitles account raises it to about 20 a day.' })
       case p === '/api/calendar':
         return json(calendar)
       case p === '/api/wanted':
@@ -428,7 +465,7 @@ export function installDemo() {
         return json([])
       case /^\/api\/books\/\d+\/read$/.test(p):
         // A short public-domain sample, so the reader has something to show.
-        return real('/demo/sample-book.epub')
+        return real(withBase('/demo/sample-book.epub'))
       case p === '/api/discover/trending':
       case p === '/api/discover/for-you':
         return json(discoverPool(0, false))

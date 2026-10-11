@@ -137,7 +137,9 @@ func problemFilter(r *http.Request) (problems.Filter, error) {
 
 type problemsPayload struct {
 	Items            []problemView       `json:"items"`
-	Total            int                 `json:"total"`
+	Total            int                 `json:"total"`  // how many match the filters, in all
+	Limit            int                 `json:"limit"`  // the page size used
+	Offset           int                 `json:"offset"` // where this page starts
 	Counts           problems.Counts     `json:"counts"`
 	Areas            []problems.AreaInfo `json:"areas"`
 	NotifyOnProblems bool                `json:"notifyOnProblems"`
@@ -165,6 +167,7 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out.Total = total
+		out.Limit, out.Offset = f.Paging()
 		for _, e := range entries {
 			out.Items = append(out.Items, viewOf(e))
 		}
@@ -177,7 +180,9 @@ type problemsReadRequest struct {
 	All bool    `json:"all"`
 }
 
-// handleProblemsRead marks problems as read: the ones listed, or all of them.
+// handleProblemsRead marks problems as read: the ones listed, or with "all"
+// every problem that matches the filters in the query string (all of them when
+// there are none).
 func (s *Server) handleProblemsRead(w http.ResponseWriter, r *http.Request) {
 	var req problemsReadRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -193,7 +198,12 @@ func (s *Server) handleProblemsRead(w http.ResponseWriter, r *http.Request) {
 		err error
 	)
 	if req.All {
-		n, err = s.Problems.MarkAllRead(problems.Filter{})
+		f, ferr := problemFilter(r)
+		if ferr != nil {
+			writeError(w, http.StatusBadRequest, ferr.Error())
+			return
+		}
+		n, err = s.Problems.MarkAllRead(f)
 	} else {
 		n, err = s.Problems.MarkRead(req.IDs)
 	}
@@ -213,19 +223,10 @@ func (s *Server) handleProblemsExport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	f.Limit, f.Offset = 200, 0
-	var all []problems.Entry
-	for {
-		page, total, err := s.Problems.List(f)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		all = append(all, page...)
-		f.Offset += len(page)
-		if len(page) == 0 || f.Offset >= total {
-			break
-		}
+	all, err := s.Problems.All(f)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	now := time.Now()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

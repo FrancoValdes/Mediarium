@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { releaseHint, type Unanswered } from '../releaseHint'
+import { t } from '../i18n'
 
 // The line about the indexers next to a release list: says why there is
 // nothing to show, or that some sources did not answer.
@@ -12,7 +13,7 @@ export default function ReleaseNotice({ sources, unanswered, results, className 
       {h.link && (
         <>
           {' '}
-          <Link to="/settings/indexers">Settings &gt; Indexers &amp; Search</Link>.
+          <Link to="/settings/indexers">{t('Settings > Indexers & Search')}</Link>.
         </>
       )}
     </p>

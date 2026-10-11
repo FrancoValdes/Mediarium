@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
+	"github.com/rdborg/mediarium/internal/animemap"
 	"github.com/rdborg/mediarium/internal/library"
 	"github.com/rdborg/mediarium/internal/metadata"
 	"github.com/rdborg/mediarium/internal/parser"
@@ -35,7 +38,7 @@ func guessSeriesType(show metadata.Show) string {
 // for, from the show's episode list. A release with a season marker, or of a
 // standard show, comes back as it was.
 func mapRelease(rel parser.Release, seriesType string, episodes []library.Episode) parser.Release {
-	if rel.Season > 0 {
+	if rel.Season > 0 || rel.Special {
 		return rel
 	}
 	switch seriesType {
@@ -66,25 +69,105 @@ func mapRelease(rel parser.Release, seriesType string, episodes []library.Episod
 		if rel.AirDate == "" {
 			return rel
 		}
+		var sameDay []library.Episode
 		for _, e := range episodes {
 			if e.Season > 0 && e.AirDate == rel.AirDate {
-				rel.Season, rel.Episode, rel.Episodes = e.Season, e.Episode, []int{e.Episode}
-				break
+				sameDay = append(sameDay, e)
 			}
+		}
+		if e, ok := pickSameDay(sameDay, rel); ok {
+			rel.Season, rel.Episode, rel.Episodes = e.Season, e.Episode, []int{e.Episode}
 		}
 	}
 	return rel
 }
 
-// releaseMapper maps release names for one show; nil for a standard show.
-// The episode list is read once, on first use.
-func (s *Server) releaseMapper(series library.Series) func(parser.Release) parser.Release {
-	if series.SeriesType != library.SeriesAnime && series.SeriesType != library.SeriesDaily {
-		return nil
+// pickSameDay picks the episode a dated release is for when a daily show
+// has more than one on that day: by "Part 2" in the name, or by the words
+// after the date matching one episode's title better than the others. When
+// nothing tells them apart the release is left unmatched rather than filling
+// the wrong episode; choosing a release by hand still works.
+func pickSameDay(sameDay []library.Episode, rel parser.Release) (library.Episode, bool) {
+	switch len(sameDay) {
+	case 0:
+		return library.Episode{}, false
+	case 1:
+		return sameDay[0], true
 	}
+	sort.Slice(sameDay, func(i, j int) bool {
+		if sameDay[i].Season != sameDay[j].Season {
+			return sameDay[i].Season < sameDay[j].Season
+		}
+		return sameDay[i].Episode < sameDay[j].Episode
+	})
+	words := titleWords(rel.DailyTitle)
+	best, bestScore, tie := 0, 0, false
+	for i, e := range sameDay {
+		score := 0
+		for w := range titleWords(e.Title) {
+			if words[w] {
+				score++
+			}
+		}
+		switch {
+		case score > bestScore:
+			best, bestScore, tie = i, score, false
+		case score == bestScore && score > 0:
+			tie = true
+		}
+	}
+	if bestScore > 0 && !tie {
+		return sameDay[best], true
+	}
+	if rel.DailyPart >= 1 && rel.DailyPart <= len(sameDay) {
+		return sameDay[rel.DailyPart-1], true
+	}
+	return library.Episode{}, false
+}
+
+// titleWords are the words of a title that say something: lower case,
+// three letters or more, without the common little ones.
+func titleWords(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		if len([]rune(w)) < 3 || commonTitleWords[w] {
+			continue
+		}
+		out[w] = true
+	}
+	return out
+}
+
+var commonTitleWords = map[string]bool{
+	"the": true, "and": true, "with": true, "for": true, "from": true, "part": true, "episode": true, "show": true, "special": true,
+}
+
+// releaseMapper maps release names for one show to the episodes they are for
+// under the show's own numbering: names in scene or anime numbering through
+// the show's numbering (see mapNumbered), anime and daily names without a
+// season marker through the episode list, and a special named by its title to
+// that special. The episode list and the numbering are read once, on first use.
+func (s *Server) releaseMapper(series library.Series) func(parser.Release) parser.Release {
 	var episodes []library.Episode
 	loaded := false
+	var num *animemap.Numbering
+	numLoaded := false
 	return func(rel parser.Release) parser.Release {
+		if rel.Special {
+			return rel
+		}
+		if !numLoaded {
+			num, numLoaded = s.numberingFor(series), true
+		}
+		if !num.Empty() {
+			if (len(num.Entries) > 0 || (rel.Season == 0 && len(rel.Absolute) > 0)) && !loaded {
+				episodes, _ = s.MovieRepo.ListEpisodes(series.ID)
+				loaded = true
+			}
+			if mapped, ok := mapNumbered(rel, num, episodes); ok {
+				return mapped
+			}
+		}
 		if rel.Season > 0 {
 			return rel
 		}
@@ -92,8 +175,86 @@ func (s *Server) releaseMapper(series library.Series) func(parser.Release) parse
 			episodes, _ = s.MovieRepo.ListEpisodes(series.ID)
 			loaded = true
 		}
-		return mapRelease(rel, series.SeriesType, episodes)
+		if series.SeriesType == library.SeriesAnime || series.SeriesType == library.SeriesDaily {
+			if mapped := mapRelease(rel, series.SeriesType, episodes); mapped.Season > 0 {
+				return mapped
+			}
+		}
+		return mapSpecial(rel, series.Title, episodes)
 	}
+}
+
+// mapSpecial reads a release with no season marker as one of the show's
+// specials when its name carries that special's title after the show's
+// ("Doctor.Who.2005.The.Christmas.Invasion.720p" is the special called "The
+// Christmas Invasion"), or, for a dated name, when one special aired that
+// day. Every telling word of the title must be there, a one-word title only
+// counts when the word is long enough not to turn up by chance, and two
+// specials matching equally well leave the release as it was.
+func mapSpecial(rel parser.Release, showTitle string, episodes []library.Episode) parser.Release {
+	if len(rel.Absolute) > 0 {
+		return rel
+	}
+	var specials []library.Episode
+	for _, e := range episodes {
+		if e.Season == 0 && e.Episode > 0 {
+			specials = append(specials, e)
+		}
+	}
+	pick := func(e library.Episode) parser.Release {
+		rel.Special, rel.Season, rel.Episode, rel.Episodes = true, 0, e.Episode, []int{e.Episode}
+		return rel
+	}
+	if rel.AirDate != "" {
+		var same []library.Episode
+		for _, e := range specials {
+			if e.AirDate == rel.AirDate {
+				same = append(same, e)
+			}
+		}
+		if len(same) == 1 {
+			return pick(same[0])
+		}
+		return rel
+	}
+	name := titleWords(rel.Name)
+	show := titleWords(showTitle)
+	phrase := " " + strings.Join(strings.Fields(nonAlnum.ReplaceAllString(strings.ToLower(rel.Name), " ")), " ") + " "
+	best, bestScore, tie := -1, 0, false
+	for i, e := range specials {
+		need := 0
+		all := true
+		longest := 0
+		for w := range titleWords(e.Title) {
+			if show[w] {
+				continue
+			}
+			need++
+			longest = max(longest, len([]rune(w)))
+			if !name[w] {
+				all = false
+			}
+		}
+		if !all || need == 0 || (need == 1 && longest < 6) {
+			continue
+		}
+		// The whole title, small words and order included, beats the same
+		// words scattered: "Planet of the Dead" over "Dead Planet".
+		score := need * 2
+		if title := strings.Join(strings.Fields(nonAlnum.ReplaceAllString(strings.ToLower(e.Title), " ")), " "); title != "" && strings.Contains(phrase, " "+title+" ") {
+			score++
+		}
+		switch {
+		case score > bestScore:
+			best, bestScore, tie = i, score, false
+		case score == bestScore:
+			tie = true
+		}
+	}
+	if best >= 0 && !tie {
+		return pick(specials[best])
+	}
+	return rel
 }
 
 // parseFor parses a release name for series (mapped when it is anime or daily).
@@ -105,10 +266,44 @@ func parseFor(mapper func(parser.Release) parser.Release, title string) parser.R
 	return rel
 }
 
-// extraTVQueries are the searches an anime or daily show needs besides
-// "Show S01E05": the absolute number ("Show 105") or the air date
-// ("Show 2024 03 15") of the episode.
+// extraTVQueries are the searches a show needs besides "Show S01E05": the
+// absolute number ("Show 105") or the air date ("Show 2024 03 15") of the
+// episode, and for a show with scene or anime numbering the names releases
+// use for it (see numberingQueries).
 func (s *Server) extraTVQueries(series library.Series, season, episode int) []string {
+	out := s.extraTVQueriesFor(series, season, episode)
+	if season <= 0 || episode <= 0 {
+		return out
+	}
+	num := s.numberingFor(series)
+	if num.Empty() {
+		return out
+	}
+	absolute := 0
+	if episodes, err := s.MovieRepo.ListEpisodes(series.ID); err == nil {
+		absolute = library.AbsoluteNumber(episodes, season, episode)
+	}
+	seen := map[string]bool{}
+	for _, q := range out {
+		seen[strings.ToLower(q)] = true
+	}
+	for _, q := range numberingQueries(series.Title, num, season, episode, absolute) {
+		if !seen[strings.ToLower(q)] {
+			seen[strings.ToLower(q)] = true
+			out = append(out, q)
+		}
+	}
+	return out
+}
+
+func (s *Server) extraTVQueriesFor(series library.Series, season, episode int) []string {
+	if season == 0 && episode > 0 {
+		// Specials are often posted under their title rather than S00E05.
+		if ep, err := s.MovieRepo.GetEpisode(series.ID, 0, episode); err == nil && strings.TrimSpace(ep.Title) != "" {
+			return []string{series.Title + " " + ep.Title}
+		}
+		return nil
+	}
 	if episode <= 0 || (series.SeriesType != library.SeriesAnime && series.SeriesType != library.SeriesDaily) {
 		return nil
 	}
@@ -154,6 +349,9 @@ func (s *Server) handleSetSeriesType(w http.ResponseWriter, r *http.Request) {
 	if err := s.MovieRepo.SetSeriesType(id, req.Type); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if sr, err := s.MovieRepo.GetSeries(id); err == nil {
+		s.noteSeriesNumbering(sr) // an anime gets its numbering read now
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"type": req.Type})
 }

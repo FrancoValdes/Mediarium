@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/rdborg/mediarium/internal/netguard"
+	"github.com/rdborg/mediarium/internal/netproxy"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/net/publicsuffix"
 )
@@ -236,7 +237,7 @@ func newSession(m *CardigannManager, def *Definition, inst Instance) (*cgSession
 	}
 	transport := m.Transport
 	if transport == nil {
-		transport = netguard.Transport()
+		transport = netproxy.Transport(netproxy.Indexers)
 	}
 	s.client = &http.Client{Transport: transport, Jar: jar, Timeout: 30 * time.Second}
 	return s, nil
@@ -286,6 +287,31 @@ func (s *cgSession) vars() *tmplVars {
 		v.Config[st.Name] = val
 	}
 	return v
+}
+
+// customUserAgent returns the User-Agent the person typed into the site's
+// "useragent" setting, if the definition has one. Sites that tie the session
+// cookie to the browser need every request, the sign-in check included, to
+// say the same thing as that browser.
+func (s *cgSession) customUserAgent() string {
+	for _, st := range s.def.Settings {
+		if st.Name != "useragent" || st.Type != "text" {
+			continue
+		}
+		val, ok := s.settings[st.Name]
+		if !ok {
+			val = st.Default
+		}
+		// a header value can't hold line breaks or other control characters
+		val = strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f {
+				return -1
+			}
+			return r
+		}, val)
+		return strings.TrimSpace(val)
+	}
+	return ""
 }
 
 // --- HTTP ---
@@ -410,6 +436,9 @@ func (s *cgSession) doOnce(ctx context.Context, r cgRequest) (*cgResponse, error
 	ua := s.m.UserAgent
 	if ua == "" {
 		ua = defaultUserAgent
+	}
+	if custom := s.customUserAgent(); custom != "" {
+		ua = custom
 	}
 	if s.userAgent != "" {
 		ua = s.userAgent

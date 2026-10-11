@@ -1,13 +1,17 @@
+import KindGlyph, { type GlyphKind } from '../components/KindGlyph'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { api, displayName, isAdmin, type CalendarEntry, type DashboardData, type DashFolder, type DashRecent, type HealthItem, type QueueItem } from '../api'
+import { api, displayName, isAdmin, type LibraryStats, type CalendarEntry, type DashboardData, type DashFolder, type DashRecent, type HealthItem, type QueueItem } from '../api'
 import { useAuth } from '../AuthContext'
 import CalendarGrid, { KindBadge } from '../components/CalendarGrid'
 import Icon, { type IconName } from '../components/Icon'
+import InfoTip from '../components/InfoTip'
+import HelpLink from '../components/HelpLink'
 import Loading from '../components/Loading'
-import Cover from '../components/Cover'
-import { PosterFallback } from '../components/PosterCard'
+import PosterCard, { PosterFallback } from '../components/PosterCard'
+import { describeState, type ItemStateKey } from '../components/state'
 import { formatBytes, qualityText, timeAgo } from '../format'
+import { locale, plural, t, tx } from '../i18n'
 import { linePlace } from '../queueView'
 import { ServerInfoCard, useServerStats } from '../components/ServerStats'
 import { useModules } from '../ModulesContext'
@@ -17,6 +21,7 @@ import { dismiss, factsFromDashboard, isDismissed, setupGaps } from '../setupSta
 import { useGridColumns } from '../useGridColumns'
 import { useLive } from '../useLive'
 import { useUnreadErrors } from '../useProblems'
+import TwoStepTip from '../components/TwoStepTip'
 
 // Counts up to its target once, so the numbers feel alive when the page opens.
 function useCountUp(target: number, ms = 700): number {
@@ -47,37 +52,41 @@ function useCountUp(target: number, ms = 700): number {
 // One card per kind of media. A kind that is switched off keeps its card,
 // dimmed with an "Off" badge and the count it had, so it is easy to switch back
 // on; one that is not built yet says "Coming soon".
-function ModuleCard({ icon, label, value, unit, sub, to, color, off, soon }: { icon: IconName; label: string; value?: number; unit?: string; sub?: string; to: string; color: string; off?: boolean; soon?: boolean }) {
+function ModuleCard({ icon, glyph, label, value, unit, sub, to, color, off, soon }: { icon: IconName; glyph?: GlyphKind; label: string; value?: number; unit?: string; sub?: string; to: string; color: string; off?: boolean; soon?: boolean }) {
   const counted = useCountUp(value ?? 0)
   const dim = off || soon
   const body = (
     <>
       <span className="mod-top">
-        <span className="stat-icon">
-          <Icon name={icon} size={18} />
-        </span>
+        <span className={`stat-icon${glyph ? ' has-glyph' : ''}`}>{glyph ? <KindGlyph kind={glyph} size={34} variant="solid" /> : <Icon name={icon} size={18} />}</span>
         <span className="mod-name">{label}</span>
-        {soon ? <span className="badge mod-badge">Coming soon</span> : off ? <span className="badge mod-badge">Off</span> : null}
+        {soon ? <span className="badge mod-badge">{t('Coming soon')}</span> : off ? <span className="badge mod-badge">{t('Off')}</span> : null}
       </span>
       {soon ? (
         <span className="mod-value mod-empty">—</span>
       ) : (
         <span className="mod-value">
-          {counted.toLocaleString()}
+          {counted.toLocaleString(locale())}
           {unit && <small>{unit}</small>}
         </span>
       )}
-      <span className="stat-sub">{soon ? 'Not built yet' : sub}</span>
+      <span className="stat-sub">{soon ? t('Not built yet') : sub}</span>
     </>
   )
-  return dim ? (
-    <div className="stat-card mod-card is-dim" style={{ ['--tc' as string]: color }} aria-label={soon ? `${label}: coming soon` : `${label}: switched off`}>
-      {body}
+  // The wrapper draws the outline (it follows the notch in the corner); the card inside is the cut shape.
+  const kind = glyph ?? 'movie'
+  return (
+    <div className={`mod-wrap mod-k-${kind}${dim ? ' dim' : ''}`} style={{ ['--tc' as string]: color }}>
+      {dim ? (
+        <div className="stat-card mod-card is-dim" aria-label={soon ? t('{label}: coming soon', { label }) : t('{label}: switched off', { label })}>
+          {body}
+        </div>
+      ) : (
+        <Link to={to} className="stat-card mod-card">
+          {body}
+        </Link>
+      )}
     </div>
-  ) : (
-    <Link to={to} className="stat-card mod-card" style={{ ['--tc' as string]: color }}>
-      {body}
-    </Link>
   )
 }
 
@@ -107,7 +116,7 @@ function Health({ items, showOptional, errors = 0 }: { items: HealthItem[]; show
     <section className="card health">
       {(problems.length > 0 || errors > 0) && (
         <>
-          <h2>Needs your attention</h2>
+          <h2>{t('Needs your attention')}</h2>
           <ul>
             {errors > 0 && (
               <li className="health-item level-error">
@@ -116,12 +125,12 @@ function Health({ items, showOptional, errors = 0 }: { items: HealthItem[]; show
                 </span>
                 <div className="health-text">
                   <strong>
-                    {errors === 1 ? '1 new error' : `${errors} new errors`} in the last 24 hours
+                    {plural(errors, '{n} new error in the last 24 hours', '{n} new errors in the last 24 hours')}
                   </strong>
-                  <span>Something went wrong that Mediarium could not sort out by itself. The log says what happened and what to try.</span>
+                  <span>{t('Something went wrong that Mediarium could not sort out by itself. The log says what happened and what to try.')}</span>
                 </div>
                 <Link to="/settings/logs" className="health-action">
-                  Open the log <Icon name="open" size={14} />
+                  {t('Open the log')} <Icon name="open" size={14} />
                 </Link>
               </li>
             )}
@@ -132,7 +141,7 @@ function Health({ items, showOptional, errors = 0 }: { items: HealthItem[]; show
       {optional.length > 0 && (
         <details open={showOptional}>
           <summary>
-            {optional.length} optional {optional.length === 1 ? 'thing' : 'things'} you could set up
+            {plural(optional.length, '{n} optional thing you could set up', '{n} optional things you could set up')}
           </summary>
           <ul>{optional.map(row)}</ul>
         </details>
@@ -144,7 +153,23 @@ function Health({ items, showOptional, errors = 0 }: { items: HealthItem[]; show
 function FolderCard({ f }: { f: DashFolder }) {
   const used = f.totalBytes > 0 ? 1 - f.freeBytes / f.totalBytes : 0
   const tone = !f.exists || !f.writable ? 'bad' : used > 0.95 ? 'bad' : used > 0.85 ? 'warn' : ''
-  const icon: IconName = f.key === 'movies' ? 'film' : f.key === 'tv' ? 'tv' : 'download'
+  const icon: IconName = f.key === 'movies' ? 'film' : f.key === 'tv' ? 'tv' : f.key === 'music' ? 'music' : f.key === 'ebooks' ? 'book' : f.key === 'audiobooks' ? 'headphones' : 'download'
+  if (f.off) {
+    return (
+      <div className="folder-card is-off" title={t('Switched off in Settings > Media types')}>
+        <div className="folder-head">
+          <span className="stat-icon">
+            <Icon name={icon} size={18} />
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <strong>{f.label}</strong>
+            {f.path && <code title={f.path}>{f.path}</code>}
+          </div>
+          <span className="badge">{t('Off')}</span>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className={`folder-card${!f.exists || !f.writable ? ' broken' : ''}`}>
       <div className="folder-head">
@@ -158,14 +183,14 @@ function FolderCard({ f }: { f: DashFolder }) {
       </div>
       <div className="folder-badges">
         {!f.exists ? (
-          <span className="badge failed">not found</span>
+          <span className="badge failed">{t('not found')}</span>
         ) : (
           <>
-            <span className={`badge ${f.writable ? 'downloaded' : 'failed'}`}>{f.writable ? 'writable' : 'read-only'}</span>
-            {f.mountKnown && <span className={`badge ${f.mounted ? 'downloaded' : 'missing'}`}>{f.mounted ? 'Mapped to your device' : 'not a mapped folder'}</span>}
+            <span className={`badge ${f.writable ? 'downloaded' : 'failed'}`}>{f.writable ? t('writable') : t('read-only')}</span>
+            {f.mountKnown && <span className={`badge ${f.mounted ? 'downloaded' : 'missing'}`}>{f.mounted ? t('Mapped to your device') : t('not a mapped folder')}</span>}
             {f.hardlinks !== undefined && (
-              <span className={`badge ${f.hardlinks ? 'downloaded' : ''}`} title={f.hardlinks ? 'Same drive as Downloads: imports use hardlinks, no extra space' : 'Different drive from Downloads: imports copy the file'}>
-                {f.hardlinks ? 'hardlinks on' : 'copies on import'}
+              <span className={`badge ${f.hardlinks ? 'downloaded' : ''}`} title={f.hardlinks ? t('Same drive as Downloads: imports use hardlinks, no extra space') : t('Different drive from Downloads: imports copy the file')}>
+                {f.hardlinks ? t('hardlinks on') : t('copies on import')}
               </span>
             )}
           </>
@@ -173,13 +198,18 @@ function FolderCard({ f }: { f: DashFolder }) {
       </div>
       {f.exists && f.totalBytes > 0 && (
         <>
-          <div className={`bar ${tone}`} title={`${Math.round(used * 100)}% of the drive used`}>
+          <div className={`bar ${tone}`} title={t('{pct}% of the drive used', { pct: Math.round(used * 100) })}>
             <span style={{ width: `${Math.max(2, used * 100)}%` }} />
           </div>
           <div className="folder-meta">
-            <span>{formatBytes(f.freeBytes)} free of {formatBytes(f.totalBytes)}</span>
-            {f.key !== 'downloads' && <span>{f.items.toLocaleString()} {f.itemsLabel} · {formatBytes(f.libraryBytes)}</span>}
-            {f.key === 'downloads' && <span>{f.items} downloading</span>}
+            <span>{t('{free} free of {total}', { free: formatBytes(f.freeBytes), total: formatBytes(f.totalBytes) })}</span>
+            {f.key !== 'downloads' && (
+              <span>
+                {f.items.toLocaleString(locale())} {f.itemsLabel}
+                {f.libraryBytes > 0 ? ` · ${formatBytes(f.libraryBytes)}` : ''}
+              </span>
+            )}
+            {f.key === 'downloads' && <span>{t('{n} downloading', { n: f.items })}</span>}
           </div>
         </>
       )}
@@ -196,7 +226,7 @@ function ActiveDownloads({ items }: { items: QueueItem[] }) {
   if (items.length === 0) {
     return (
       <div className="empty-inline">
-        <Icon name="download" size={22} /> Nothing is downloading right now.
+        <Icon name="download" size={22} /> {t('Nothing is downloading right now.')}
       </div>
     )
   }
@@ -240,39 +270,59 @@ function recentLink(r: DashRecent): string {
 // One row of posters that shows as many as fit the width, never a sideways
 // scrollbar: the row is a grid of equal columns and only the first row is kept.
 // Where a recently added title stands, on its poster.
+// The poster states the dashboard's recent rows map onto.
+const RECENT_KEY: Record<NonNullable<DashRecent['state']>, ItemStateKey> = { downloaded: 'downloaded', downloading: 'downloading', partial: 'partial', missing: 'searching', unmonitored: 'added' }
+
 const RECENT_STATE: Record<NonNullable<DashRecent['state']>, string> = {
-  downloaded: 'In library',
-  downloading: 'Downloading',
-  partial: 'Some episodes',
-  missing: 'Waiting for a release',
-  unmonitored: 'Not monitored',
+  downloaded: t('In library'),
+  downloading: t('Downloading'),
+  partial: t('Some episodes'),
+  missing: t('Waiting for a release'),
+  unmonitored: t('Not monitored'),
 }
 
-function RecentRow({ items }: { items: DashRecent[] }) {
+function RecentRow({ items, hide, when }: { items: DashRecent[]; hide?: DashRecent['state']; when?: boolean }) {
   const row = useRef<HTMLDivElement>(null)
   const cols = useGridColumns(row, 6)
   return (
     <div className="recent-row" ref={row}>
-      {items.slice(0, cols).map((r) => (
-        <Link key={`${r.kind}-${r.id}`} className={`mini-poster kind-${r.kind === 'movie' ? 'movie' : r.kind === 'album' ? 'music' : r.kind === 'book' ? 'book' : 'tv'}`} to={recentLink(r)}>
-          <span className="mini-art">{r.kind === 'album' ? <Cover src={r.posterUrl} /> : r.posterUrl ? <img src={r.posterUrl} alt="" loading="lazy" /> : <PosterFallback />}</span>
-          {r.state && <span className={`recent-state st-${r.state}`}>{RECENT_STATE[r.state]}</span>}
-          <strong>{r.title}</strong>
-          <small>
-            {r.year || ''} {r.kind === 'series' ? '· TV' : r.kind === 'album' ? '· Music' : r.kind === 'book' ? '· Book' : ''}
-          </small>
-        </Link>
-      ))}
+      {items.slice(0, cols).map((r) => {
+        const kind = r.kind === 'movie' ? 'movie' : r.kind === 'album' ? 'music' : r.kind === 'book' ? 'book' : 'tv'
+        const st = r.state && r.state !== hide ? RECENT_KEY[r.state] : undefined
+        return (
+          <PosterCard
+            key={`${r.kind}-${r.id}`}
+            to={recentLink(r)}
+            kind={kind}
+            poster={r.posterUrl}
+            title={r.title}
+            meta={`${when && r.at ? timeAgo(r.at) : r.year || ''}${r.kind === 'series' ? ` · ${t('TV')}` : r.kind === 'album' ? ` · ${t('Music')}` : r.kind === 'book' ? ` · ${t('Book')}` : ''}`}
+            state={st ? { ...describeState(st, undefined, r.state === 'partial' && kind === 'music' ? t('Some of the albums you want are downloaded.') : undefined), label: r.state === 'partial' && kind === 'music' ? t('Some albums') : RECENT_STATE[r.state!] } : undefined}
+          />
+        )
+      })}
     </div>
   )
 }
 
+// Where the media shapes float behind the greeting.
+const DRIFT: { k: GlyphKind; c: string; x: string; y: string; s: number; far?: boolean }[] = [
+  { k: 'movie', c: 'movie', x: '40%', y: '-8%', s: 120 },
+  { k: 'tv', c: 'tv', x: '58%', y: '48%', s: 110 },
+  { k: 'music', c: 'music', x: '66%', y: '-22%', s: 140 },
+  { k: 'book', c: 'book', x: '88%', y: '56%', s: 96 },
+  { k: 'audiobook', c: 'audiobook', x: '26%', y: '58%', s: 84, far: true },
+  { k: 'movie', c: 'movie', x: '70%', y: '22%', s: 64, far: true },
+  { k: 'music', c: 'music', x: '48%', y: '74%', s: 58, far: true },
+  { k: 'tv', c: 'tv', x: '93%', y: '36%', s: 54, far: true },
+]
+
 function greeting(): string {
   const h = new Date().getHours()
-  return h < 5 ? 'Still up' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
+  return h < 5 ? t('Still up') : h < 12 ? t('Good morning') : h < 18 ? t('Good afternoon') : t('Good evening')
 }
 
-function Tile({ tone, icon, title, link, to, children }: { tone?: string; icon: IconName; title: string; link?: string; to?: string; children: ReactNode }) {
+function Tile({ tone, icon, title, link, to, tip, children }: { tone?: string; icon: IconName; title: string; link?: string; to?: string; tip?: string; children: ReactNode }) {
   return (
     <section className={`tile${tone ? ` tone-${tone}` : ''}`}>
       <div className="tile-head">
@@ -280,6 +330,7 @@ function Tile({ tone, icon, title, link, to, children }: { tone?: string; icon: 
           <Icon name={icon} size={18} />
         </span>
         <h2>{title}</h2>
+        {tip && <InfoTip text={tip} />}
         {link && to && (
           <Link className="tile-link" to={to}>
             {link} <Icon name="open" size={13} />
@@ -322,8 +373,8 @@ export default function Dashboard() {
   // Downloads move quickly, so they refresh on their own faster clock.
   const loadActive = useCallback(() => {
     api
-      .listQueue()
-      .then((q) => setActive(q.filter((i) => i.status === 'queued' || i.status === 'downloading' || i.status === 'importing')))
+      .listActiveQueue()
+      .then(setActive)
       .catch(() => undefined)
   }, [])
   useEffect(loadActive, [loadActive])
@@ -371,23 +422,23 @@ export default function Dashboard() {
   const heroPills = (
         <div className="hero-pills">
           <Link to="/queue" className="hero-pill" style={{ ['--pc' as string]: 'var(--c-activity)' }}>
-            <Icon name="download" size={15} /> {running} downloading
+            <Icon name="download" size={15} /> {t('{n} downloading', { n: running })}
           </Link>
           <Link to="/wanted" className="hero-pill" style={{ ['--pc' as string]: 'var(--c-wanted)' }}>
-            <Icon name="bookmark" size={15} /> {wanted} wanted
+            <Icon name="bookmark" size={15} /> {t('{n} wanted', { n: wanted })}
           </Link>
           {!admin ? null : problems > 0 ? (
             <a href="#attention" className="hero-pill" style={{ ['--pc' as string]: 'var(--danger)' }}>
-              <Icon name="warning" size={15} /> {problems} to fix
+              <Icon name="warning" size={15} /> {t('{n} to fix', { n: problems })}
             </a>
           ) : (
-            <span className="hero-pill" style={{ ['--pc' as string]: 'var(--success)' }} title="Everything Mediarium needs is set up and working.">
-              <Icon name="check" size={15} /> All good
+            <span className="hero-pill" style={{ ['--pc' as string]: 'var(--success)' }} title={t('Everything Mediarium needs is set up and working.')}>
+              <Icon name="check" size={15} /> {t('All good')}
             </span>
           )}
           {data.health.some((h) => h.level === 'info') && (
             <button className="hero-pill" style={{ ['--pc' as string]: 'var(--c-settings)' }} onClick={() => setShowOptional((v) => !v)} aria-expanded={showOptional}>
-              <Icon name="sliders" size={15} /> {data.health.filter((h) => h.level === 'info').length} optional
+              <Icon name="sliders" size={15} /> {t('{n} optional', { n: data.health.filter((h) => h.level === 'info').length })}
             </button>
           )}
         </div>
@@ -396,23 +447,32 @@ export default function Dashboard() {
   return (
     <div className="dashboard">
       <section className={`hero-welcome${server.denied ? '' : ' with-server'}`}>
+        <div className="hero-drift" aria-hidden="true">
+          {DRIFT.map((d, i) => (
+            <span key={i} className={`drift-item${d.far ? ' far' : ''}`} style={{ left: d.x, top: d.y, color: `var(--c-${d.c})`, animationDelay: `${-i * 3.7}s` }}>
+              <KindGlyph kind={d.k} size={d.s} variant="solid" />
+            </span>
+          ))}
+        </div>
         <div className="hero-left">
         <div>
           <h1>
-            {greeting()}, <span>{name}</span>
+            {tx('{greeting}, {name}', { greeting: greeting(), name: <span>{name}</span> })}
           </h1>
           <p>
             {empty
               ? admin
-                ? 'Welcome to Mediarium. Search for a movie or show in the bar above, or import what you already have.'
-                : 'Welcome to Mediarium. Search for a movie or show in the bar above to add it.'
+                ? t('Welcome to Mediarium. Search for a movie or show in the bar above, or import what you already have.')
+                : t('Welcome to Mediarium. Search for a movie or show in the bar above to add it.')
               : running > 0
-                ? `${running} ${running === 1 ? 'download is' : 'downloads are'} in progress right now${inLine > 0 ? `, ${inLine} waiting in line` : ''}.`
+                ? inLine > 0
+                  ? plural(running, '{n} download is in progress right now, {waiting} waiting in line.', '{n} downloads are in progress right now, {waiting} waiting in line.', { waiting: inLine })
+                  : plural(running, '{n} download is in progress right now.', '{n} downloads are in progress right now.')
                 : inLine > 0
-                  ? `${inLine} ${inLine === 1 ? 'download is' : 'downloads are'} waiting in line.`
+                  ? plural(inLine, '{n} download is waiting in line.', '{n} downloads are waiting in line.')
                 : wanted > 0
-                  ? `Nothing is downloading right now. ${wanted} ${wanted === 1 ? 'item is' : 'items are'} still missing.`
-                  : 'Everything is up to date.'}
+                  ? plural(wanted, 'Nothing is downloading right now. {n} item is still missing.', 'Nothing is downloading right now. {n} items are still missing.')
+                  : t('Everything is up to date.')}
           </p>
         </div>
           {server.denied && heroPills}
@@ -426,16 +486,17 @@ export default function Dashboard() {
       </section>
 
       {admin && <DashboardUpdate />}
+      <TwoStepTip />
 
       {admin && !startedClosed && startedGaps.length > 0 && (
         <section className="card started-card" aria-labelledby="started-title">
           <div className="started-head">
-            <h2 id="started-title">Getting started</h2>
+            <h2 id="started-title">{t('Getting started')}</h2>
             <button
               type="button"
               className="icon-btn"
-              aria-label="Hide Getting started"
-              title="Hide this"
+              aria-label={t('Hide Getting started')}
+              title={t('Hide this')}
               onClick={() => {
                 if (user) dismiss(user.id)
                 setStartedClosed(true)
@@ -455,99 +516,75 @@ export default function Dashboard() {
       )}
 
       <div className="dash-cards">
-        <ModuleCard icon="film" label="Movies" value={lib.movies.total} sub={`${lib.movies.downloaded} downloaded · ${lib.movies.missing} missing`} to="/library?kind=movie" color="var(--c-movie)" off={!on('movies')} />
-        <ModuleCard icon="tv" label="TV shows" value={lib.series.total} sub={`${lib.series.episodesDownloaded} of ${lib.series.episodes} episodes`} to="/library?kind=tv" color="var(--c-tv)" off={!on('tv')} />
+        <ModuleCard icon="film" glyph="movie" label={t('Movies')} value={lib.movies.total} sub={t('{downloaded} downloaded · {missing} missing', { downloaded: lib.movies.downloaded, missing: lib.movies.missing })} to="/library?kind=movie" color="var(--c-movie)" off={!on('movies')} />
+        <ModuleCard icon="tv" glyph="tv" label={t('TV shows')} value={lib.series.total} sub={t('{have} of {total} episodes', { have: lib.series.episodesDownloaded, total: lib.series.episodes })} to="/library?kind=tv" color="var(--c-tv)" off={!on('tv')} />
         <ModuleCard
           icon="music"
-          label="Music"
+          glyph="music"
+          label={t('Music')}
           value={music.artists}
-          unit={music.artists === 1 ? 'artist' : 'artists'}
-          sub={`${music.albums} ${music.albums === 1 ? 'album' : 'albums'} · ${music.missing} missing`}
+          unit={plural(music.artists, 'artist', 'artists')}
+          sub={plural(music.albums, '{n} album · {missing} missing', '{n} albums · {missing} missing', { missing: music.missing })}
           to="/library?kind=music"
           color="var(--c-music)"
           off={!on('music')}
         />
         <ModuleCard
           icon="book"
-          label="Ebooks"
+          glyph="book"
+          label={t('Ebooks')}
           value={ebooks.books}
-          unit={ebooks.books === 1 ? 'book' : 'books'}
-          sub={`${ebooks.downloaded} downloaded · ${ebooks.missing} missing`}
+          unit={plural(ebooks.books, 'book', 'books')}
+          sub={t('{downloaded} downloaded · {missing} missing', { downloaded: ebooks.downloaded, missing: ebooks.missing })}
           to="/library?kind=ebook"
           color="var(--c-book)"
           off={!on('ebooks')}
         />
         <ModuleCard
           icon="headphones"
-          label="Audiobooks"
+          glyph="audiobook"
+          label={t('Audiobooks')}
           value={audiobooks.books}
-          unit={audiobooks.books === 1 ? 'book' : 'books'}
-          sub={`${audiobooks.downloaded} downloaded · ${audiobooks.missing} missing`}
+          unit={plural(audiobooks.books, 'book', 'books')}
+          sub={t('{downloaded} downloaded · {missing} missing', { downloaded: audiobooks.downloaded, missing: audiobooks.missing })}
           to="/library?kind=audiobook"
           color="var(--c-audiobook)"
           off={!on('audiobooks')}
         />
       </div>
-      <p className="dash-more">
-        <Link to="/stats">See statistics: quality, space and downloads by month</Link>
-      </p>
 
       {!empty && data.recentlyAdded.length > 0 && (
-        <section className="rail">
-          <div className="rail-head">
-            <h2>Recently added</h2>
-            <Link to="/library">See library</Link>
-          </div>
-          <RecentRow items={data.recentlyAdded} />
-        </section>
+        <div className="recent-split">
+          <Tile tone="library" icon="check" title={t('Just added to your library')} tip={t('The latest titles whose files have arrived in your library.')} link={t('Library')} to="/library">
+            {(data.recentInLibrary ?? []).length > 0 ? (
+              <RecentRow items={data.recentInLibrary ?? []} hide="downloaded" when />
+            ) : (
+              <div className="empty-inline">
+                <Icon name="film" size={22} /> {t('Nothing has arrived yet.')}
+              </div>
+            )}
+          </Tile>
+          <Tile tone="wanted" icon="clock" title={t('Added, still to come')} tip={t('Titles you added recently that are still waiting for a release or for their release date. They download by themselves once a release is found.')} link={t('Wanted')} to="/wanted">
+            {(data.recentToCome ?? []).length > 0 ? (
+              <RecentRow items={data.recentToCome ?? []} hide="missing" />
+            ) : (
+              <div className="empty-inline">
+                <Icon name="check" size={22} /> {t('Everything you added is in your library.')}
+              </div>
+            )}
+          </Tile>
+        </div>
       )}
 
       <div className="bento">
-        <Tile tone="activity" icon="download" title="Downloading now" link="Activity" to="/queue">
+        <Tile tone="activity" icon="download" title={t('Downloading now')} tip={t('Downloads that are running or waiting in line. Open Activity to pause, stop or retry one.')} link={t('Activity')} to="/queue">
           <ActiveDownloads items={active} />
         </Tile>
 
-        <Tile tone="library" icon="check" title="Recently downloaded" link="History" to="/queue">
-          {data.recentDownloads.length === 0 ? (
-            <div className="empty-inline">
-              <Icon name="check" size={22} /> Nothing has finished downloading yet.
-            </div>
-          ) : (
-            <ul className="mini-list">
-              {data.recentDownloads.slice(0, 5).map((r) => (
-                <li key={r.id}>
-                  <div className="mini-thumb">{r.kind === 'album' ? <Cover src={r.posterUrl} /> : r.posterUrl ? <img src={r.posterUrl} alt="" loading="lazy" /> : <PosterFallback />}</div>
-                  <div className="mini-main">
-                    <div className="mini-title">
-                      <Link to={recentLink(r)}>
-                        <strong>{r.title}</strong>
-                      </Link>
-                      {r.subtitle && <span className="badge">{r.subtitle}</span>}
-                      {r.quality && <span className="badge">{r.quality}</span>}
-                    </div>
-                    <small className="qwhen">
-                      {timeAgo(r.at)}
-                      {r.sizeBytes ? ` · ${formatBytes(r.sizeBytes)}` : ''}
-                    </small>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Tile>
-
-        <Tile tone="settings" icon="folder" title="Connected folders" link={admin ? 'Change' : undefined} to={admin ? '/settings/media' : undefined}>
-          <div className="folder-list">
-            {data.folders.map((f) => (
-              <FolderCard key={f.key} f={f} />
-            ))}
-          </div>
-        </Tile>
-
-        <Tile tone="calendar" icon="calendar" title="Coming up" link="Calendar" to="/calendar">
+        <Tile tone="calendar" icon="calendar" title={t('Coming up')} tip={t('Releases and episodes due soon for the titles in your library.')} link={t('Calendar')} to="/calendar">
           {data.upcoming.length === 0 ? (
             <div className="empty-inline">
-              <Icon name="calendar" size={22} /> Nothing is scheduled.
+              <Icon name="calendar" size={22} /> {t('Nothing is scheduled.')}
             </div>
           ) : (
             <ul className="mini-list compact">
@@ -556,14 +593,14 @@ export default function Dashboard() {
                   <Link className="mini-link" to={e.kind === 'movie' ? `/title/${e.tmdbId}` : e.kind === 'episode' ? `/series/${e.seriesId}` : `/music/artist/${e.artistId}`}>
                   <span className="date-chip">
                     <b>{new Date(`${e.releaseDate}T00:00:00`).getDate()}</b>
-                    {new Date(`${e.releaseDate}T00:00:00`).toLocaleString(undefined, { month: 'short' })}
+                    {new Date(`${e.releaseDate}T00:00:00`).toLocaleString(locale(), { month: 'short' })}
                   </span>
-                  <KindBadge kind={e.kind} />
+                  <KindBadge kind={e.kind} subtitle={e.subtitle} />
                   <div className="mini-main">
                     <strong>{e.title}</strong>
                     {e.subtitle && <small className="qwhen">{e.subtitle.split(' · ')[0]}</small>}
                   </div>
-                  <span className={`badge ${e.status}`}>{e.status === 'missing' ? 'Waiting' : e.status === 'downloaded' ? 'Have it' : e.status === 'downloading' ? 'Downloading' : e.status}</span>
+                  <span className={`badge ${e.status}`}>{e.status === 'missing' ? t('Waiting') : e.status === 'downloaded' ? t('Have it') : e.status === 'downloading' ? t('Downloading') : e.status}</span>
                   </Link>
                 </li>
               ))}
@@ -572,29 +609,51 @@ export default function Dashboard() {
         </Tile>
       </div>
 
+      <section className="tile tone-settings wide-tile folders-tile">
+        <div className="tile-head">
+          <span className="tile-ico">
+            <Icon name="folder" size={18} />
+          </span>
+          <h2>{t('Connected folders')}</h2>
+          <HelpLink topic="install-docker#why-one-data-folder-hardlinks" text={t('The folders Mediarium uses, whether it can write to them and how much room is left. "Hardlinks on" means an import takes no extra space, because Downloads and the library are on the same drive.')} />
+          {admin && (
+            <Link className="tile-link" to="/settings/media">
+              {t('Change')} <Icon name="open" size={13} />
+            </Link>
+          )}
+        </div>
+        <div className="folder-grid">
+          {data.folders.map((f) => (
+            <FolderCard key={f.key} f={f} />
+          ))}
+        </div>
+      </section>
+
       <section className="tile tone-calendar wide-tile">
         <div className="tile-head">
           <span className="tile-ico">
             <Icon name="calendar" size={18} />
           </span>
-          <h2>Calendar</h2>
+          <h2>{t('Calendar')}</h2>
           <Link className="tile-link" to="/calendar">
-            Full page <Icon name="open" size={13} />
+            {t('Full page')} <Icon name="open" size={13} />
           </Link>
         </div>
         <CalendarGrid entries={cal} compact />
       </section>
 
+      <div className="dash-pair">
       {qualityTotal > 0 && (
-        <section className="tile tone-library wide-tile" style={{ marginTop: 22 }}>
+        <section className="tile tone-library">
           <div className="tile-head">
             <span className="tile-ico">
               <Icon name="star" size={18} />
             </span>
-            <h2>Quality breakdown</h2>
+            <h2>{t('Quality breakdown')}</h2>
+            <InfoTip text={t('How many of the files in your library are in each quality.')} />
             {admin && (
               <Link className="tile-link" to="/settings/quality">
-                Profiles <Icon name="open" size={13} />
+                {t('Profiles')} <Icon name="open" size={13} />
               </Link>
             )}
           </div>
@@ -611,6 +670,65 @@ export default function Dashboard() {
           </ul>
         </section>
       )}
+      <StatsTile />
+      </div>
     </div>
+  )
+}
+
+// A look at the statistics page: the space the library takes, how much
+// came from Usenet, and downloads over the last six months.
+function StatsTile() {
+  const [s, setS] = useState<LibraryStats | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    api
+      .libraryStats()
+      .then(setS)
+      .catch(() => setFailed(true))
+  }, [])
+  const months = (s?.months ?? []).slice(-6)
+  const top = Math.max(1, ...months.map((m) => m.completed))
+  return (
+    <section className="tile tone-activity stats-tile">
+      <div className="tile-head">
+        <span className="tile-ico">
+          <Icon name="activity" size={18} />
+        </span>
+        <h2>{t('Statistics')}</h2>
+        <InfoTip text={t('The space your library takes, the share that came from Usenet, and downloads over the last six months.')} />
+        <Link className="tile-link" to="/settings/statistics">
+          {t('Full page')} <Icon name="open" size={13} />
+        </Link>
+      </div>
+      {failed ? (
+        <p className="hint">{t('The numbers could not be loaded. Try the full page.')}</p>
+      ) : !s ? (
+        <div className="skeleton" style={{ height: 120 }} />
+      ) : (
+        <div className="stats-glance">
+          <div className="stats-figures">
+            <div>
+              <span className="mono">{t('Space used')}</span>
+              <b>{formatBytes(s.movieBytes + s.episodeBytes)}</b>
+            </div>
+            <div>
+              <span className="mono">{t('From Usenet')}</span>
+              <b>{s.usenetShare}%</b>
+            </div>
+          </div>
+          {months.length > 0 && (
+            <div className="stats-months" role="img" aria-label={t('Downloads in the last six months')}>
+              {months.map((m) => (
+                <div key={m.month} className="stats-month" title={plural(m.completed, '{n} download', '{n} downloads')}>
+                  <span className="stats-bar" style={{ height: `${Math.max(4, (m.completed / top) * 100)}%` }} />
+                  <small className="mono">{new Date(`${m.month}-01T00:00:00`).toLocaleString(locale(), { month: 'short' })}</small>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import CopyBox from './CopyBox'
 import Icon from './Icon'
+import { t, tx } from '../i18n'
 
 interface Library {
   label: string
@@ -33,7 +34,7 @@ export default function HardlinkWarning({
   libraries?: Library[]
   downloads?: string
 }) {
-  const list: Library[] = libraries ?? [{ label: 'library', path: pathA ?? '' }]
+  const list: Library[] = libraries ?? [{ label: t('library'), path: pathA ?? '' }]
   const dl = downloads ?? pathB ?? ''
   const key = JSON.stringify([list, dl])
   const [results, setResults] = useState<Result[] | null>(null)
@@ -71,48 +72,52 @@ export default function HardlinkWarning({
   if (results.every((r) => !r.supported)) {
     return (
       <p className="fbox-calm">
-        Can&apos;t tell if these folders share a drive here. If they do, finished downloads move instantly. If not, they&apos;re copied.
+        {t("Can't tell if these folders share a drive here. If they do, finished downloads move instantly. If not, they're copied.")}
       </p>
     )
   }
   const checked = results.filter((r) => r.supported && !r.error)
   if (checked.length === 0) {
-    return <p className="fbox-calm">Couldn&apos;t check the folders yet. That&apos;s normal if one doesn&apos;t exist inside the container yet.</p>
+    return <p className="fbox-calm">{t("Couldn't check the folders yet. That's normal if one doesn't exist inside the container yet.")}</p>
   }
 
   const copying = checked.filter((r) => !r.sameFilesystem)
   if (copying.length === 0) {
-    return <p className="ok-line">✓ Same filesystem. Hardlinking will work.</p>
+    return <p className="ok-line">✓ {t('Same filesystem. Hardlinking will work.')}</p>
   }
 
   const names = copying.map((r) => r.label)
-  const what = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
+  const what = names.length === 1 ? names[0] : t('{list} and {last}', { list: names.slice(0, -1).join(', '), last: names[names.length - 1] })
   return (
     <div className="callout info" role="note">
       <div className="callout-head">
         <Icon name="info" size={16} />
-        <strong>Finished downloads will be copied, not moved.</strong>
+        <strong>{t('Finished downloads will be copied, not moved.')}</strong>
       </div>
       <p>
-        Your downloads folder is on a different drive or share than your {what}, so each file is copied into the library instead of moved. It works, just a bit slower.
+        {t('Your downloads folder is on a different drive or share than your {what}, so each file is copied into the library instead of moved. It works, just a bit slower.', { what })}
       </p>
       <ul>
         <li>
-          <strong>Usenet:</strong> the download is deleted after the copy, so you only lose a little time.
+          {tx('{usenet} the download is deleted after the copy, so you only lose a little time.', { usenet: <strong>Usenet:</strong> })}
         </li>
         <li>
-          <strong>Torrents:</strong> the file stays in Downloads while it seeds, so it takes twice the space until it is done seeding.
+          {tx('{torrents} the file stays in Downloads while it seeds, so it takes twice the space until it is done seeding.', { torrents: <strong>{t('Torrents:')}</strong> })}
         </li>
       </ul>
       <details>
-        <summary>How to make it instant</summary>
+        <summary>{t('How to make it instant')}</summary>
         <p>
-          Keep your downloads and your library inside one shared folder, and map only that folder. For example, on a Synology map <code>/volume1/Media</code> as{' '}
-          <code>/data</code>. Inside it you have Movies, tv and downloads, and Mediarium sees them as <code>/data/Movies</code>, <code>/data/tv</code> and{' '}
-          <code>/data/downloads</code>. The line for your compose file:
+          {tx('Keep your downloads and your library inside one shared folder, and map only that folder. For example, on a Synology map {host} as {data}. Inside it you have Movies, tv and downloads, and Mediarium sees them as {movies}, {tv} and {downloads}. The line for your compose file:', {
+            host: <code>/volume1/Media</code>,
+            data: <code>/data</code>,
+            movies: <code>/data/Movies</code>,
+            tv: <code>/data/tv</code>,
+            downloads: <code>/data/downloads</code>,
+          })}
         </p>
-        <CopyBox text="- /volume1/Media:/data" label="Compose line for one shared folder" />
-        <p>Then type those three paths in the boxes above.</p>
+        <CopyBox text="- /volume1/Media:/data" label={t('Compose line for one shared folder')} />
+        <p>{t('Then type those three paths in the boxes above.')}</p>
       </details>
     </div>
   )

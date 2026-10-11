@@ -226,14 +226,14 @@ func (s *Server) suggestions(ctx context.Context, kind string, seeds []int) ([][
 				var err error
 				if kind == "tv" {
 					var shows []metadata.Show
-					if shows, err = s.TMDB().RelatedShows(ctx, id, related); err == nil {
+					if shows, err = s.displayTMDB().RelatedShows(ctx, id, related); err == nil {
 						for _, sh := range shows {
 							list = append(list, showCandidate(sh))
 						}
 					}
 				} else {
 					var movies []metadata.Movie
-					if movies, err = s.TMDB().RelatedMovies(ctx, id, related); err == nil {
+					if movies, err = s.displayTMDB().RelatedMovies(ctx, id, related); err == nil {
 						for _, m := range movies {
 							list = append(list, movieCandidate(m))
 						}

@@ -18,10 +18,13 @@ import (
 
 type calendarFeedPayload struct {
 	On   bool   `json:"on"`
-	Path string `json:"path,omitempty"` // "/api/calendar/feed/<token>.ics"; the page adds the address it is opened at
+	Path string `json:"path,omitempty"` // "/api/calendar/feed/<token>.ics" (after the URL base, if any); the page adds the address it is opened at
 }
 
-func feedPath(token string) string { return "/api/calendar/feed/" + token + ".ics" }
+// feedPath is the feed address, under the URL base when there is one.
+func (s *Server) feedPath(token string) string {
+	return s.cfg.URLBase + "/api/calendar/feed/" + token + ".ics"
+}
 
 func (s *Server) handleGetCalendarFeed(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
@@ -38,7 +41,7 @@ func (s *Server) handleGetCalendarFeed(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, calendarFeedPayload{})
 		return
 	}
-	writeJSON(w, http.StatusOK, calendarFeedPayload{On: true, Path: feedPath(token)})
+	writeJSON(w, http.StatusOK, calendarFeedPayload{On: true, Path: s.feedPath(token)})
 }
 
 func (s *Server) handleNewCalendarFeed(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +55,7 @@ func (s *Server) handleNewCalendarFeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, calendarFeedPayload{On: true, Path: feedPath(token)})
+	writeJSON(w, http.StatusOK, calendarFeedPayload{On: true, Path: s.feedPath(token)})
 }
 
 func (s *Server) handleRemoveCalendarFeed(w http.ResponseWriter, r *http.Request) {

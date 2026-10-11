@@ -103,7 +103,7 @@ func TestPickMovieByLanguage(t *testing.T) {
 			p := profileWithLanguage(tc.language)
 			p.Cutoff = quality.TierRemux1080p
 			p.UpgradeAllowed = true
-			got := pickUpgradeResult(results(tc.titles...), p, quality.TierWebDL720p, 2025)
+			got := pickUpgradeResult(results(tc.titles...), p, quality.TierWebDL720p, "", 2025)
 			if pickedTitle(got) != tc.want {
 				t.Fatalf("picked %q, want %q", pickedTitle(got), tc.want)
 			}
@@ -149,7 +149,7 @@ func TestPickEpisodeByLanguage(t *testing.T) {
 	})
 
 	t.Run("an episode upgrade refuses a foreign release", func(t *testing.T) {
-		current := quality.TierHDTV720p
+		current := upgradeBase{Tier: quality.TierHDTV720p}
 		if got := pickTVResult(results(italian), series, 1, 2, p, &current); got != nil {
 			t.Fatalf("picked %q", got.Title)
 		}

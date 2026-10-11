@@ -8,6 +8,7 @@
 
 /* The shelf */
 .bks-shelf { padding: 0 clamp(16px, 3vw, 40px) 60px; max-width: 1600px; margin: 0 auto; }
+.bks-shelf { --sec: var(--c-book); }
 .bks-top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); }
 .bks-brand { display: inline-flex; align-items: center; gap: 8px; font-size: 1.15rem; margin-right: auto; }
 .bks-brand svg, .bks-brand img { width: 26px; height: 26px; }

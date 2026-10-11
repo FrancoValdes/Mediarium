@@ -18,6 +18,21 @@ type Artist struct {
 	Type           string `json:"type"`    // Person, Group, ...
 	Country        string `json:"country"` // ISO code, may be empty
 	Score          int    `json:"score"`   // search relevance 0-100 (search results only)
+	LifeSpan       struct {
+		Begin string `json:"begin"` // "YYYY[-MM[-DD]]", often empty
+	} `json:"life-span"`
+}
+
+// BeginYear is the year the artist started (or was born), or 0 when unknown.
+func (a Artist) BeginYear() int {
+	if len(a.LifeSpan.Begin) < 4 {
+		return 0
+	}
+	y, err := strconv.Atoi(a.LifeSpan.Begin[:4])
+	if err != nil || y < 0 {
+		return 0
+	}
+	return y
 }
 
 // ReleaseGroup is an album, EP or single as a work, across all its
@@ -317,4 +332,77 @@ func luceneEscape(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// ReleaseGroupDetails is a release group with its credited artist and genres,
+// for a page about an album that is not in the library.
+type ReleaseGroupDetails struct {
+	ReleaseGroup
+	ArtistCredit []struct {
+		Name   string `json:"name"`
+		Artist struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"artist"`
+	} `json:"artist-credit"`
+	Genres []struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	} `json:"genres"`
+	// Releases are the editions (without their tracks), enough to pick the
+	// canonical one without a second request.
+	Releases []Release `json:"releases"`
+}
+
+// GetReleaseGroup looks up one release group with its artist credit and genres.
+func (c *Client) GetReleaseGroup(ctx context.Context, id string) (ReleaseGroupDetails, error) {
+	var g ReleaseGroupDetails
+	q := url.Values{"inc": {"artist-credits+genres+releases"}}
+	if err := c.get(ctx, "/ws/2/release-group/"+url.PathEscape(id), q, &g); err != nil {
+		return ReleaseGroupDetails{}, fmt.Errorf("get release group %s: %w", id, err)
+	}
+	return g, nil
+}
+
+// TaggedReleaseGroup is a release group found by a genre tag.
+type TaggedReleaseGroup struct {
+	ReleaseGroup
+	Score        int `json:"score"`
+	ArtistCredit []struct {
+		Name   string `json:"name"`
+		Artist struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"artist"`
+	} `json:"artist-credit"`
+	Tags []struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	} `json:"tags"`
+}
+
+// SearchReleaseGroupsByTag finds release groups carrying a genre tag, best
+// match first (the tag count decides). primaryType is TypeAlbum, TypeEP or
+// TypeSingle, or empty for the three together. It is the stand-in for when the
+// listening statistics can't say what belongs to a genre.
+func (c *Client) SearchReleaseGroupsByTag(ctx context.Context, tag, primaryType string, limit int) ([]TaggedReleaseGroup, error) {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return nil, nil
+	}
+	types := "(primarytype:album OR primarytype:ep OR primarytype:single)"
+	if primaryType != "" {
+		types = "primarytype:" + luceneEscape(primaryType)
+	}
+	q := url.Values{
+		"query": {`tag:"` + strings.ReplaceAll(tag, `"`, "") + `" AND ` + types + ` AND status:official`},
+		"limit": {strconv.Itoa(limit)},
+	}
+	var out struct {
+		Groups []TaggedReleaseGroup `json:"release-groups"`
+	}
+	if err := c.get(ctx, "/ws/2/release-group", q, &out); err != nil {
+		return nil, fmt.Errorf("search release groups tagged %q: %w", tag, err)
+	}
+	return out.Groups, nil
 }

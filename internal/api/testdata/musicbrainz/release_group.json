@@ -1,0 +1,10 @@
+{
+  "id": "aaaaaaaa-0000-4000-8000-000000000001",
+  "title": "First Album",
+  "primary-type": "Album",
+  "secondary-types": [],
+  "first-release-date": "1999-03-01",
+  "artist-credit": [{"name": "Fixture Band", "artist": {"id": "11111111-1111-4111-8111-111111111111", "name": "Fixture Band"}}],
+  "releases": [{"id": "rel-first", "title": "First Album", "status": "Official", "country": "GB", "date": "1999-03-01"}],
+  "genres": [{"name": "rock", "count": 4}, {"name": "indie", "count": 1}]
+}

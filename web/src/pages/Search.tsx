@@ -6,6 +6,9 @@ import Icon from '../components/Icon'
 import PosterCard from '../components/PosterCard'
 import { capitalizeFirst } from '../components/SearchBox'
 import { resultState } from '../components/state'
+import { t, tc } from '../i18n'
+import KindGlyph from '../components/KindGlyph'
+import '../search.css'
 
 // Search the movie and TV databases as you type, like Radarr's and Sonarr's
 // "Add New": pick a title, choose how to add it, and Mediarium then searches
@@ -33,10 +36,12 @@ export default function Search() {
     if (term.length < 2) {
       setResults(null)
       setError('')
+      // Deleting down to one letter (or nothing) must not leave the old search in the address.
+      if (term !== urlQ) setParams(term ? { q: term } : {}, { replace: true })
       return
     }
     const ctl = new AbortController()
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setError('')
       api
         .discoverSearch(term, ctl.signal)
@@ -48,7 +53,7 @@ export default function Search() {
       setParams(term ? { q: term } : {}, { replace: true })
     }, 250)
     return () => {
-      clearTimeout(t)
+      clearTimeout(timer)
       ctl.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,7 +69,7 @@ export default function Search() {
           to={r.inLibrary ? (r.kind === 'movie' ? `/title/${r.tmdbId}` : `/series/${r.libraryId}`) : r.kind === 'movie' ? `/title/${r.tmdbId}` : `/show/${r.tmdbId}`}
           poster={r.posterUrl}
           title={r.title}
-          meta={[r.year || null, r.kind === 'tv' ? 'TV show' : 'Movie'].filter(Boolean).join(' · ')}
+          meta={[r.year || null, r.kind === 'tv' ? t('TV show') : t('Movie')].filter(Boolean).join(' · ')}
           state={resultState(r)}
           kind={r.kind}
           genres={r.genres}
@@ -73,14 +78,14 @@ export default function Search() {
             <div className="pcard-footer">
               {r.inLibrary ? (
                 <button className="btn-sm btn-with-icon" onClick={() => open(r)}>
-                  <Icon name="open" size={15} /> Open
+                  <Icon name="open" size={15} /> {t('Open')}
                 </button>
               ) : (
                 <button
                   className="primary btn-sm btn-with-icon"
                   onClick={() => setAdding({ kind: r.kind, tmdbId: r.tmdbId, title: r.title, year: r.year, posterUrl: r.posterUrl, overview: r.overview })}
                 >
-                  <Icon name="plus" size={15} /> Add
+                  <Icon name="plus" size={15} /> {t('Add')}
                 </button>
               )}
             </div>
@@ -94,38 +99,46 @@ export default function Search() {
   const fresh = results?.filter((r) => !r.inLibrary) ?? []
 
   return (
-    <div>
+    <div className="search-page">
       <div className="page-header">
-        <h1>Search</h1>
-        <Link className="btn-link" to="/search/releases">
-          <Icon name="list" size={15} /> Search your indexers for a release
-        </Link>
+        <h1>{tc('noun', 'Search')}</h1>
       </div>
+      <nav className="search-modes" aria-label={tc('noun', 'Search')}>
+        <Link to="/search" className="active" aria-current="page">
+          <Icon name="film" size={15} /> {t('Movies and shows')}
+        </Link>
+        <Link to="/search/releases">
+          <Icon name="list" size={15} /> {t('Releases')}
+        </Link>
+      </nav>
 
-      <div className="toolbar">
+      <div className="search-bar">
+        <Icon name="search" size={22} />
         <input
           ref={inputRef}
           type="search"
           value={q}
           onChange={(e) => setQ(capitalizeFirst(e.target.value))}
-          placeholder="Type a movie or show name…"
-          style={{ maxWidth: 'none', flex: '1 1 320px', fontSize: '1.05rem', padding: '11px 14px' }}
-          aria-label="Search"
+          placeholder={t('Type a movie or show name…')}
+          aria-label={t('Search')}
         />
       </div>
 
       {error && <p className="error-text">{error}</p>}
       {results === null && !error && q.trim().length < 2 && (
-        <div className="empty-state">
-          <Icon name="search" size={40} />
-          <p>Start typing to search movies and TV shows. Anything already in your library shows where it stands.</p>
+        <div className="search-hint">
+          <span className="search-hint-shapes" aria-hidden="true">
+            <KindGlyph kind="movie" size={30} variant="solid" />
+            <KindGlyph kind="tv" size={30} variant="solid" />
+          </span>
+          <p>{t('Start typing to search movies and TV shows. Anything already in your library shows where it stands.')}</p>
         </div>
       )}
-      {results !== null && results.length === 0 && <div className="empty-state">Nothing found for “{q.trim()}”.</div>}
+      {results !== null && results.length === 0 && <div className="search-hint">{t('Nothing found for “{q}”.', { q: q.trim() })}</div>}
       {owned.length > 0 && (
         <section style={{ marginBottom: 28 }}>
           <div className="rail-head">
-            <h2>In your library</h2>
+            <h2>{t('In your library')}</h2>
             <span>{owned.length}</span>
           </div>
           {grid(owned)}
@@ -134,7 +147,7 @@ export default function Search() {
       {fresh.length > 0 && (
         <section>
           <div className="rail-head">
-            <h2>Add new</h2>
+            <h2>{t('Add new')}</h2>
             <span>{fresh.length}</span>
           </div>
           {grid(fresh)}
@@ -146,9 +159,9 @@ export default function Search() {
           target={adding}
           onClose={() => setAdding(null)}
           onAdded={(id) => {
-            const t = adding
+            const added = adding
             setAdding(null)
-            navigate(t.kind === 'movie' ? `/title/${t.tmdbId}` : `/series/${id}`)
+            navigate(added.kind === 'movie' ? `/title/${added.tmdbId}` : `/series/${id}`)
           }}
         />
       )}

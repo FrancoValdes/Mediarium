@@ -121,8 +121,10 @@ type bookSeriesPayload struct {
 func (s *Server) toBookSeriesPayload(series *books.Series, workKey, title string) bookSeriesPayload {
 	p := bookSeriesPayload{Source: series.Source, Key: series.Key, Name: series.Name, Entries: []bookSeriesEntryPayload{}}
 	library, _ := s.BookRepo.List()
+	var covers []int
 	for _, e := range series.Entries {
-		ep := bookSeriesEntryPayload{SeriesEntry: e, CoverURL: books.CoverURL(e.CoverID, "M")}
+		covers = append(covers, e.CoverID)
+		ep := bookSeriesEntryPayload{SeriesEntry: e, CoverURL: books.LocalCoverURL(e.CoverID, "M")}
 		for _, b := range library {
 			if (e.Key != "" && b.OLKey == e.Key) || (books.SameTitle(b.Title, e.Title, true) && books.SameAuthor(b.Author, e.Author)) {
 				ep.LibraryID = b.ID
@@ -134,6 +136,7 @@ func (s *Server) toBookSeriesPayload(series *books.Series, workKey, title string
 		}
 		p.Entries = append(p.Entries, ep)
 	}
+	s.warmBookCovers("M", covers)
 	if followed, err := s.BookRepo.ListFollowedSeries(); err == nil {
 		for _, f := range followed {
 			if f.Source == series.Source && f.Key == series.Key {

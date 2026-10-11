@@ -311,8 +311,31 @@ type Filter struct {
 	Until      time.Time // last happened before this
 	Text       string    // words to find in the message, detail, title or code
 	UnreadOnly bool
-	Limit      int // default 50, at most 200
+	Limit      int // default DefaultPage, at most MaxPage
 	Offset     int
+}
+
+const (
+	// DefaultPage is how many rows List returns when no limit is given.
+	DefaultPage = 30
+	// MaxPage is the most rows List returns at once.
+	MaxPage = 100
+)
+
+// Paging returns the limit and offset List will use for f: the default when no
+// limit was asked for, the maximum when more was asked for, never negative.
+func (f Filter) Paging() (limit, offset int) {
+	limit, offset = f.Limit, f.Offset
+	if limit <= 0 {
+		limit = DefaultPage
+	}
+	if limit > MaxPage {
+		limit = MaxPage
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }
 
 func (f Filter) where() (string, []any) {
@@ -376,15 +399,7 @@ func scanEntry(rows interface{ Scan(...any) error }) (Entry, error) {
 
 // List returns the problems matching f, newest first, and how many match in all.
 func (l *Log) List(f Filter) ([]Entry, int, error) {
-	if f.Limit <= 0 {
-		f.Limit = 50
-	}
-	if f.Limit > 200 {
-		f.Limit = 200
-	}
-	if f.Offset < 0 {
-		f.Offset = 0
-	}
+	f.Limit, f.Offset = f.Paging()
 	where, args := f.where()
 	var total int
 	if err := l.db.QueryRow(`SELECT COUNT(*) FROM problems`+where, args...).Scan(&total); err != nil {
@@ -405,6 +420,27 @@ func (l *Log) List(f Filter) ([]Entry, int, error) {
 		out = append(out, e)
 	}
 	return out, total, rows.Err()
+}
+
+// All returns every problem matching f, newest first, in one query. The paging
+// of f is ignored. The log never holds more than MaxRows rows, so this stays
+// small; it is for the text file.
+func (l *Log) All(f Filter) ([]Entry, error) {
+	where, args := f.where()
+	rows, err := l.db.Query(`SELECT `+columns+` FROM problems`+where+` ORDER BY last_at DESC, id DESC`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list problems: %w", err)
+	}
+	defer rows.Close()
+	out := []Entry{}
+	for rows.Next() {
+		e, err := scanEntry(rows)
+		if err != nil {
+			return nil, fmt.Errorf("read a problem: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // Counts are the numbers on the cards at the top of the page.

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/" xmlns:opds="http://opds-spec.org/2010/catalog" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <id>urn:mediarium:opds:books</id>
+  <title>All books</title>
+  <updated>2026-10-09T12:30:00Z</updated>
+  <author>
+    <name>Mediarium</name>
+  </author>
+  <link rel="self" href="/opds/books?page=2" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <link rel="start" href="/opds/" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  <link rel="up" href="/opds/" type="application/atom+xml;profile=opds-catalog;kind=navigation"/>
+  <link rel="first" href="/opds/books" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <link rel="previous" href="/opds/books" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <link rel="next" href="/opds/books?page=3" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <link rel="last" href="/opds/books?page=3" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <opensearch:totalResults>120</opensearch:totalResults>
+  <opensearch:itemsPerPage>50</opensearch:itemsPerPage>
+  <opensearch:startIndex>51</opensearch:startIndex>
+  <entry>
+    <title>The Hobbit, or &#34;There and Back Again&#34;</title>
+    <id>urn:mediarium:book:7</id>
+    <updated>2026-10-09T12:30:00Z</updated>
+    <author>
+      <name>J.R.R. Tolkien</name>
+    </author>
+    <dc:identifier>urn:mediarium:book:7</dc:identifier>
+    <dc:issued>1937</dc:issued>
+    <category scheme="http://calibre-ebook.com/series" term="Middle-earth" label="Middle-earth"/>
+    <summary type="text">A hobbit goes &lt;out&gt; &amp; comes back.</summary>
+    <link rel="http://opds-spec.org/acquisition" href="/opds/books/7/download" type="application/epub+zip" length="123456"/>
+    <link rel="http://opds-spec.org/image" href="/opds/books/7/cover" type="image/jpeg"/>
+    <link rel="http://opds-spec.org/image/thumbnail" href="/opds/books/7/thumbnail" type="image/jpeg"/>
+  </entry>
+  <entry>
+    <title>No Author Book</title>
+    <id>urn:mediarium:book:8</id>
+    <updated>2026-10-09T12:30:00Z</updated>
+    <link rel="http://opds-spec.org/acquisition" href="/opds/books/8/download" type="application/pdf"/>
+  </entry>
+</feed>

@@ -63,6 +63,7 @@ func newFakeMusicBrainzHits(t *testing.T) (*httptest.Server, *coverHits) {
 	mux.HandleFunc("/ws/2/artist", fixture("artist_search.json"))
 	mux.HandleFunc("/ws/2/artist/11111111-1111-4111-8111-111111111111", fixture("artist.json"))
 	mux.HandleFunc("/ws/2/release-group", fixture("release_groups.json"))
+	mux.HandleFunc("/ws/2/release-group/aaaaaaaa-0000-4000-8000-000000000001", fixture("release_group.json"))
 	mux.HandleFunc("/ws/2/release", fixture("releases.json"))
 	mux.HandleFunc("/ws/2/release/rel-first", fixture("release.json"))
 	mux.HandleFunc("/release-group/{mbid}/front-500", func(w http.ResponseWriter, r *http.Request) {

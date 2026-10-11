@@ -45,10 +45,14 @@ type DefinitionStore struct {
 	// MaxSchema is the newest definition schema version this engine
 	// understands.
 	MaxSchema int
+	// CustomDir holds definition files an administrator added themselves
+	// (see custom_definitions.go). Empty turns the feature off.
+	CustomDir string
 
 	mu          sync.Mutex // guards the cache folder, index and lastAttempt
 	refreshMu   sync.Mutex // one download at a time
 	index       *DefinitionIndex
+	custom      *customSet // nil until read, and again after a change
 	lastAttempt time.Time
 }
 
@@ -97,6 +101,8 @@ type DefinitionSummary struct {
 	// can't run; Problem says what.
 	Supported bool   `json:"supported"`
 	Problem   string `json:"problem,omitempty"`
+	// Custom marks a definition file an administrator added.
+	Custom bool `json:"custom,omitempty"`
 }
 
 // SettingSummary is one setting as the definition declares it, for the UI
@@ -153,21 +159,29 @@ func (s *DefinitionStore) Catalogue(ctx context.Context, force bool) (*Definitio
 		fresh, err := s.refresh(ctx)
 		if err != nil {
 			if idx == nil {
-				return nil, err
+				return s.withCustomLocking(nil), err
 			}
 			log.Printf("indexer definitions: refresh failed, using cached copy: %v", err)
-			return idx, err
+			return s.withCustomLocking(idx), err
 		}
 		idx = fresh
 	}
 	if idx == nil {
-		return nil, fmt.Errorf("the site list has not been downloaded yet")
+		return s.withCustomLocking(nil), fmt.Errorf("the site list has not been downloaded yet")
 	}
-	return idx, nil
+	return s.withCustomLocking(idx), nil
+}
+
+// withCustomLocking adds the custom definitions to idx; nil when there's
+// nothing at all to list.
+func (s *DefinitionStore) withCustomLocking(idx *DefinitionIndex) *DefinitionIndex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return withCustom(idx, s.customLocked())
 }
 
 func (s *DefinitionStore) needsRefreshLocked(idx *DefinitionIndex, force bool) bool {
-	stale := idx == nil || time.Since(idx.UpdatedAt) > s.maxAge()
+	stale := idx == nil || time.Since(idx.UpdatedAt) > s.maxAge() || missingBuiltin(idx)
 	gap := failedRefreshGap
 	if force {
 		gap = minForcedRefreshGap
@@ -180,22 +194,34 @@ func (s *DefinitionStore) needsRefreshLocked(idx *DefinitionIndex, force bool) b
 func (s *DefinitionStore) Generation() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	idx, _ := s.loadIndexLocked()
-	if idx == nil {
-		return ""
+	gen := ""
+	if idx, _ := s.loadIndexLocked(); idx != nil {
+		gen = idx.UpdatedAt.UTC().Format(time.RFC3339Nano)
 	}
-	return idx.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	if c := s.customLocked().gen; c != "" {
+		gen += "+" + c
+	}
+	return gen
 }
 
 // Summary returns one definition's catalogue entry, downloading the
 // catalogue if it isn't cached yet.
 func (s *DefinitionStore) Summary(ctx context.Context, id string) (DefinitionSummary, error) {
+	s.mu.Lock()
+	d, ok := findCustom(s.customLocked(), id)
+	s.mu.Unlock()
+	if ok {
+		return d, nil
+	}
 	idx, err := s.Catalogue(ctx, false)
 	if idx == nil {
 		return DefinitionSummary{}, err
 	}
 	if d, ok := findSummary(idx, id); ok {
 		return d, nil
+	}
+	if err != nil && idx.UpdatedAt.IsZero() {
+		return DefinitionSummary{}, err // only added files so far: the download failed
 	}
 	return DefinitionSummary{}, fmt.Errorf("%w: %q", ErrDefinitionNotFound, id)
 }
@@ -205,6 +231,9 @@ func (s *DefinitionStore) Summary(ctx context.Context, id string) (DefinitionSum
 func (s *DefinitionStore) CachedSummary(id string) (DefinitionSummary, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if d, ok := findCustom(s.customLocked(), id); ok {
+		return d, true
+	}
 	idx, _ := s.loadIndexLocked()
 	if idx == nil {
 		return DefinitionSummary{}, false
@@ -235,8 +264,12 @@ func (s *DefinitionStore) Load(ctx context.Context, id string) (*Definition, err
 	if err != nil {
 		return nil, err
 	}
+	dir := s.Dir
+	if sum.Custom {
+		dir = s.CustomDir
+	}
 	s.mu.Lock()
-	data, err := os.ReadFile(filepath.Join(s.Dir, sum.ID+".yml"))
+	data, err := os.ReadFile(filepath.Join(dir, sum.ID+".yml"))
 	s.mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("read indexer definition %q: %w", sum.ID, err)
@@ -288,6 +321,7 @@ func (s *DefinitionStore) refresh(ctx context.Context) (*DefinitionIndex, error)
 	if err != nil {
 		return nil, err
 	}
+	addBuiltins(files)
 
 	idx := &DefinitionIndex{
 		UpdatedAt:     time.Now().UTC(),
@@ -595,6 +629,11 @@ func (d DefinitionSummary) IsSecret(name string) bool {
 // HasLink reports whether u is one of the site's addresses (trailing
 // slashes ignored).
 func (d DefinitionSummary) HasLink(u string) bool {
+	if d.Custom {
+		// The administrator wrote or chose this file, so any web address
+		// goes, such as a helper running on their own network.
+		return webAddress(u)
+	}
 	norm := func(s string) string { return strings.TrimRight(strings.ToLower(strings.TrimSpace(s)), "/") }
 	for _, l := range append(append([]string{}, d.Links...), d.LegacyLinks...) {
 		if norm(l) == norm(u) {

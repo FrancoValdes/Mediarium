@@ -126,7 +126,7 @@ func (s *Server) handleManualImport(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "That movie isn't in your library.")
 			return
 		}
-		dest, err := s.buildDestPath(s.moviesRoot(), m.Title, m.Year, m.TMDBID, guessName(src), src)
+		dest, err := s.buildDestPath(s.movieRootFor(m), m.Title, m.Year, m.TMDBID, guessName(src), src)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -140,7 +140,9 @@ func (s *Server) handleManualImport(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, fmt.Sprintf("A file is already at %s. Remove it first if this one should take its place.", dest))
 			return
 		}
-		if err := s.MovieRepo.SetStatus(m.ID, library.StatusDownloaded, string(tier), res.DestPath); err != nil {
+		if err := s.MovieRepo.SetStatus(m.ID, library.StatusDownloaded, string(tier), res.DestPath); err == nil {
+			s.afterMovieImported(m.ID, guessName(src))
+		} else {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -172,7 +174,10 @@ func (s *Server) handleManualImport(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, fmt.Sprintf("A file is already at %s. Remove it first if this one should take its place.", dest))
 			return
 		}
-		if err := s.MovieRepo.SetEpisodeStatus(ep.ID, library.StatusDownloaded, string(tier), res.DestPath); err != nil {
+		if err := s.MovieRepo.SetEpisodeStatus(ep.ID, library.StatusDownloaded, string(tier), res.DestPath); err == nil {
+			s.afterEpisodeImported(ep.ID, guessName(src))
+			s.forgetHeldEpisode(ep.SeriesID, ep.Season, ep.Episode)
+		} else {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

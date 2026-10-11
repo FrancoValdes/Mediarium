@@ -39,7 +39,7 @@ func albumLabel(artist music.Artist, album music.Album) string {
 // when a place is free. One download per album: a grab by hand while another
 // runs is refused with 409, an automatic one with errAlreadyGrabbed.
 func (s *Server) grabAlbum(artist music.Artist, album music.Album, releaseTitle, downloadURL string, sizeBytes int64, protocol indexers.Protocol, kind grabKind) (int64, error) {
-	if protocol == indexers.ProtocolTorrent && !s.torrentsEnabled() {
+	if protocol == indexers.ProtocolTorrent && !s.torrentReleasesOn() {
 		return 0, errTorrentsDisabled
 	}
 	s.grabMu.Lock()
@@ -122,6 +122,13 @@ func (s *Server) runMusicPipeline(queueID, artistID, albumID int64, restore musi
 		}
 		if handled, err := s.settleInterrupted(queueID, run); handled {
 			return err // paused or stopped by a person: not a failure
+		}
+		if dup := asDuplicate(stepErr); dup != nil {
+			s.settleDuplicate(queueID, dup)
+			if !dup.holdsTitle() {
+				_ = s.MusicRepo.SetAlbumStatus(albumID, restore)
+			}
+			return stepErr
 		}
 		// The person reads this message; the raw error goes to the log only
 		// (noteDownloadFailure keeps it as the technical detail).
@@ -254,7 +261,7 @@ func (s *Server) importAlbumFiles(ctx context.Context, artist music.Artist, albu
 	}
 	root := s.musicRoot()
 	if root == "" {
-		return albumImport{}, fmt.Errorf("the music folder isn't set. Choose one in Settings > Library > Folders and file names")
+		return albumImport{}, fmt.Errorf("the music folder isn't set. Choose one in Settings > Library > Folders")
 	}
 	tracks, err := s.ensureTracks(ctx, album)
 	if err != nil {
@@ -304,7 +311,7 @@ func (s *Server) importAlbumFiles(ctx context.Context, artist music.Artist, albu
 		track := tracks[m.Slot]
 		src := files[m.File]
 		dest := filepath.Join(folder, music.TrackFileName(track.Disc, track.Position, track.Title, multiDisc, filepath.Ext(src), clean))
-		out, err := organizer.Import(src, dest, policy, isBetter)
+		out, err := s.importDownloaded(src, dest, policy, isBetter)
 		if err != nil {
 			return albumImport{}, fmt.Errorf("import %s: %w", filepath.Base(src), err)
 		}
@@ -333,7 +340,7 @@ func (s *Server) importAlbumFiles(ctx context.Context, artist music.Artist, albu
 		slog.Warn("music: look for cover art", "dir", dir, "err", err)
 	}
 	for _, a := range art {
-		if _, err := organizer.Import(a, filepath.Join(folder, strings.ToLower(filepath.Base(a))), organizer.ConflictSkip, nil); err != nil {
+		if _, err := s.importDownloaded(a, filepath.Join(folder, strings.ToLower(filepath.Base(a))), organizer.ConflictSkip, nil); err != nil {
 			slog.Warn("music: keep cover art", "file", a, "err", err)
 		}
 	}

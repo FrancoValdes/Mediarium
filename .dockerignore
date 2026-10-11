@@ -20,6 +20,11 @@ web/node_modules
 web/dist
 # Documentation is not part of the image
 *.md
-docs/
+# ...except the licence list, which ships in the image.
+!THIRD_PARTY_NOTICES.md
+# The user guide inside the app is built from the pages in docs/ (web/tools/build-guide.mjs),
+# so those pages reach the build. Pictures and the generated reference stay out.
+docs/*
+!docs/*.md
 
 website/

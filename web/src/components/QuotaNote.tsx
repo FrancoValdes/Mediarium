@@ -1,5 +1,6 @@
 import type { SubtitleQuota } from '../api'
 import Icon from './Icon'
+import { locale, t } from '../i18n'
 
 // Says how many subtitle downloads are left today and warns, in plain words,
 // when the subtitles waiting to be fetched will not fit in one day's allowance.
@@ -12,9 +13,9 @@ export default function QuotaNote({ quota }: { quota: SubtitleQuota | null }) {
       <div className="quota-head">
         <Icon name={warn ? 'warning' : 'info'} size={16} />
         <strong>
-          {quota.remaining} of {quota.limit} subtitle downloads left today
+          {t('{left} of {limit} subtitle downloads left today', { left: quota.remaining, limit: quota.limit })}
         </strong>
-        {quota.resetsAt && quota.used > 0 && <small>refills {new Date(quota.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>}
+        {quota.resetsAt && quota.used > 0 && <small>{t('refills {time}', { time: new Date(quota.resetsAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })}</small>}
       </div>
       <div className="bar" style={{ ['--tc' as string]: warn ? 'var(--warning)' : 'var(--c-rose)' }}>
         <span style={{ width: `${Math.max(3, pct)}%` }} />

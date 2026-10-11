@@ -73,10 +73,13 @@ func (s *Server) backupJob(ctx context.Context) {
 	if err == nil && len(list) > 0 && time.Since(list[0].CreatedAt) < backupEvery-backupCheck {
 		return
 	}
-	if _, err := s.saveBackup(ctx, "nightly"); err != nil {
+	saved, err := s.saveBackup(ctx, "nightly")
+	if err != nil {
 		log.Printf("backup: nightly backup failed: %v", err)
 		noteBackupFailed(err)
+		return
 	}
+	s.cloudAfterBackup(saved)
 }
 
 type savedBackupsPayload struct {

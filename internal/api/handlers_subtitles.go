@@ -14,6 +14,8 @@ import (
 
 type subtitleResultPayload struct {
 	FileID   int     `json:"fileId"`
+	Source   string  `json:"source,omitempty"` // "subdl"; empty for OpenSubtitles
+	Link     string  `json:"link,omitempty"`   // SubDL's download path
 	Language string  `json:"language"`
 	Release  string  `json:"release"`
 	Rating   float64 `json:"rating"`
@@ -22,6 +24,10 @@ type subtitleResultPayload struct {
 	Score float64 `json:"score"`
 	// HashMatch: made for this exact video file, so it is in sync.
 	HashMatch bool `json:"hashMatch,omitempty"`
+	// Variant says what kind of subtitle it is: "sdh" (describes sounds for the
+	// hard of hearing), "forced" (only the foreign-language lines), or empty for
+	// the plain full dialogue. It decides the saved file's name.
+	Variant string `json:"variant,omitempty"`
 }
 
 // errSubtitleItemNotFound means a movie or episode id matches nothing.
@@ -95,8 +101,8 @@ func (s *Server) searchSubtitles(w http.ResponseWriter, r *http.Request, kind st
 	if !ok {
 		return
 	}
-	if !s.Subtitles().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your OpenSubtitles API key first (Settings > Info, lists and subtitles > Subtitles).")
+	if !s.hasSubtitleSource() {
+		writeError(w, http.StatusPreconditionFailed, s.noSubtitleSourceMessage())
 		return
 	}
 	language := r.URL.Query().Get("lang")
@@ -105,10 +111,19 @@ func (s *Server) searchSubtitles(w http.ResponseWriter, r *http.Request, kind st
 	}
 	q := it.query(language)
 	q.MovieHash = videoHash(it.filePath)
-	results, err := s.Subtitles().Find(r.Context(), q)
+	// "variant=forced" lists only the forced tracks (foreign parts only). Without
+	// it every kind is listed, each marked, and you pick.
+	forcedOnly := r.URL.Query().Get("variant") == string(subtitles.VariantForced)
+	if forcedOnly {
+		q.Forced = true
+	}
+	results, err := s.findSubtitles(r.Context(), q, true)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "Couldn't search for subtitles: "+err.Error())
 		return
+	}
+	if forcedOnly {
+		results = subtitles.DefaultProfile().Filter(subtitles.SlotForced, results)
 	}
 	videoName := ""
 	if it.filePath != "" {
@@ -117,8 +132,8 @@ func (s *Server) searchSubtitles(w http.ResponseWriter, r *http.Request, kind st
 	out := make([]subtitleResultPayload, len(results))
 	for i, res := range results {
 		out[i] = subtitleResultPayload{
-			FileID: res.FileID, Language: res.Language, Release: res.Release, Rating: res.Rating,
-			Score: subtitles.Score(res, videoName), HashMatch: res.HashMatch,
+			FileID: res.FileID, Source: res.Source, Link: res.Link, Language: res.Language, Release: res.Release, Rating: res.Rating,
+			Score: subtitles.Score(res, videoName), HashMatch: res.HashMatch, Variant: string(res.Variant()),
 		}
 	}
 	sortSubtitleResults(out)
@@ -127,7 +142,12 @@ func (s *Server) searchSubtitles(w http.ResponseWriter, r *http.Request, kind st
 
 type downloadSubtitleRequest struct {
 	FileID   int    `json:"fileId"`
+	Source   string `json:"source"`
+	Link     string `json:"link"`
 	Language string `json:"language"`
+	// Variant is "sdh", "forced" or empty (plain), as the search list marked
+	// it. It becomes part of the saved file's name.
+	Variant string `json:"variant"`
 }
 
 func (s *Server) handleDownloadMovieSubtitle(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +174,20 @@ func (s *Server) downloadSubtitle(w http.ResponseWriter, r *http.Request, kind s
 		return
 	}
 	var req downloadSubtitleRequest
-	if err := decodeJSON(r, &req); err != nil || req.FileID <= 0 {
+	err := decodeJSON(r, &req)
+	switch {
+	case err != nil:
+	case req.Source == subtitles.SourceSubDL && subtitles.ValidSubDLLink(req.Link):
+	case req.Source == subtitles.SourceWizdom && subtitles.ValidWizdomLink(req.Link):
+	case req.Source == subtitles.SourceAddon && req.Link != "":
+		if _, ok := s.openAddonLink(req.Link); !ok {
+			err = errors.New("no subtitle")
+		}
+	case req.Source == subtitles.SourceOpenSubtitles && req.FileID > 0:
+	default:
+		err = errors.New("no subtitle")
+	}
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "Pick a subtitle from the list to download.")
 		return
 	}
@@ -168,7 +201,18 @@ func (s *Server) downloadSubtitle(w http.ResponseWriter, r *http.Request, kind s
 		writeError(w, http.StatusBadRequest, "That isn't a language code Mediarium can use. Pick one from the list.")
 		return
 	}
-	path, err := s.writeSubtitle(r.Context(), it, req.Language, subtitlePick{fileID: req.FileID, chosen: true, videoHash: videoHash(it.filePath)})
+	variant, ok := subtitles.ValidVariant(req.Variant)
+	if !ok {
+		writeError(w, http.StatusBadRequest, `The kind of subtitle must be empty, "sdh" or "forced".`)
+		return
+	}
+	// A source switched off is never asked, not even to hand over a subtitle an
+	// earlier search listed.
+	if on, name := s.sourceOnFor(req.Source); !on {
+		writeError(w, http.StatusConflict, name+" switched off, so that subtitle can't be downloaded. Switch it on in Settings > Info, lists and subtitles > Subtitles, or search again.")
+		return
+	}
+	path, err := s.writeSubtitle(r.Context(), it, req.Language, subtitlePick{fileID: req.FileID, source: req.Source, link: req.Link, chosen: true, videoHash: videoHash(it.filePath), variant: variant})
 	switch {
 	case errors.Is(err, subtitles.ErrQuota):
 		writeError(w, http.StatusTooManyRequests, err.Error())
@@ -184,7 +228,18 @@ func (s *Server) downloadSubtitle(w http.ResponseWriter, r *http.Request, kind s
 
 type subtitleStatusPayload struct {
 	Languages []string `json:"languages"` // configured
-	Present   []string `json:"present"`   // configured languages already on disk
+	Present   []string `json:"present"`   // configured languages whose subtitles are all there
+	Embedded  []string `json:"embedded"`  // of those, the ones inside the video file
+	// Slots lists each subtitle wanted, one per language and kind, with whether
+	// it is there. A language that wants a forced track as well has two.
+	Slots []subtitleSlotStatus `json:"slots"`
+}
+
+type subtitleSlotStatus struct {
+	Language string `json:"language"`
+	Kind     string `json:"kind"` // "full" or "forced"
+	Present  bool   `json:"present"`
+	Embedded bool   `json:"embedded,omitempty"` // it is a track inside the video file
 }
 
 func (s *Server) handleMovieSubtitleStatus(w http.ResponseWriter, r *http.Request) {
@@ -200,11 +255,31 @@ func (s *Server) subtitleStatus(w http.ResponseWriter, r *http.Request, kind str
 	if !ok {
 		return
 	}
-	have := languagesOnDisk(it.filePath)
-	out := subtitleStatusPayload{Languages: s.subtitleLanguages(), Present: []string{}}
+	onDisk := diskSubtitles(it.filePath)
+	inside := s.embeddedSubtitles(it.filePath)
+	profiles := s.subtitleProfiles()
+	out := subtitleStatusPayload{Languages: s.subtitleLanguages(), Present: []string{}, Embedded: []string{}, Slots: []subtitleSlotStatus{}}
 	for _, l := range out.Languages {
-		if subtitles.LanguageSatisfied(have, l) {
+		p := profiles.For(l)
+		allThere, allInside := true, true
+		for _, slot := range p.Slots() {
+			st := subtitleSlotStatus{Language: l, Kind: string(slot)}
+			switch {
+			case p.Satisfies(onDisk.For(l), slot):
+				st.Present = true
+				allInside = false
+			case p.Satisfies(inside.For(l), slot):
+				st.Present, st.Embedded = true, true
+			default:
+				allThere, allInside = false, false
+			}
+			out.Slots = append(out.Slots, st)
+		}
+		if allThere {
 			out.Present = append(out.Present, l)
+			if allInside {
+				out.Embedded = append(out.Embedded, l)
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -268,8 +343,8 @@ func (s *Server) handleSubtitleSweep(w http.ResponseWriter, r *http.Request) {
 	if s.refuseIfSubtitlesOff(w) {
 		return
 	}
-	if !s.Subtitles().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your OpenSubtitles API key first (Settings > Info, lists and subtitles > Subtitles).")
+	if !s.hasSubtitleSource() {
+		writeError(w, http.StatusPreconditionFailed, s.noSubtitleSourceMessage())
 		return
 	}
 	n, err := s.subtitleSweep(r.Context(), true, maxSubtitleDownloadsRun)

@@ -4,7 +4,8 @@ import "net/http"
 
 // contentSecurityPolicy fits the single-page app: everything comes from
 // Mediarium itself except poster and cover images (TMDB, the Cover Art
-// Archive and the Internet Archive it redirects to). Inline styles are
+// Archive and the Internet Archive it redirects to) and the YouTube player
+// for the trailer a person chose to play behind a title page. Inline styles are
 // allowed because React sets style attributes; scripts are never inline.
 const contentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self'; " +
@@ -14,6 +15,8 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"font-src 'self' blob:; " +
 	"media-src 'self' blob:; " +
 	"connect-src 'self'; " +
+	// The optional trailer behind a title page; nothing else may be framed.
+	"frame-src https://www.youtube-nocookie.com; " +
 	"object-src 'none'; " +
 	"base-uri 'self'; " +
 	"form-action 'self'; " +

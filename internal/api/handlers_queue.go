@@ -43,9 +43,18 @@ type queueItemPayload struct {
 	Interrupted bool `json:"interrupted,omitempty"`
 	// Pending is "pausing" or "stopping" while the download winds down.
 	Pending string `json:"pending,omitempty"`
+	// Peers and Seeds are how many the built-in torrent client is connected to
+	// (only for a torrent it is running right now).
+	Peers *int `json:"peers,omitempty"`
+	Seeds *int `json:"seeds,omitempty"`
+	// Category is the torrent category the built-in client filed the download
+	// under (empty for none).
+	Category string `json:"category,omitempty"`
 	// KeptFiles says the partly downloaded files are still in the downloads
 	// folder (a paused, stopped or failed download).
 	KeptFiles bool `json:"keptFiles,omitempty"`
+	// IndexerName is the indexer the release came from, when it is still set up.
+	IndexerName string `json:"indexerName,omitempty"`
 	// QueuePosition is the place in the download line of a waiting download: 1
 	// is next. Zero for anything else.
 	QueuePosition int `json:"queuePosition,omitempty"`
@@ -118,7 +127,14 @@ func sortQueueItems(items []queue.Item) {
 // carries the name and poster of the movie or show it is for, so the page
 // reads as titles rather than release names.
 func (s *Server) handleListQueue(w http.ResponseWriter, r *http.Request) {
-	items, err := s.QueueRepo.List()
+	// ?active=1 asks only for what is waiting, downloading or importing: the
+	// menu's count and the dashboard need no more, and it is far smaller than
+	// a list that also holds every finished download.
+	list := s.QueueRepo.List
+	if r.URL.Query().Get("active") == "1" {
+		list = s.QueueRepo.ListActive
+	}
+	items, err := list()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -126,19 +142,33 @@ func (s *Server) handleListQueue(w http.ResponseWriter, r *http.Request) {
 	sortQueueItems(items)
 	positions := waitingPositions(items)
 	out := make([]queueItemPayload, len(items))
+	indexerNames := s.indexerNames()
+	categories, _ := s.TorrentOpts.Categories()
+	namer := s.newQueueNamer(items)
 	for i, it := range items {
-		title, subtitle, poster := s.describeQueueItem(it)
+		title, subtitle, poster := namer.describe(it)
 		p := queueItemPayload{
 			ID: it.ID, MovieID: it.MovieID, SeriesID: it.SeriesID, AlbumID: it.AlbumID, BookID: it.BookID, BookFormat: it.BookFormat, Title: title, Subtitle: subtitle, PosterURL: poster,
 			ReleaseTitle: it.ReleaseTitle, Protocol: string(it.Protocol), SizeBytes: it.SizeBytes, Status: string(it.Status),
 			ProgressPct: it.ProgressPct, Error: plainerror.Text(it.Error), AddedAt: it.AddedAt, CompletedAt: it.CompletedAt, DestPath: it.DestPath,
 			Interrupted: it.Interrupted, Pending: s.pipelines.pending(it.ID), QueuePosition: positions[it.ID],
 		}
+		if it.IndexerID.Valid {
+			p.IndexerName = indexerNames[it.IndexerID.Int64]
+		}
+		if it.Protocol == queue.ProtocolTorrent {
+			p.Category = categories[it.ID]
+		}
+		if it.Protocol == queue.ProtocolTorrent && it.Status == queue.StatusDownloading {
+			if peers, seeds, ok := s.torrents.swarm(it.ID); ok {
+				p.Peers, p.Seeds = &peers, &seeds
+			}
+		}
 		if it.Status == queue.StatusPaused || it.Status == queue.StatusStopped || it.Status == queue.StatusFailed {
 			p.KeptFiles = fileExists(s.workDirFor(it.ID))
 		}
 		if it.MovieID > 0 {
-			if m, err := s.MovieRepo.Get(it.MovieID); err == nil {
+			if m, ok := namer.movie(it.MovieID); ok {
 				p.TMDBID = m.TMDBID
 			}
 		}
@@ -181,12 +211,13 @@ func (s *Server) handleDeleteQueueItem(w http.ResponseWriter, r *http.Request) {
 		s.releaseAfterPause(item)
 		queueControlMu.Unlock()
 	}
+	work := s.workDirFor(id) // before the row goes: a torrent may be filed in a category folder
 	if err := s.QueueRepo.Delete(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if deleteFiles {
-		s.removeWorkDir(s.workDirFor(id))
+		s.removeWorkDir(work)
 	}
 	s.queueItemEvent(item, "removed", queue.LevelInfo, "Removed from the download list: "+item.ReleaseTitle)
 	writeJSON(w, http.StatusOK, nil)
@@ -401,4 +432,18 @@ func (s *Server) handleListActivity(w http.ResponseWriter, r *http.Request) {
 		out = append(out, p)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// indexerNames maps an indexer's id to its name, so a download can say where
+// its release came from.
+func (s *Server) indexerNames() map[int64]string {
+	out := map[int64]string{}
+	list, err := s.IndexerRepo.List()
+	if err != nil {
+		return out
+	}
+	for _, inst := range list {
+		out[inst.ID] = inst.Name
+	}
+	return out
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { tx } from '../i18n'
 
 // Live filename preview: shows the exact resulting filename as the user
 // edits the tokens. Renders through the real
@@ -28,7 +29,13 @@ export default function NamingPreview({ preset, format, kind = 'movie' }: { pres
   return (
     <>
       <small className="naming-preview">
-        Preview: <code>{preview.folder}/{preview.filename}</code>
+        {tx('Preview: {path}', {
+          path: (
+            <code>
+              {preview.folder}/{preview.filename}
+            </code>
+          ),
+        })}
       </small>
       {preview.problem && (
         <small className="field-error" role="status">

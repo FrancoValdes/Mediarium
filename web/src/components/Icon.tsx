@@ -4,6 +4,8 @@ import type { SVGProps } from 'react'
 // carry a recognisable symbol instead of only words.
 const PATHS: Record<string, string> = {
   search: 'M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM21 21l-4.35-4.35',
+  // Trakt's mark: a ring with a tick through it.
+  trakt: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM7.5 12.5l3 3 6.5-6.5M9.5 9.5l3.2 3.2',
   sort: 'M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4',
   eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   'eye-off':
@@ -46,6 +48,7 @@ const PATHS: Record<string, string> = {
   heart: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',
   globe: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
   server: 'M2 3h20v8H2zM2 13h20v8H2zM6 7h.01M6 17h.01',
+  cloud: 'M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z',
   magnet: 'M6 15A6 6 0 0 0 18 15V3h-4v12a2 2 0 0 1-4 0V3H6zM6 8h4M14 8h4',
   menu: 'M3 12h18M3 6h18M3 18h18',
   sparkles: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 3v4M21 5h-4',
@@ -53,14 +56,33 @@ const PATHS: Record<string, string> = {
   play: 'M5 3l14 9-14 9z',
   pause: 'M6 4h4v16H6zM14 4h4v16h-4z',
   stop: 'M6 6h12v12H6z',
+  'skip-prev': 'M19 20 9 12l10-8zM5 19V5',
+  'skip-next': 'M5 4l10 8-10 8zM19 5v14',
+  volume: 'M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14',
+  'volume-off': 'M11 5 6 9H2v6h4l5 4zM22 9l-6 6M16 9l6 6',
+  shuffle: 'M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5',
+  repeat: 'M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3',
   'chevron-right': 'M9 18l6-6-6-6',
   'chevron-left': 'M15 18l-6-6 6-6',
   'chevron-down': 'M6 9l6 6 6-6',
   'chevron-up': 'M18 15l-6-6-6 6',
   music: 'M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+  // A microphone, for the words of a song.
+  lyrics: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',
+  // A list with a plus, for putting something on a playlist.
+  'playlist-add': 'M3 6h13M3 12h13M3 18h7M18 14v6M15 17h6',
+  edit: 'M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z',
+  // Six dots, the handle to drag a row by.
+  grip: 'M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01',
   disc: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
   headphones: 'M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z',
   book: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM20 17v5H6.5A2.5 2.5 0 0 1 4 19.5',
+  share: 'M18 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM6 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 16a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98',
+  bug: 'M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3 3 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6zM12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5M6 13H2M3 21c0-2.1 1.7-3.9 3.8-4M20.97 5c0 2.1-1.6 3.8-3.5 4M22 13h-4M17.2 17c2.1.1 3.8 1.9 3.8 4',
+  camera: 'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  copy: 'M9 9h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
+  github:
+    'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22',
 }
 
 export type IconName = keyof typeof PATHS
@@ -79,8 +101,12 @@ export default function Icon({ name, size = 18, ...rest }: { name: IconName; siz
       aria-hidden="true"
       focusable="false"
       {...rest}
+      className={`ico ico-${name}${rest.className ? ` ${rest.className}` : ''}`}
     >
-      <path d={PATHS[name]} />
+      {/* A second, offset copy gives icons in tiles some depth (shown by CSS
+          only there); pathLength lets the stroke redraw itself on hover. */}
+      <path className="dp" d={PATHS[name]} />
+      <path className="ln" d={PATHS[name]} pathLength={1} />
     </svg>
   )
 }

@@ -13,28 +13,65 @@ import (
 // Known setting keys. Using constants keeps callers from typo-ing a
 // string key that silently reads back empty.
 const (
-	KeyMoviesPath        = "library.movies_path"
-	KeyTVPath            = "library.tv_path" // falls back to the TV_DIR env default when unset
-	KeyDownloadsPath     = "library.downloads_path"
-	KeyNamingPreset      = "library.naming_preset"       // plex|jellyfin|kodi|minimal|custom
-	KeyMovieNameFormat   = "library.movie_name_format"   // token string, used when preset=custom
-	KeyEpisodeNameFormat = "library.episode_name_format" // token string, used when preset=custom
-	KeyTMDBAPIKey        = "metadata.tmdb_api_key"       // encrypted
-	KeyOnboardingDone    = "onboarding.done"             // "1" once the first-run wizard completes
+	KeyMoviesPath          = "library.movies_path"
+	KeyTVPath              = "library.tv_path"                  // falls back to the TV_DIR env default when unset
+	KeyPushVAPID           = "notify.vapid_key"                 // this server's key for push notifications (encrypted; made on first start)
+	KeyTrailerSound        = "ui.trailer_sound"                 // "1" starts the trailer behind a title page with its sound on, where the browser allows it; unset or "0" starts it muted
+	KeyTrailerBackground   = "ui.trailer_background"            // unset or "1" plays the trailer behind movie and show pages for everyone, unless a browser chose otherwise; "0" switches it off for everyone
+	KeyShowAdvanced        = "ui.show_advanced"                 // "1" shows custom formats and format scores on the Quality page; unset follows whether any custom format exists
+	KeyUnmonitorDownloaded = "library.unmonitor_downloaded"     // "1" stops monitoring a movie once it is downloaded; unset or "0" keeps it monitored
+	KeyUnmonitorFinished   = "library.unmonitor_finished_shows" // "1" stops monitoring a show once it has ended and every monitored episode is in; unset or "0" keeps it monitored
+	KeyMoviesExtraPaths    = "library.movies_extra_paths"       // more movie folders next to the main one (a JSON list of paths); each movie says which one its files go to
+	KeyTVExtraPaths        = "library.tv_extra_paths"           // the same for shows
+	KeyMovieCopiesPath     = "library.movie_copies_path"        // where second copies of movies go (a 4K copy next to the 1080p one); unset = second copies of movies are off
+	KeyTVCopiesPath        = "library.tv_copies_path"           // the same for shows
+	KeyDownloadsPath       = "library.downloads_path"
+	KeyNamingPreset        = "library.naming_preset"       // plex|jellyfin|kodi|minimal|custom
+	KeyMovieNameFormat     = "library.movie_name_format"   // token string, used when preset=custom
+	KeyEpisodeNameFormat   = "library.episode_name_format" // token string, used when preset=custom
+	KeyTMDBAPIKey          = "metadata.tmdb_api_key"       // encrypted
+	KeyOnboardingDone      = "onboarding.done"             // "1" once the first-run wizard completes
 
 	// Phase 2 — torrent engine settings. There's no remote
 	// "download client" to configure for torrents (the engine is embedded
 	// via anacrolix/torrent), so these live here rather than in
 	// the download_clients table.
-	KeyTorrentEnabled        = "torrent.enabled"           // "0" turns torrents off entirely; anything else (including unset) leaves them on
-	KeyTorrentListenPort     = "torrent.listen_port"       // TCP+UDP port for incoming peers; unset or "0" = 58264
-	KeyTorrentSeedRatioLimit = "torrent.seed_ratio_limit"  // e.g. "2.0"; "0" = unlimited
-	KeyTorrentSeedTimeLimitH = "torrent.seed_time_limit_h" // hours; "0" = unlimited
+	KeyTorrentEnabled        = "torrent.enabled"               // "0" turns torrents off entirely; anything else (including unset) leaves them on
+	KeyTorrentListenPort     = "torrent.listen_port"           // TCP+UDP port for incoming peers; unset or "0" = 58264
+	KeyTorrentSeedRatioLimit = "torrent.seed_ratio_limit"      // e.g. "2.0"; "0" = unlimited
+	KeyTorrentSeedTimeLimitH = "torrent.seed_time_limit_h"     // hours; "0" = unlimited
+	KeyTorrentSequential     = "torrent.sequential_default"    // "1" downloads every new built-in torrent in order (first to last piece) so a video can be previewed while it downloads; unset or "0" = off. A torrent can override it
+	KeyTorrentSkipJunk       = "torrent.skip_junk"             // "0" downloads every file of a torrent; anything else (including unset) skips samples and .nfo, .txt, .exe, .url files
+	KeyTorrentPackOnlyWanted = "torrent.pack_only_wanted"      // "1" downloads only the episodes of the wanted show and season from a pack; unset or "0" = the whole pack
+	KeyTorrentUploadLimitKB  = "torrent.upload_limit_kb"       // upload speed limit of the built-in client in KB/s; unset or "0" = no limit. Applies in the same hours as the download limit
+	KeyTorrentAllowLocal     = "torrent.allow_local_addresses" // "1" lets trackers, web seeds and magnet metadata addresses of the built-in client be on the home network or this machine; anything else (including unset) refuses them, because those addresses come from torrents anyone can write. Read when the torrent client starts
+	KeyTorrentPortMapping    = "torrent.port_mapping"          // "0" stops the built-in client asking the router (UPnP, NAT-PMP) to open its port; anything else (including unset) leaves it on. Never used with a VPN or proxy
+	KeyTorrentCategories     = "torrent.categories"            // JSON list of {name, subfolder}: categories for built-in torrents; the subfolder is made inside the downloads working folder. Unset = none
+	KeyTorrentCategoryMap    = "torrent.category_map"          // JSON {movie, tv, music, book: category name}: the category each kind of grab gets; "" = no category
+	KeyDebridService         = "debrid.service"                // "" (off), "realdebrid" or "torbox": torrent releases go to that service instead of the built-in client
+	KeyDebridAPIKey          = "debrid.api_key"                // encrypted; the debrid service's API key
+	KeyDebridPreferCached    = "debrid.prefer_cached"          // "0" stops asking TorBox which releases it already has (no tag, no ranking); "1" or unset (with TorBox as the service) asks and ranks a cached release ahead of an equal one that is not. Real-Debrid has no such check
+	KeyDebridCachedLower     = "debrid.cached_lower_score"     // "1" lets a cached release win over an uncached one of the same quality even when the profile's preferred terms score it lower; unset or "0" only breaks ties between equal scores
+
+	// An external download client that speaks the qBittorrent Web API
+	// (qBittorrent, RDT-Client, Decypharr). While one is set, torrent
+	// releases go to it instead of the built-in client or a debrid service.
+	KeyDownloadClientKind         = "downloadclient.kind"                // "" (off), "qbittorrent", "rdtclient" or "decypharr"
+	KeyDownloadClientURL          = "downloadclient.url"                 // the client's web address, e.g. http://192.168.1.10:8080
+	KeyDownloadClientUsername     = "downloadclient.username"            // the client's web login
+	KeyDownloadClientPassword     = "downloadclient.password"            // encrypted; never shown or logged
+	KeyDownloadClientCategory     = "downloadclient.category"            // the category torrents are added with; unset = "mediarium"
+	KeyDownloadClientRemotePath   = "downloadclient.remote_path"         // path mapping: a folder as the download client reports it, e.g. /downloads; unset = no mapping
+	KeyDownloadClientLocalPath    = "downloadclient.local_path"          // path mapping: the same folder as Mediarium sees it, e.g. /data/torrents
+	KeyDownloadClientRemoveImport = "downloadclient.remove_after_import" // "1" removes a torrent from the client once it's imported; unset or "0" leaves it seeding
+	KeyDownloadClientLinkRoot     = "downloadclient.link_root"           // symlinks from the client may be imported only when they lead into this folder (Decypharr's mount); unset = no symlinks
 
 	// Automation (RSS sync, scheduled search, hunting).
 	KeyAutomationEnabled = "automation.enabled"         // "0" disables; anything else (including unset) enables
 	KeyQualityProfile    = "library.quality_profile"    // legacy: an old preset key (any-1080p, ultra-hd, any); only read once to pick the initial default profile
 	KeyQualityLanguage   = "quality.language"           // the audio language wanted, as a name like "English" (the default when unset); a release clearly in another language only is not picked automatically
+	KeyInfoLanguage      = "info.language"              // the language titles, plots, genres and posters are read in, as a TMDB tag like "de-DE" (en-US when unset); file and folder names always use the English title
+	KeySubtitleAddons    = "subtitles.addons"           // subtitle add-ons (JSON list of {id, name, url}; the url can hold the person's own key for a site, so it is stored encrypted)
 	KeyDefaultSources    = "library.default_sources"    // usenet | torrent | both (default both)
 	KeyDefaultProfileID  = "library.default_profile_id" // id of the stored quality profile used by items with no profile of their own
 	KeyPresetsVersion    = "library.presets_version"    // revision of the built-in quality presets last applied; unset means never (set at start, not user-editable)
@@ -47,6 +84,14 @@ const (
 	KeySubtitleAutoDownload  = "subtitles.auto_download"          // "1" fetches subtitles automatically; unset or "0" only offers them ("ask me")
 	KeySubtitleUpgrade       = "subtitles.upgrade"                // "0" stops swapping a subtitle for one made for the exact video file later; on by default, and only while subtitles download automatically
 	KeyOpenSubtitlesAPIKey   = "subtitles.opensubtitles_api_key"  // encrypted
+	KeySubDLAPIKey           = "subtitles.subdl_api_key"          // encrypted; SubDL, a second place to find subtitles. Unset leaves it out
+	KeySubtitleWizdom        = "subtitles.wizdom"                 // "1" also looks for Hebrew subtitles on Wizdom (wizdom.xyz, no key needed); off when unset
+	KeyOpenSubtitlesEnabled  = "subtitles.opensubtitles_enabled"  // "0" switches OpenSubtitles off as a subtitle source (never searched, no downloads counted); on by default, and it only runs with a key
+	KeySubDLEnabled          = "subtitles.subdl_enabled"          // "0" switches SubDL off as a subtitle source; on by default, and it only runs with a key
+	KeySubtitleAddonsEnabled = "subtitles.addons_enabled"         // "0" switches every subtitle add-on off at once; on by default, and it only runs while at least one add-on is added
+	KeySubtitleCountEmbedded = "subtitles.count_embedded"         // "0" stops counting subtitle tracks inside the video file (MKV, MP4) as already there; on by default
+	KeyNumberingLookup       = "numbering.lookup"                 // "0" stops Mediarium looking up scene and anime numbering (TheXEM, the anime lists, AniList) for anime on its own; on by default. The Refresh mapping button on a show's page still works
+	KeySubtitleProfiles      = "subtitles.profiles"               // per language, which kind of subtitle to look for (JSON such as {"en":{"full":"normal","forced":true}}); a language without an entry wants a normal or SDH subtitle
 
 	// Phase 3 — curated/public list import (Discover). Trakt's
 	// public list-items endpoint only needs a client ID (an app
@@ -66,6 +111,13 @@ const (
 	// silently block every torrent grab for anyone who hasn't configured a
 	// VPN at all yet — an opt-in kill switch, not an opt-out one.
 	KeyVPNRequireForTorrents = "vpn.require_for_torrents"
+
+	// A SOCKS5 or HTTP proxy for some of Mediarium's traffic. The address
+	// (with any user name and password) is stored encrypted; "" means no
+	// proxy. proxy_for lists what goes through it: torrents, indexers and/or
+	// usenet, comma-separated.
+	KeyProxy    = "network.proxy"     // e.g. "socks5://user:pass@10.0.0.2:1080"
+	KeyProxyFor = "network.proxy_for" // e.g. "torrents,indexers"
 
 	// Manual-import naming-collision conflict policy ("skip /
 	// overwrite if better quality / always ask"). "skip" (default) matches
@@ -101,10 +153,17 @@ const (
 	KeySpeedLimitMB         = "downloads.speed_limit_mb"       // download speed limit in MB/s for Usenet and torrents together; unset or "0" = no limit
 	KeySpeedLimitHours      = "downloads.speed_limit_hours"    // when the speed limit applies, "8-23" (from 8:00 to 23:00, server time); unset = all day
 	KeyDownloadHours        = "downloads.hours"                // when new downloads may start, "1-7" (from 1:00 to 7:00, server time); outside it they wait in line. Unset = any time
+	KeyStallHours           = "downloads.stall_hours"          // hours a torrent may get no data before it is given up on (blocklisted and searched for again): 1 to 72, "0" = never; unset = 2 for the built-in client and 6 for a download client
 	KeyMinFreeGB            = "downloads.min_free_gb"          // no new download starts while the downloads folder has less free space than this many GB; unset = 5, "0" = off
+	KeyRetentionDays        = "downloads.retention_days"       // Usenet releases posted longer ago than this many days are not taken (the provider no longer has them): 1 to 10000, "0" or unset = off
+	KeyRejectExecutables    = "downloads.reject_executables"   // "0" lets releases that hold programs or scripts (.exe, .scr, .bat...) through; anything else (including unset) rejects them
+	KeySkipDuplicates       = "downloads.skip_duplicates"      // "1" does not download a release twice (same NZB, or same name and size, for the same title); unset or "0" leaves it off
+	KeyPrecheck             = "downloads.precheck"             // "1" asks the news servers whether a sample of an NZB's articles exist before downloading it, and gives up at once on a release the PAR2 files could not repair; unset or "0" leaves it off
 	KeyNotifyQuietHours     = "notify.quiet_hours"             // hours when everyday messages wait, "23-7" (server time); unset = none. Problems are always sent at once
 	KeyBackupAuto           = "backup.auto"                    // "0" turns the nightly backup into /config/backups off; anything else (including unset) leaves it on
 	KeyBackupKeep           = "backup.keep"                    // how many saved backups are kept in /config/backups; unset = 7
+	KeyBackupCloud          = "backup.cloud"                   // encrypted; copies of the nightly backup in S3-style storage or a WebDAV folder (JSON: enabled, kind, storage details, passphrase, keep). Off unless enabled is true. Only a signed-in browser session can read or set it, not an API key
+	KeyBackupCloudStatus    = "backup.cloud_status"            // what the last cloud copy did (JSON; set by the app, not user-editable)
 	KeyCleanupAuto          = "cleanup.auto"                   // "0" turns the daily automatic clean-up off; anything else (including unset) leaves it on
 	KeyTrashDays            = "library.trash_days"             // days removed titles' files stay in the recycle bin (.mediarium-trash in the library folder); unset = 7, "0" = delete straight away
 	KeyHistoryRetentionDays = "cleanup.history_retention_days" // days finished downloads and activity are kept; unset = 90, "0" = forever
@@ -127,6 +186,7 @@ const (
 	KeyMusicEnabled          = "music.enabled"            // older name of modules.music; still honoured while modules.music is unset, and kept in step with it
 	KeyMusicDefaultProfileID = "music.default_profile_id" // id of the music profile artists without one of their own use; unset = the first
 	KeyMusicPath             = "music.path"               // music library folder; falls back to the MUSIC_DIR env default (/music) when unset
+	KeyMusicLyricsOnline     = "music.lyrics_online"      // "0" stops the player asking LRCLIB for lyrics a file doesn't have; anything else (including unset) leaves it on
 
 	// Folders for the ebooks and audiobooks modules.
 	KeyEbooksPath     = "ebooks.path"     // ebooks library folder; falls back to the EBOOKS_DIR env default (/ebooks) when unset
@@ -140,6 +200,9 @@ const (
 	KeyModulesEbooks     = "modules.ebooks"     // "1" switches it on; unset or "0" leaves it off
 
 	// Updates and restarts (Settings > System). See docs/security.md.
+	KeyStatsChoice        = "stats.choice"                   // the administrator's answer about sharing anonymous usage numbers: "yes", "no", or unset when not asked yet. Nothing is sent unless it is "yes" (see docs/usage-stats.md)
+	KeyStatsInstallID     = "stats.install_id"               // a random number made when the answer is yes, sent with the numbers so one install counts once; set by the app, cleared on "no" and by "Reset my ID"
+	KeyStatsLastSent      = "stats.last_sent"                // the day (UTC) the numbers were last sent; set by the app, not user-editable
 	KeyUpdatesCheck       = "updates.check"                  // "0" turns the daily check for a new version off; anything else (including unset) leaves it on
 	KeyUpdatesAutoInstall = "updates.auto_install"           // "1" installs a new, signed release overnight when nothing is downloading; unset or "0" leaves updating to you
 	KeyUpdatesAllowPush   = "updates.allow_push"             // "1" lets an administrator replace the program by uploading a file through the API; unset or "0" refuses. Only a signed-in browser session can switch it on, not an API key
@@ -156,10 +219,29 @@ const (
 	// Sign-in through a reverse proxy (Settings > Accounts). See docs/security.md.
 	KeyAuthProxyHeader    = "auth.proxy_header"    // the header a trusted reverse proxy puts the signed-in user name in (for example Remote-User); unset or empty leaves it off. Only a signed-in browser session can set it, not an API key
 	KeyAuthProxyAddresses = "auth.proxy_addresses" // where that proxy connects from: IP addresses or CIDR ranges, comma-separated ("private" is refused). The header is only believed from these
+	KeyAuthOutsideSignIn  = "auth.outside_signin"  // when someone last signed in from outside the home network (RFC 3339; set by the app). Two-step sign-in is suggested for 30 days after
 
-	// A script to run after each import (Settings > System > Scripts). See docs/scripts.md.
+	// Other ways to sign in (Settings > Accounts). All off until switched on. See docs/security.md.
+	KeyAuthOIDC        = "auth.oidc"         // encrypted; single sign-on with an OpenID Connect provider (JSON: enabled, name, issuer, client id and secret, scopes, claim names, account rules). Off unless enabled is true. Only a signed-in browser session can read or set it, not an API key. MEDIARIUM_DISABLE_SSO=1 overrides it
+	KeyAuthLDAP        = "auth.ldap"         // encrypted; sign-in with a directory (LDAP or Active Directory) (JSON: enabled, server, bind account and password, filters, attribute names, account rules). Off unless enabled is true. Only a signed-in browser session can read or set it, not an API key. MEDIARIUM_DISABLE_SSO=1 overrides it
+	KeyAuthPasskeys    = "auth.passkeys"     // "1" lets people sign in with a passkey; needs the public address (server.public_url). Unset or "0" leaves it off
+	KeyAuthLocalSignIn = "auth.local_signin" // "0" turns the username and password form off (only possible once an administrator has signed in with another method); anything else (including unset) leaves it on
+
+	// A script to run after each import (Settings > System > Server and updates). See docs/scripts.md.
 	KeyScriptAfterImport = "scripts.after_import" // JSON: script (a file name in /config/scripts; empty = off) and timeoutSec (default 300). Only a signed-in browser session can set it, not an API key
 	KeyScriptLastRun     = "scripts.last_run"     // what the last run did (JSON; set by the app, not user-editable)
+
+	// Search and quality (Settings > Library). Both off until switched on.
+	KeySearchDelay = "search.delay_profile" // delay profile (JSON: preferredProtocol, usenetMinutes, torrentMinutes, bypassIfHighestQuality): automatic searches hold back releases of the less liked protocol for that many minutes; unset or 0 minutes = no wait
+	KeySizeLimits  = "quality.size_limits"  // size limits per quality in MB per minute of runtime (JSON: enabled, limits); applied only while enabled is true
+	// The request portal (Settings > Accounts > All accounts). Everything is off or unlimited until set.
+	KeyRequestOptions = "requests.options" // JSON: notifyRequester (tell people when their request or report is answered), quotaCount (requests per period, 0 = no limit), quotaPeriod (day or week), fourK (let people ask for a 4K copy), fourKProfileId (the quality profile of that copy), reports (let people report a problem with a title)
+	// Permissions of what Mediarium creates in the library (Settings > Library > Folders).
+	KeyFileMode   = "library.file_mode"   // three octal digits like "664" applied to files Mediarium puts in the library; unset = leave it to the container's umask
+	KeyFolderMode = "library.folder_mode" // the same for the folders it creates, like "775"
+
+	// NFO and artwork files for media servers (Settings > Library > Folders). All off by default.
+	KeyMetadataFiles = "library.metadata_files" // JSON: movies and tv, each {nfo, artwork}, and replace (true replaces files Mediarium wrote earlier); unset = nothing is written
 )
 
 type Store struct {

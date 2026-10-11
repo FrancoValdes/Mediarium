@@ -3,6 +3,7 @@
 // say the same thing. Pure functions, no React, so they can be tested.
 
 import type { DashboardData } from './api'
+import { plural, t } from './i18n.ts'
 
 export interface SetupFacts {
   indexers: number // enabled indexers
@@ -41,37 +42,37 @@ export function setupGaps(f: SetupFacts): SetupGap[] {
   if (f.indexers === 0) {
     gaps.push({
       key: 'sources',
-      title: 'Add an indexer',
-      detail: "Indexers are the sites Mediarium searches for releases. Without one it can't find anything.",
+      title: t('Add an indexer'),
+      detail: t("Indexers are the sites Mediarium searches for releases. Without one it can't find anything."),
       to: '/settings/indexers',
-      button: 'Add an indexer',
+      button: t('Add an indexer'),
     })
   }
   if (f.usenetServers === 0 && !f.torrentsReady) {
     gaps.push({
       key: 'download',
-      title: 'Add a download provider',
-      detail: 'Without a Usenet provider, nothing can be downloaded.',
-      to: '/settings/downloads',
-      button: 'Add a Usenet provider',
+      title: t('Add a download provider'),
+      detail: t('Without a Usenet provider, nothing can be downloaded.'),
+      to: '/settings/usenet',
+      button: t('Add a Usenet provider'),
     })
   }
   if (f.foldersBroken.length > 0) {
     gaps.push({
       key: 'folders',
-      title: 'Fix your media folders',
-      detail: `${joinWords(f.foldersBroken)} ${f.foldersBroken.length === 1 ? 'is' : 'are'} missing or cannot be written to.`,
+      title: t('Fix your media folders'),
+      detail: plural(f.foldersBroken.length, '{folders} is missing or cannot be written to.', '{folders} are missing or cannot be written to.', { folders: joinWords(f.foldersBroken) }),
       to: '/settings/media',
-      button: 'Check the folders',
+      button: t('Check the folders'),
     })
   }
   if (f.mediaServers === 0) {
     gaps.push({
       key: 'server',
-      title: 'Connect a media server',
-      detail: 'Let Plex, Jellyfin or Emby know when new files arrive.',
+      title: t('Connect a media server'),
+      detail: t('Let Plex, Jellyfin or Emby know when new files arrive.'),
       to: '/settings/media-servers',
-      button: 'Connect a media server',
+      button: t('Connect a media server'),
       optional: true,
     })
   }
@@ -85,7 +86,7 @@ export function requiredGaps(gaps: SetupGap[]): SetupGap[] {
 
 export function joinWords(items: string[]): string {
   if (items.length <= 1) return items.join('')
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+  return t('{items} and {last}', { items: items.slice(0, -1).join(', '), last: items[items.length - 1] })
 }
 
 // The browser remembers a dismissed card per account. Storage can be blocked,

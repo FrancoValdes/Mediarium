@@ -149,7 +149,7 @@ func (s *cgSession) searchPath(ctx context.Context, p SearchPath, vars *tmplVars
 		}
 	}
 	if resp.status >= 400 {
-		return nil, 0, nil, fmt.Errorf("%s: the site returned HTTP %d for a search", s.name, resp.status)
+		return nil, 0, nil, NewStatusError(resp.status, resp.header, fmt.Sprintf("%s: the site returned HTTP %d for a search", s.name, resp.status), time.Now())
 	}
 
 	body := string(resp.body)

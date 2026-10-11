@@ -27,6 +27,18 @@ const minGzipBytes = 1024
 // tag is weak because the same content is sent compressed and plain. Only a
 // successful GET is touched; everything else passes through unchanged.
 func revalidated(h http.HandlerFunc) http.HandlerFunc {
+	return revalidatedFor(0, h)
+}
+
+// revalidatedFor is revalidated for an answer that changes slowly (the lists on
+// Discover come from TMDB and are the same for everyone): the browser may use
+// its copy for that many seconds without asking, so going back to the page or
+// scrolling to a list it already has costs nothing. Zero means always ask.
+func revalidatedFor(seconds int, h http.HandlerFunc) http.HandlerFunc {
+	cacheControl := "private, no-cache"
+	if seconds > 0 {
+		cacheControl = "private, max-age=" + strconv.Itoa(seconds)
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			h(w, r)
@@ -49,7 +61,7 @@ func revalidated(h http.HandlerFunc) http.HandlerFunc {
 		sum := sha256.Sum256(body)
 		etag := `W/"` + hex.EncodeToString(sum[:16]) + `"`
 		out.Set("ETag", etag)
-		out.Set("Cache-Control", "private, no-cache")
+		out.Set("Cache-Control", cacheControl)
 		out.Add("Vary", "Accept-Encoding")
 		if etagMatches(r.Header.Get("If-None-Match"), etag) {
 			out.Del("Content-Type")

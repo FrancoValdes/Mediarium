@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, type TrashList } from '../api'
 import { formatBytes, timeAgo } from '../format'
 import { useConfirm } from './ConfirmProvider'
+import { plural, t } from '../i18n'
 import Icon from './Icon'
+import HelpLink from './HelpLink'
 import { useToast } from './Toast'
 
 // Activity > Recycle bin: files of titles removed "with their files", kept a
@@ -41,13 +43,14 @@ export default function RecycleBin() {
     <>
       <p style={{ color: 'var(--text-dim)' }}>
         {days > 0
-          ? `When you remove a title with its files, the files wait here for ${days} ${days === 1 ? 'day' : 'days'} before they are deleted for good. Put them back if it was a mistake.`
-          : 'The recycle bin is off: removed files are deleted straight away. Switch it on under Settings > System > Clean up.'}
+          ? plural(days, 'When you remove a title with its files, the files wait here for {n} day before they are deleted for good. Put them back if it was a mistake.', 'When you remove a title with its files, the files wait here for {n} days before they are deleted for good. Put them back if it was a mistake.')
+          : t('The recycle bin is off: removed files are deleted straight away. Switch it on under Settings > System > Server.')}
+        <HelpLink topic="downloads#the-recycle-bin" text={t('Put back moves the files into their old folder. It does not add the title to your library again; use Import for that. Delete now removes them for good.')} />
       </p>
       {bin.items.length === 0 ? (
         <div className="empty-state">
           <Icon name="trash" size={44} />
-          <p>The recycle bin is empty.</p>
+          <p>{t('The recycle bin is empty.')}</p>
         </div>
       ) : (
         <>
@@ -56,19 +59,19 @@ export default function RecycleBin() {
               className="btn-sm btn-danger"
               disabled={busy !== ''}
               onClick={async () => {
-                if (!(await confirm({ title: 'Empty the recycle bin?', body: <p>Every file in it is deleted for good. This cannot be undone.</p>, confirmLabel: 'Empty it', danger: true }))) return
-                await run('all', () => api.emptyTrash(), 'The recycle bin is empty.')
+                if (!(await confirm({ title: t('Empty the recycle bin?'), body: <p>{t('Every file in it is deleted for good. This cannot be undone.')}</p>, confirmLabel: t('Empty it'), danger: true }))) return
+                await run('all', () => api.emptyTrash(), t('The recycle bin is empty.'))
               }}
             >
-              Empty the recycle bin
+              {t('Empty the recycle bin')}
             </button>
           </div>
           <table>
             <thead>
               <tr>
-                <th>Removed</th>
-                <th>Size</th>
-                <th>When</th>
+                <th>{t('Removed')}</th>
+                <th>{t('Size')}</th>
+                <th>{t('When')}</th>
                 <th />
               </tr>
             </thead>
@@ -83,29 +86,29 @@ export default function RecycleBin() {
                     </td>
                     <td>
                       {formatBytes(it.size)}
-                      <div style={{ color: 'var(--text-dim)', fontSize: '0.82rem' }}>{it.files === 1 ? '1 file' : `${it.files} files`}</div>
+                      <div style={{ color: 'var(--text-dim)', fontSize: '0.82rem' }}>{plural(it.files, '{n} file', '{n} files')}</div>
                     </td>
                     <td>
                       {timeAgo(it.deletedAt)}
-                      {it.expiresAt && <div style={{ color: 'var(--text-dim)', fontSize: '0.82rem' }}>deleted for good {inDays(it.expiresAt)}</div>}
+                      {it.expiresAt && <div style={{ color: 'var(--text-dim)', fontSize: '0.82rem' }}>{t('deleted for good {when}', { when: inDays(it.expiresAt) })}</div>}
                     </td>
                     <td className="row-actions">
                       <button
                         className="btn-sm btn-with-icon"
                         disabled={busy !== ''}
-                        onClick={() => void run(key, () => api.restoreTrash(it.kind, it.id), `${it.label} is back in its folder. Use Import in the Library to add it to your library again.`)}
+                        onClick={() => void run(key, () => api.restoreTrash(it.kind, it.id), t('{name} is back in its folder. Use Import in the Library to add it to your library again.', { name: it.label }))}
                       >
-                        <Icon name="refresh" size={14} /> Put back
+                        <Icon name="refresh" size={14} /> {t('Put back')}
                       </button>
                       <button
                         className="btn-sm"
                         disabled={busy !== ''}
                         onClick={async () => {
-                          if (!(await confirm({ title: `Delete ${it.label} for good?`, body: <p>The files are deleted now. This cannot be undone.</p>, confirmLabel: 'Delete', danger: true }))) return
-                          await run(key, () => api.deleteTrash(it.kind, it.id), 'Deleted for good.')
+                          if (!(await confirm({ title: t('Delete {name} for good?', { name: it.label }), body: <p>{t('The files are deleted now. This cannot be undone.')}</p>, confirmLabel: t('Delete'), danger: true }))) return
+                          await run(key, () => api.deleteTrash(it.kind, it.id), t('Deleted for good.'))
                         }}
                       >
-                        Delete now
+                        {t('Delete now')}
                       </button>
                     </td>
                   </tr>
@@ -121,7 +124,7 @@ export default function RecycleBin() {
 
 function inDays(iso: string): string {
   const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000)
-  if (days <= 0) return 'today'
-  if (days === 1) return 'tomorrow'
-  return `in ${days} days`
+  if (days <= 0) return t('today')
+  if (days === 1) return t('tomorrow')
+  return plural(days, 'in {n} day', 'in {n} days')
 }

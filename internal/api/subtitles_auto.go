@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rdborg/mediarium/internal/fileperms"
 	"github.com/rdborg/mediarium/internal/library"
 	"github.com/rdborg/mediarium/internal/notify"
 	"github.com/rdborg/mediarium/internal/settings"
@@ -118,9 +119,9 @@ func (s *Server) autoSubtitlesEnabled() bool {
 
 func (it subtitleItem) query(lang string) subtitles.Query {
 	if it.kind == "episode" {
-		return subtitles.Query{ParentTMDBID: it.parentTMDB, Season: it.season, Episode: it.episode, Type: "episode", Language: lang}
+		return queryFileInfo(subtitles.Query{ParentTMDBID: it.parentTMDB, Season: it.season, Episode: it.episode, Type: "episode", Language: lang}, it.filePath)
 	}
-	return subtitles.Query{TMDBID: it.tmdbID, Type: "movie", Language: lang}
+	return queryFileInfo(subtitles.Query{TMDBID: it.tmdbID, Type: "movie", Language: lang}, it.filePath)
 }
 
 // subtitleBase is the video path without its extension; external subtitles
@@ -130,53 +131,60 @@ func subtitleBase(videoPath string) string {
 	return strings.TrimSuffix(videoPath, filepath.Ext(videoPath))
 }
 
-// languagesOnDisk lists the subtitle languages already sitting next to a
-// video file (any of .srt/.ass/.ssa/.sub/.sup named "<base>.<lang>.<ext>").
-// Forced-only subtitles (only the foreign-language lines) do not count: they
-// are not a full subtitle in that language. Other flags such as "en.sdh" do.
-func languagesOnDisk(videoPath string) map[string]bool {
-	out := map[string]bool{}
-	if videoPath == "" {
-		return out
-	}
-	dir := filepath.Dir(videoPath)
-	prefix := strings.ToLower(filepath.Base(subtitleBase(videoPath))) + "."
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return out
-	}
-	for _, e := range entries {
-		name := strings.ToLower(e.Name())
-		if e.IsDir() || !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		ext := filepath.Ext(name)
-		switch ext {
-		case ".srt", ".ass", ".ssa", ".sub", ".sup":
-		default:
-			continue
-		}
-		parts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(name, prefix), ext), ".")
-		forced := false
-		for _, flag := range parts[1:] {
-			if flag == "forced" || flag == "foreign" {
-				forced = true
-			}
-		}
-		if forced || parts[0] == "" {
-			continue
-		}
-		out[parts[0]] = true
-	}
-	return out
+// subtitleProfiles are the per-language choices (normal, SDH, forced) from
+// Settings; a language with none gets the default.
+func (s *Server) subtitleProfiles() subtitles.Profiles {
+	v, _ := s.Settings.Get(settings.KeySubtitleProfiles)
+	return subtitles.ParseProfiles(v)
 }
 
+// countEmbeddedSubtitles: subtitle tracks inside the video count as there
+// (on unless switched off).
+func (s *Server) countEmbeddedSubtitles() bool {
+	return s.settingOn(settings.KeySubtitleCountEmbedded, true)
+}
+
+// diskSubtitles lists what is saved next to a video, per language and kind
+// (a ".forced" file is a forced track, ".sdh" one for the hard of hearing).
+func diskSubtitles(videoPath string) subtitles.HaveMap { return subtitles.DiskHave(videoPath) }
+
+// embeddedSubtitleLanguages are the full subtitle tracks inside the video,
+// when those count; none otherwise.
+func (s *Server) embeddedSubtitleLanguages(videoPath string) map[string]bool {
+	if videoPath == "" || !s.countEmbeddedSubtitles() {
+		return map[string]bool{}
+	}
+	return subtitles.EmbeddedLanguages(videoPath)
+}
+
+// embeddedSubtitles is what the tracks inside the video make, per language
+// and kind, when those count; nothing otherwise.
+func (s *Server) embeddedSubtitles(videoPath string) subtitles.HaveMap {
+	if videoPath == "" || !s.countEmbeddedSubtitles() {
+		return subtitles.HaveMap{}
+	}
+	return subtitles.EmbeddedHave(videoPath)
+}
+
+// haveSubtitles is everything that counts as already there for a video: the
+// files next to it and, unless switched off, the tracks inside it.
+func (s *Server) haveSubtitles(videoPath string) subtitles.HaveMap {
+	have := diskSubtitles(videoPath)
+	have.Merge(s.embeddedSubtitles(videoPath))
+	return have
+}
+
+// missingSubtitleLanguages lists the subtitles a downloaded video still needs,
+// as slot keys: "en" for a language's full subtitle (as before profiles
+// existed) and "en.forced" for its forced track.
 func (s *Server) missingSubtitleLanguages(it subtitleItem) []string {
-	have := languagesOnDisk(it.filePath)
+	have := s.haveSubtitles(it.filePath)
+	profiles := s.subtitleProfiles()
 	var missing []string
 	for _, l := range s.subtitleLanguages() {
-		if !subtitles.LanguageSatisfied(have, l) {
-			missing = append(missing, l)
+		p := profiles.For(l)
+		for _, slot := range p.Missing(have.For(l)) {
+			missing = append(missing, slot.Key(l))
 		}
 	}
 	return missing
@@ -240,32 +248,68 @@ func (s *Server) subtitleQuota() subtitles.QuotaState {
 	return subtitles.ComputeQuota(now, s.Subtitles().HasCredentials(), rep, downloads)
 }
 
-func (s *Server) writeSubtitle(ctx context.Context, it subtitleItem, lang string, pick subtitlePick) (string, error) {
+// subtitleData fetches the chosen subtitle from where it was found.
+func (s *Server) subtitleData(ctx context.Context, it subtitleItem, pick subtitlePick) ([]byte, error) {
+	if pick.source == subtitles.SourceSubDL {
+		season, episode := 0, 0
+		if it.kind == "episode" {
+			season, episode = it.season, it.episode
+		}
+		return s.SubDL().Download(ctx, pick.link, season, episode)
+	}
+	if pick.source == subtitles.SourceWizdom {
+		season, episode := 0, 0
+		if it.kind == "episode" {
+			season, episode = it.season, it.episode
+		}
+		return s.wizdomClient().Download(ctx, pick.link, season, episode)
+	}
+	if pick.source == subtitles.SourceAddon {
+		link, ok := s.openAddonLink(pick.link)
+		if !ok {
+			return nil, errors.New("that subtitle's link isn't valid any more. Search again and pick it from the list")
+		}
+		season, episode := 0, 0
+		if it.kind == "episode" {
+			season, episode = it.season, it.episode
+		}
+		return s.addons.Download(ctx, link, pick.lang, season, episode)
+	}
 	info, err := s.Subtitles().RequestDownloadInfo(ctx, pick.fileID)
 	if err != nil {
 		var qe *subtitles.QuotaError
 		if errors.As(err, &qe) {
 			s.noteSubtitleQuotaError(qe.Info)
 		}
-		return "", err
+		return nil, err
 	}
 	// OpenSubtitles counts the download once it hands out the link, whether or
 	// not the file fetch below then succeeds.
 	s.noteSubtitleDownload(info)
-	data, err := s.Subtitles().DownloadFile(ctx, info.Link)
+	return s.Subtitles().DownloadFile(ctx, info.Link)
+}
+
+func (s *Server) writeSubtitle(ctx context.Context, it subtitleItem, lang string, pick subtitlePick) (string, error) {
+	pick.lang = lang
+	data, err := s.subtitleData(ctx, it, pick)
 	if err != nil {
 		return "", err
 	}
-	path := fmt.Sprintf("%s.%s.srt", subtitleBase(it.filePath), lang)
+	path := subtitles.SidecarPath(it.filePath, lang, pick.variant)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", fmt.Errorf("write subtitle file: %w", err)
 	}
+	_ = fileperms.ApplyFile(path)
 	// A copy kept by the timing tool belonged to the subtitle just replaced:
 	// "Put the original back" must not bring that one back.
 	if err := os.Remove(path + ".bak"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Printf("subtitles: remove the old backup of %s: %v", filepath.Base(path), err)
 	}
-	s.recordSubtitle(it, lang, path, pick)
+	slot := subtitles.SlotFull
+	if pick.variant == subtitles.VariantForced {
+		slot = subtitles.SlotForced
+	}
+	s.recordSubtitle(it, slot.Key(lang), path, pick)
 	movieID := int64(0)
 	if it.kind == "movie" {
 		movieID = it.id
@@ -274,9 +318,16 @@ func (s *Server) writeSubtitle(ctx context.Context, it subtitleItem, lang string
 	if it.subtitle != "" {
 		name += " " + strings.SplitN(it.subtitle, " ", 2)[0]
 	}
-	subtitleMessage := fmt.Sprintf("Downloaded %s subtitle for %s", lang, name)
+	what := lang
+	switch pick.variant {
+	case subtitles.VariantForced:
+		what += " forced"
+	case subtitles.VariantSDH:
+		what += " SDH"
+	}
+	subtitleMessage := fmt.Sprintf("Downloaded %s subtitle for %s", what, name)
 	if pick.upgrade {
-		subtitleMessage = fmt.Sprintf("Swapped the %s subtitle for %s for one made for this exact file", lang, name)
+		subtitleMessage = fmt.Sprintf("Swapped the %s subtitle for %s for one made for this exact file", what, name)
 	}
 	_ = s.QueueRepo.LogActivity(movieID, "subtitle", subtitleMessage)
 	subItem := notify.Item{Media: it.kind, Title: it.title, Language: subtitles.LanguageLabel(lang), Path: path}
@@ -289,27 +340,91 @@ func (s *Server) writeSubtitle(ctx context.Context, it subtitleItem, lang string
 	return path, nil
 }
 
+// findSubtitles searches every source that is switched on: OpenSubtitles
+// (unless useOpenSubtitles is false, after its daily limit), SubDL and the
+// add-ons. A source that is switched off is never asked. One source failing
+// is only logged when another answered; with all failing, the first error
+// comes back.
+func (s *Server) findSubtitles(ctx context.Context, q subtitles.Query, useOpenSubtitles bool) ([]subtitles.Result, error) {
+	src := s.subtitleSources()
+	var results []subtitles.Result
+	var errs []error
+	asked := 0
+	if useOpenSubtitles && src.OpenSubtitles.On() {
+		asked++
+		r, err := s.Subtitles().Find(ctx, q)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		results = append(results, r...)
+	}
+	if src.SubDL.On() {
+		asked++
+		r, err := s.SubDL().Find(ctx, q)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		results = append(results, r...)
+	}
+	if r, ok, err := s.findWizdomSubtitles(ctx, q); ok {
+		asked++
+		if err != nil {
+			errs = append(errs, err)
+		}
+		results = append(results, r...)
+	}
+	if src.Addons.On() {
+		if r, n, es := s.findAddonSubtitles(ctx, q); n > 0 {
+			asked += n
+			errs = append(errs, es...)
+			results = append(results, r...)
+		}
+	}
+	switch {
+	case asked == 0 && !useOpenSubtitles && src.OpenSubtitles.On():
+		return nil, subtitles.ErrQuota
+	case asked == 0 && src.AnySetUp():
+		return nil, subtitles.ErrNoSource
+	case asked == 0:
+		return nil, subtitles.ErrNoAPIKey
+	case len(errs) == asked:
+		return nil, errs[0]
+	}
+	for _, err := range errs {
+		log.Printf("subtitles: one source failed, using the other: %v", err)
+	}
+	return results, nil
+}
+
 // fetchBestSubtitle finds the subtitle that best fits the video file and
-// saves it next to it.
-func (s *Server) fetchBestSubtitle(ctx context.Context, it subtitleItem, lang string) (string, error) {
-	q := it.query(lang)
+// saves it next to it. key is the slot being filled: a language ("en") for
+// its full subtitle, "en.forced" for its forced track. useOpenSubtitles is
+// false once its daily limit is used up, so only SubDL is asked.
+func (s *Server) fetchBestSubtitle(ctx context.Context, it subtitleItem, key string, useOpenSubtitles bool) (string, error) {
+	lang, slot := subtitles.SplitSlotKey(key)
+	profile := s.subtitleProfiles().For(lang)
+	q := profile.Apply(slot, it.query(lang))
 	q.MovieHash = videoHash(it.filePath)
-	results, err := s.Subtitles().Find(ctx, q)
+	results, err := s.findSubtitles(ctx, q, useOpenSubtitles)
 	if err != nil {
 		return "", err
 	}
-	best := subtitles.Pick(results, filepath.Base(it.filePath))
+	best := subtitles.Pick(profile.Filter(slot, results), filepath.Base(it.filePath))
 	if best == nil {
 		return "", errNoSubtitle
 	}
-	return s.writeSubtitle(ctx, it, lang, subtitlePick{fileID: best.FileID, hashMatch: best.HashMatch, videoHash: q.MovieHash})
+	variant := best.Variant()
+	if slot == subtitles.SlotForced {
+		variant = subtitles.VariantForced
+	}
+	return s.writeSubtitle(ctx, it, lang, subtitlePick{fileID: best.FileID, source: best.Source, link: best.Link, hashMatch: best.HashMatch, videoHash: q.MovieHash, variant: variant})
 }
 
 // downloadedSubtitleItems lists every downloaded movie and episode that has
 // a file on disk.
 func (s *Server) downloadedSubtitleItems() ([]subtitleItem, error) {
 	var items []subtitleItem
-	movies, err := s.MovieRepo.List()
+	movies, err := s.MovieRepo.ListWithCopies()
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +433,7 @@ func (s *Server) downloadedSubtitleItems() ([]subtitleItem, error) {
 			items = append(items, movieSubtitleItem(m))
 		}
 	}
-	seriesList, err := s.MovieRepo.ListSeries()
+	seriesList, err := s.MovieRepo.ListSeriesWithCopies()
 	if err != nil {
 		return nil, err
 	}
@@ -386,9 +501,26 @@ func (s *Server) fetchSubtitles(ctx context.Context, items []subtitleItem, opts 
 	}
 	dismissed := s.dismissedSubtitles()
 	stopped := false
-	if st := s.subtitleQuota(); st.Source == subtitles.QuotaReported && st.Exceeded {
+	src := s.subtitleSources()
+	if !src.Any() {
+		if src.AnySetUp() {
+			return res, subtitles.ErrNoSource
+		}
+		return res, subtitles.ErrNoAPIKey
+	}
+	// useOS turns false once OpenSubtitles' daily limit is used up; SubDL or
+	// the add-ons, when they are on, carry on alone. With OpenSubtitles
+	// switched off its limit does not matter at all.
+	useOS := src.OpenSubtitles.On()
+	osOut := func() {
+		useOS = false
+		if !src.OthersThanOpenSubtitles() {
+			stopped, res.quota = true, true
+		}
+	}
+	if st := s.subtitleQuota(); useOS && st.Source == subtitles.QuotaReported && st.Exceeded {
 		// OpenSubtitles already said the limit is used up until its reset.
-		stopped, res.quota = true, true
+		osOut()
 	}
 	for _, it := range items {
 		langs := s.missingSubtitleLanguages(it)
@@ -423,7 +555,13 @@ func (s *Server) fetchSubtitles(ctx context.Context, items []subtitleItem, opts 
 					continue
 				}
 			}
-			_, err := s.fetchBestSubtitle(ctx, it, lang)
+			_, err := s.fetchBestSubtitle(ctx, it, lang, useOS)
+			if errors.Is(err, subtitles.ErrQuota) && useOS {
+				osOut()
+				if !stopped {
+					_, err = s.fetchBestSubtitle(ctx, it, lang, false) // the same subtitle from SubDL, if it has one
+				}
+			}
 			switch {
 			case err == nil:
 				res.downloaded++
@@ -433,7 +571,7 @@ func (s *Server) fetchSubtitles(ctx context.Context, items []subtitleItem, opts 
 			case ctx.Err() != nil:
 				stopped, res.timedOut = true, true
 				res.remaining++
-			case errors.Is(err, subtitles.ErrInvalidKey), errors.Is(err, subtitles.ErrLoginFailed), errors.Is(err, subtitles.ErrNoAPIKey):
+			case errors.Is(err, subtitles.ErrInvalidKey), errors.Is(err, subtitles.ErrLoginFailed), errors.Is(err, subtitles.ErrNoAPIKey), errors.Is(err, subtitles.ErrNoSource), errors.Is(err, subtitles.ErrSubDLKey):
 				return res, err
 			default:
 				if errors.Is(err, errNoSubtitle) {
@@ -457,7 +595,10 @@ func (s *Server) subtitleSweep(ctx context.Context, force bool, limit int) (int,
 	if !s.subtitlesEnabled() {
 		return 0, errSubtitlesOff
 	}
-	if !s.Subtitles().HasAPIKey() {
+	if src := s.subtitleSources(); !src.Any() {
+		if src.AnySetUp() {
+			return 0, subtitles.ErrNoSource
+		}
 		return 0, subtitles.ErrNoAPIKey
 	}
 	items, err := s.downloadedSubtitleItems()
@@ -475,7 +616,7 @@ func (s *Server) subtitleSweep(ctx context.Context, force bool, limit int) (int,
 }
 
 func (s *Server) subtitleSweepJob(ctx context.Context) {
-	if !s.Subtitles().HasAPIKey() || !s.autoSubtitlesEnabled() {
+	if !s.hasSubtitleSource() || !s.autoSubtitlesEnabled() {
 		return
 	}
 	if _, err := s.subtitleSweep(ctx, false, maxSubtitleDownloadsRun); err != nil && !errors.Is(err, subtitles.ErrQuota) {
@@ -491,7 +632,7 @@ func (s *Server) subtitleSweepJob(ctx context.Context) {
 // autoSubtitlesFor fetches the configured languages for a just-imported
 // item, in the background, when automatic downloading is on.
 func (s *Server) autoSubtitlesFor(items ...subtitleItem) {
-	if !s.autoSubtitlesEnabled() || !s.Subtitles().HasAPIKey() {
+	if !s.autoSubtitlesEnabled() || !s.hasSubtitleSource() {
 		return
 	}
 	go func() {
@@ -508,7 +649,10 @@ func (s *Server) autoSubtitlesFor(items ...subtitleItem) {
 
 // sidecarsIn lists the subtitles that came with a finished download. A problem
 // reading the folder is logged and means none.
-func sidecarsIn(dir string) []subtitles.Sidecar {
+func (s *Server) sidecarsIn(dir string) []subtitles.Sidecar {
+	if isClientView(dir) {
+		return s.clientSidecars(dir)
+	}
 	scs, err := subtitles.FindSidecars(dir)
 	if err != nil {
 		log.Printf("subtitles: %v", err)

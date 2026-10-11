@@ -60,7 +60,7 @@ func (c *Client) genreTable(ctx context.Context, kind string) (map[int]string, e
 	var resp struct {
 		Genres []Genre `json:"genres"`
 	}
-	if err := c.get(ctx, "/genre/"+kind+"/list", url.Values{"language": {"en-US"}}, &resp); err != nil {
+	if err := c.get(ctx, "/genre/"+kind+"/list", nil, &resp); err != nil {
 		return nil, fmt.Errorf("fetch %s genres: %w", kind, err)
 	}
 	t := make(map[int]string, len(resp.Genres))
@@ -228,7 +228,14 @@ type MovieDetail struct {
 	IMDBID           string       `json:"imdb_id"`
 	Videos           videosBlock  `json:"videos"`
 	Credits          creditsBlock `json:"credits"`
-	ReleaseDates     struct {
+	// The companies and countries behind the film, for the NFO files.
+	ProductionCompanies []struct {
+		Name string `json:"name"`
+	} `json:"production_companies"`
+	ProductionCountries []struct {
+		Name string `json:"name"`
+	} `json:"production_countries"`
+	ReleaseDates struct {
 		Results []struct {
 			Country      string `json:"iso_3166_1"`
 			ReleaseDates []struct {
@@ -261,6 +268,50 @@ func (c *Client) GetMovieDetail(ctx context.Context, tmdbID int) (*MovieDetail, 
 // Directors are the people credited as director, at most three.
 func (d *MovieDetail) Directors() []string { return namesWithJob(d.Credits.Crew, "Director", 3) }
 
+// Writers are the people credited with the script or the story, at most five.
+func (d *MovieDetail) Writers() []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, c := range d.Credits.Crew {
+		switch c.Job {
+		case "Screenplay", "Writer", "Story", "Novel", "Characters":
+		default:
+			continue
+		}
+		if c.Name == "" || seen[c.Name] {
+			continue
+		}
+		seen[c.Name] = true
+		out = append(out, c.Name)
+		if len(out) == 5 {
+			break
+		}
+	}
+	return out
+}
+
+// Studios are the production companies' names.
+func (d *MovieDetail) Studios() []string {
+	out := []string{}
+	for _, c := range d.ProductionCompanies {
+		if c.Name != "" {
+			out = append(out, c.Name)
+		}
+	}
+	return out
+}
+
+// Countries are the production countries' names.
+func (d *MovieDetail) Countries() []string {
+	out := []string{}
+	for _, c := range d.ProductionCountries {
+		if c.Name != "" {
+			out = append(out, c.Name)
+		}
+	}
+	return out
+}
+
 // Certification is the movie's age rating: the US one when there is one,
 // otherwise the first non-empty certification any country lists.
 func (d *MovieDetail) Certification() string {
@@ -290,8 +341,8 @@ func (d *MovieDetail) Cast(n int) []CastMember { return topCast(d.Credits.Cast, 
 // ShowFull is GET /tv/{id} with videos, content ratings and credits appended.
 type ShowFull struct {
 	ShowDetail
+	OriginalName     string `json:"original_name"`
 	Tagline          string `json:"tagline"`
-	Status           string `json:"status"`
 	OriginalLanguage string `json:"original_language"`
 	Homepage         string `json:"homepage"`
 	NumberOfSeasons  int    `json:"number_of_seasons"`

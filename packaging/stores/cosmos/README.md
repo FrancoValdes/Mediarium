@@ -15,6 +15,8 @@ Cosmos lists apps ("servapps") from the [azukaar/cosmos-servapps-official](https
 | `icon.png` | 256 x 256 icon. |
 | `screenshots/1.png` ... `3.png` | 1280 x 720 (Dashboard, Discover, Library). |
 
+The kit follows `latest`, so it needs no change per release. The order of things is in [PLAYBOOK.md](../PLAYBOOK.md); validate with `npm run validate` in the fork.
+
 ## Requirements
 
 - [ ] Image published and public; the market's CI checks the listed architectures against the image.

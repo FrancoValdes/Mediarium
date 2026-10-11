@@ -35,19 +35,25 @@ func (s *Server) StartAutomation() *automation.Scheduler {
 	sched := automation.NewScheduler(
 		automation.Job{Name: "hunt", Interval: s.huntInterval(), IntervalFunc: s.huntInterval, Run: s.hunt},
 		automation.Job{Name: "rss-sync", Interval: s.releaseCheckInterval(), IntervalFunc: s.releaseCheckInterval, Run: s.rssSync},
+		automation.Job{Name: "delayed-grabs", Interval: time.Minute, Run: s.delayedGrabsJob}, // searches again when a held release has waited long enough
 		automation.Job{Name: "download-line", Interval: downloadLineCheck, Run: func(context.Context) { s.kickDownloads() }},
 		automation.Job{Name: "series-refresh", Interval: seriesRefreshInterval, Run: s.refreshAllSeries},
 		automation.Job{Name: "music-refresh", Interval: musicRefreshInterval, Run: s.refreshMusicArtists},
 		automation.Job{Name: "subtitle-sweep", Interval: subtitleSweepInterval, Run: s.subtitleSweepJob},
 		automation.Job{Name: "genre-backfill", Interval: genreBackfillInterval, Run: s.backfillGenres},
+		automation.Job{Name: "collections", Interval: collectionsInterval, Run: s.collectionsJob}, // finds the collection of each movie; adds new films of followed collections
 		automation.Job{Name: "cleanup", Interval: cleanupCheckInterval, Run: s.cleanupJob},
+		automation.Job{Name: "stats-snapshot", Interval: statsSnapshotEvery, Run: s.statsSnapshotJob},
 		automation.Job{Name: "backup", Interval: backupCheck, Run: s.backupJob},
 		automation.Job{Name: "speed-limit", Interval: speedCheck, Run: s.speedJob},
 		automation.Job{Name: "quiet-hours", Interval: speedCheck, Run: s.quietHoursJob},
 		automation.Job{Name: "import-details", Interval: importDetailsInterval, Run: s.importDetailsJob},
 		automation.Job{Name: "episode-quality", Interval: 24 * time.Hour, Run: func(context.Context) { s.backfillEpisodeQuality() }},
 		automation.Job{Name: "import-added-dates", Interval: 24 * time.Hour, Run: func(context.Context) { s.backfillImportedAddedDates() }},
-		automation.Job{Name: "watched", Interval: watchedJobTick, Run: s.watchedJob}, // does nothing until switched on
+		automation.Job{Name: "watched", Interval: watchedJobTick, Run: s.watchedJob},                              // does nothing until switched on
+		automation.Job{Name: "plex-watchlist", Interval: watchlistInterval, Run: s.watchlistJob},                  // does nothing until an account connects one
+		automation.Job{Name: "import-lists", Interval: listsCheckInterval, Run: s.importListsJob},                 // does nothing until a list is added
+		automation.Job{Name: "request-available", Interval: requestAvailableInterval, Run: s.requestAvailableJob}, // does nothing until request messages are switched on
 	)
 	// The first minute belongs to the pages: the loops start once the app has
 	// had time to answer its first requests.
@@ -70,18 +76,29 @@ func (s *Server) automationEnabled() bool {
 // rather than replacing a library the user already has.
 func tierKnown(q string) bool { return q != "" && quality.Tier(q) != quality.TierUnknown }
 
+// outgrown reports whether a file of tier t is below what profile is for and
+// not one of its qualities at all: a 1080p file on a 4K profile. Someone put
+// the title on that profile to get that quality, so the file is replaced
+// whatever the upgrade switch says. A file above the profile (a 4K file on a
+// 1080p profile) is never "downgraded".
+func outgrown(profile quality.Profile, t quality.Tier) bool {
+	return !profile.AllowsTier(t) && !profile.ReachedCutoffTier(t)
+}
+
 // wantsUpgrade reports whether a downloaded item with stored quality q
 // should be searched for a better release under profile. A file that is
 // there only because of a fallback profile is always searched for a
 // replacement, even with upgrades off.
-func wantsUpgrade(profile quality.Profile, q string) bool {
+// release is the release the file came from ("" when unknown): a file below
+// the profile's custom-format cutoff is searched for a better-scoring one.
+func wantsUpgrade(profile quality.Profile, q, release string) bool {
 	if !tierKnown(q) {
 		return false
 	}
-	if profile.OnFallback(quality.Tier(q)) {
+	if profile.OnFallback(quality.Tier(q)) || outgrown(profile, quality.Tier(q)) {
 		return true
 	}
-	return profile.UpgradeAllowed && !profile.ReachedCutoffTier(quality.Tier(q))
+	return profile.UpgradeAllowed && (!profile.ReachedCutoffTier(quality.Tier(q)) || profile.WantsFormatUpgrade(release))
 }
 
 // hunt actively searches by title for every monitored movie that's either
@@ -100,7 +117,7 @@ func (s *Server) hunt(ctx context.Context) {
 		holdBack("hunt")
 		return
 	}
-	movies, err := s.MovieRepo.List()
+	movies, err := s.MovieRepo.ListWithCopies()
 	if err != nil {
 		log.Printf("automation: hunt: list movies: %v", err)
 		return
@@ -139,7 +156,7 @@ func (s *Server) huntMovie(ctx context.Context, m library.Movie, instances []ind
 	if !m.Monitored && !force {
 		return false
 	}
-	profile := profiles.resolve(m.ProfileID)
+	profile := s.profileForMovie(profiles, m)
 	sources := s.sourcesFor(m.SourcePref)
 	switch m.Status {
 	case library.StatusMissing:
@@ -155,8 +172,8 @@ func (s *Server) huntMovie(ctx context.Context, m library.Movie, instances []ind
 		outcomes := indexers.SearchAll(ctx, instances, m.Title, movieCategory)
 		// A title search also returns other films with similar words; only
 		// releases of this movie may be grabbed.
-		best := pickBestResult(filterSources(matchingResults(dropBlocked(indexers.MergeResults(outcomes), blocked), m), sources), profile, m.Year)
-		s.noteMovieSearch(m, outcomes, blocked, sources, profile, best, "")
+		best := pickBestResult(s.limitMovieResults(ctx, m, profile, !force, filterSources(matchingResults(dropBlocked(s.freshOnly(indexers.MergeResults(outcomes)), blocked), m), sources)), profile, m.Year)
+		s.noteMovieSearch(ctx, noteMode(force), m, outcomes, blocked, sources, profile, best, "")
 		if best == nil {
 			return false
 		}
@@ -167,13 +184,13 @@ func (s *Server) huntMovie(ctx context.Context, m library.Movie, instances []ind
 		s.noteFallbackGrab(m.ID, 0, m.Title, profile, best.Title)
 		return true
 	case library.StatusDownloaded:
-		if m.NoUpgrade || !wantsUpgrade(profile, m.Quality) {
+		if m.NoUpgrade || !wantsUpgrade(profile, m.Quality, m.ReleaseTitle) {
 			return false // left alone, upgrades off, unknown baseline, or already at/above cutoff: skip the search entirely
 		}
 		currentTier := quality.Tier(m.Quality)
 		outcomes := indexers.SearchAll(ctx, instances, m.Title, movieCategory)
-		best := pickUpgradeResult(filterSources(matchingResults(dropBlocked(indexers.MergeResults(outcomes), blocked), m), sources), profile, currentTier, m.Year)
-		s.noteMovieSearch(m, outcomes, blocked, sources, profile, best, currentTier)
+		best := pickUpgradeResult(s.limitMovieResults(ctx, m, profile, !force, filterSources(matchingResults(dropBlocked(s.freshOnly(indexers.MergeResults(outcomes)), blocked), m), sources)), profile, currentTier, m.ReleaseTitle, m.Year)
+		s.noteMovieSearch(ctx, noteMode(force), m, outcomes, blocked, sources, profile, best, currentTier)
 		if best == nil {
 			return false
 		}
@@ -202,7 +219,7 @@ func (s *Server) rssSync(ctx context.Context) {
 		holdBack("rss-sync")
 		return
 	}
-	movies, err := s.MovieRepo.List()
+	movies, err := s.MovieRepo.ListWithCopies()
 	if err != nil {
 		log.Printf("automation: rss-sync: list movies: %v", err)
 		return
@@ -228,7 +245,7 @@ func (s *Server) rssSync(ctx context.Context) {
 				missing = append(missing, m)
 			}
 		case library.StatusDownloaded:
-			if !m.NoUpgrade && wantsUpgrade(profiles.resolve(m.ProfileID), m.Quality) {
+			if !m.NoUpgrade && wantsUpgrade(profiles.resolve(m.ProfileID), m.Quality, m.ReleaseTitle) {
 				upgradeCandidates = append(upgradeCandidates, m)
 			}
 		}
@@ -246,10 +263,10 @@ func (s *Server) rssSync(ctx context.Context) {
 	}
 
 	outcomes := indexers.SearchAll(ctx, instances, "", movieCategory)
-	results := dropBlocked(indexers.MergeResults(outcomes), s.blockedKeys())
+	results := dropBlocked(s.freshOnly(indexers.MergeResults(outcomes)), s.blockedKeys())
 
 	for _, m := range missing {
-		best := pickBestResult(filterSources(matchingResults(results, m), s.sourcesFor(m.SourcePref)), profiles.resolve(m.ProfileID), m.Year)
+		best := pickBestResult(s.limitMovieResults(ctx, m, s.profileForMovie(profiles, m), true, filterSources(matchingResults(results, m), s.sourcesFor(m.SourcePref))), s.profileForMovie(profiles, m), m.Year)
 		if best == nil {
 			continue
 		}
@@ -257,7 +274,7 @@ func (s *Server) rssSync(ctx context.Context) {
 			log.Printf("automation: rss-sync: grab %q for %q: %v", best.Title, m.Title, err)
 			continue
 		}
-		s.noteFallbackGrab(m.ID, 0, m.Title, profiles.resolve(m.ProfileID), best.Title)
+		s.noteFallbackGrab(m.ID, 0, m.Title, s.profileForMovie(profiles, m), best.Title)
 		if !s.autoGrabRoom() {
 			holdBack("rss-sync")
 			return
@@ -265,7 +282,7 @@ func (s *Server) rssSync(ctx context.Context) {
 	}
 	for _, m := range upgradeCandidates {
 		currentTier := quality.Tier(m.Quality)
-		best := pickUpgradeResult(filterSources(matchingResults(results, m), s.sourcesFor(m.SourcePref)), profiles.resolve(m.ProfileID), currentTier, m.Year)
+		best := pickUpgradeResult(s.limitMovieResults(ctx, m, s.profileForMovie(profiles, m), true, filterSources(matchingResults(results, m), s.sourcesFor(m.SourcePref))), s.profileForMovie(profiles, m), currentTier, m.ReleaseTitle, m.Year)
 		if best == nil {
 			continue
 		}
@@ -323,8 +340,8 @@ func pickBestFor(results []indexers.Result, profile quality.Profile, wantYear in
 		if !quality.SizePlausible(quality.Classify(release), results[i].SizeBytes, 0) || !profile.SizeAllowed(results[i].SizeBytes) {
 			continue
 		}
-		key := pickKey{profile.LanguageRank(release), quality.Rank(quality.Classify(release)), profile.Score(results[i].Title)}
-		if best == nil || key.above(bestKey) || (key == bestKey && preferUsenet(best, &results[i])) {
+		key := keyFor(profile, release, &results[i])
+		if best == nil || key.above(bestKey) || (key == bestKey && preferOver(best, &results[i])) {
 			bestKey = key
 			best = &results[i]
 		}
@@ -337,12 +354,12 @@ func pickBestFor(results []indexers.Result, profile quality.Profile, wantYear in
 // currentTier hasn't already reached the profile's cutoff) — used for
 // re-checking already-downloaded movies, as opposed to pickBestResult's
 // "anything profile-accepted" bar for movies with nothing downloaded yet.
-func pickUpgradeResult(results []indexers.Result, profile quality.Profile, currentTier quality.Tier, wantYear int) *indexers.Result {
+func pickUpgradeResult(results []indexers.Result, profile quality.Profile, currentTier quality.Tier, currentRelease string, wantYear int) *indexers.Result {
 	var best *indexers.Result
 	var bestKey pickKey
 	for i := range results {
 		release := parser.Parse(results[i].Title)
-		if !profile.IsUpgradeOverTier(currentTier, release) {
+		if !profile.IsUpgradeOver(currentTier, currentRelease, results[i].Title) {
 			continue
 		}
 		if ok, _ := profile.TitleAllowed(results[i].Title); !ok {
@@ -354,8 +371,8 @@ func pickUpgradeResult(results []indexers.Result, profile quality.Profile, curre
 		if !quality.SizePlausible(quality.Classify(release), results[i].SizeBytes, 0) || !profile.SizeAllowed(results[i].SizeBytes) {
 			continue
 		}
-		key := pickKey{profile.LanguageRank(release), quality.Rank(quality.Classify(release)), profile.Score(results[i].Title)}
-		if best == nil || key.above(bestKey) || (key == bestKey && preferUsenet(best, &results[i])) {
+		key := keyFor(profile, release, &results[i])
+		if best == nil || key.above(bestKey) || (key == bestKey && preferOver(best, &results[i])) {
 			bestKey = key
 			best = &results[i]
 		}

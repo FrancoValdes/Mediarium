@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { QualityProfile } from '../api'
 import Icon from './Icon'
 import { profileBlurb } from './qualityBlurb'
+import { t } from '../i18n'
 
 // "If nothing is found at this quality, also try…": tick the other profiles
 // to fall back to and drag them (or use the arrows) into the order to try.
@@ -37,7 +38,7 @@ export default function FallbackEditor<P extends Choice = QualityProfile>({
 
   return (
     <div className="fallback">
-      {chosen.length === 0 && <p className="fallback-empty">Nothing ticked. It tries again at the next scheduled search.</p>}
+      {chosen.length === 0 && <p className="fallback-empty">{t('Nothing ticked. It tries again at the next scheduled search.')}</p>}
       <ol className="fallback-list">
         {chosen.map((p, i) => (
           <li
@@ -58,16 +59,16 @@ export default function FallbackEditor<P extends Choice = QualityProfile>({
               <Icon name="menu" size={15} />
             </span>
             <span className="fallback-step">{i + 1}</span>
-            <input type="checkbox" checked onChange={() => onChange(value.filter((x) => x !== p.id))} aria-label={`Stop falling back to ${p.name}`} />
+            <input type="checkbox" checked onChange={() => onChange(value.filter((x) => x !== p.id))} aria-label={t('Stop falling back to {name}', { name: p.name })} />
             <span className="fallback-name">
               <strong>{p.name}</strong>
               <small>{blurb(p)}</small>
             </span>
             <span className="fallback-arrows">
-              <button className="icon-btn" onClick={() => move(p.id, i - 1)} disabled={i === 0} aria-label={`Try ${p.name} earlier`}>
+              <button className="icon-btn" onClick={() => move(p.id, i - 1)} disabled={i === 0} aria-label={t('Try {name} earlier', { name: p.name })}>
                 <Icon name="chevron-up" size={15} />
               </button>
-              <button className="icon-btn" onClick={() => move(p.id, i + 1)} disabled={i === chosen.length - 1} aria-label={`Try ${p.name} later`}>
+              <button className="icon-btn" onClick={() => move(p.id, i + 1)} disabled={i === chosen.length - 1} aria-label={t('Try {name} later', { name: p.name })}>
                 <Icon name="chevron-down" size={15} />
               </button>
             </span>
@@ -80,7 +81,7 @@ export default function FallbackEditor<P extends Choice = QualityProfile>({
             <li key={p.id} className="fallback-row">
               <span className="fallback-grip" />
               <span className="fallback-step" />
-              <input type="checkbox" checked={false} onChange={() => onChange([...value, p.id])} aria-label={`Also try ${p.name}`} />
+              <input type="checkbox" checked={false} onChange={() => onChange([...value, p.id])} aria-label={t('Also try {name}', { name: p.name })} />
               <span className="fallback-name">
                 <strong>{p.name}</strong>
                 <small>{blurb(p)}</small>

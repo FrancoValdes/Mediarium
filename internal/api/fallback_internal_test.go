@@ -76,7 +76,7 @@ func TestPickTVResultFallback(t *testing.T) {
 		t.Fatalf("missing episode: want the 720p fallback, got %+v", best)
 	}
 	// Upgrades never use a fallback.
-	current := quality.TierHDTV1080p
+	current := upgradeBase{Tier: quality.TierHDTV1080p}
 	if best := pickTVResult(results, series, 1, 1, profile, &current); best != nil {
 		t.Fatalf("an upgrade must not come from a fallback, got %+v", best)
 	}
@@ -89,7 +89,7 @@ func TestUpgradeAfterFallback(t *testing.T) {
 	for _, upgrades := range []bool{true, false} {
 		_, profile := profileChain(upgrades, quality.PresetCinema)
 		current := string(quality.TierPreRelease)
-		if !wantsUpgrade(profile, current) {
+		if !wantsUpgrade(profile, current, "") {
 			t.Fatalf("upgrades=%v: a cinema recording on a 1080p profile must be searched for a replacement", upgrades)
 		}
 		results := []indexers.Result{
@@ -97,19 +97,19 @@ func TestUpgradeAfterFallback(t *testing.T) {
 			{Title: "Film.2026.720p.WEB-DL.x264-GRP", DownloadURL: "720"},
 			{Title: "Film.2026.1080p.WEB-DL.x264-GRP", DownloadURL: "1080"},
 		}
-		best := pickUpgradeResult(results, profile, quality.Tier(current), 2026)
+		best := pickUpgradeResult(results, profile, quality.Tier(current), "", 2026)
 		if best == nil || best.DownloadURL != "1080" {
 			t.Fatalf("upgrades=%v: want the 1080p release to replace the recording, got %+v", upgrades, best)
 		}
 		// Once replaced, the normal rules apply again.
-		if upgrades == false && wantsUpgrade(profile, string(quality.TierWebDL1080p)) {
+		if upgrades == false && wantsUpgrade(profile, string(quality.TierWebDL1080p), "") {
 			t.Fatal("with upgrades off, a file the own profile allows is kept")
 		}
 	}
 	// Without a fallback, a file outside the profile is left alone as before
 	// (an imported 4K file under a 1080p profile is not "downgraded").
 	_, plain := profileChain(true)
-	if wantsUpgrade(plain, string(quality.TierWebDL2160p)) {
+	if wantsUpgrade(plain, string(quality.TierWebDL2160p), "") {
 		t.Fatal("a 4K file on a 1080p profile without fallbacks must not be searched")
 	}
 }
@@ -117,7 +117,7 @@ func TestUpgradeAfterFallback(t *testing.T) {
 func TestRejectionsMentionFallback(t *testing.T) {
 	_, profile := profileChain(true, quality.PresetCinema)
 	title := "Film.2026.1080p.TeleSync.x264-GRP"
-	got := strings.Join(rejectionsFor(title, profile, false, ""), "; ")
+	got := strings.Join(rejectionsFor(title, profile, false, "", ""), "; ")
 	if !strings.Contains(got, `allowed only as a fallback ("Cinema recordings")`) {
 		t.Fatalf("rejections = %q", got)
 	}
@@ -132,7 +132,33 @@ func TestRejectionsMentionFallback(t *testing.T) {
 	}
 	// A recording on disk under a 1080p profile: a 1080p release is not
 	// rejected as "not an upgrade" or "at the cutoff".
-	if r := rejectionsFor("Film.2026.1080p.WEB-DL.x264-GRP", profile, true, string(quality.TierPreRelease)); len(r) != 0 {
+	if r := rejectionsFor("Film.2026.1080p.WEB-DL.x264-GRP", profile, true, string(quality.TierPreRelease), ""); len(r) != 0 {
 		t.Fatalf("a proper release over a fallback file should have no rejections, got %v", r)
+	}
+}
+
+// Moving a title with a 1080p file onto the 4K profile means "get me 4K":
+// the stock 4K profile has upgrades off, yet the file is searched for a
+// replacement. The other way round, a 4K file is never swapped for 1080p.
+func TestOutgrownFileIsReplaced(t *testing.T) {
+	presets := quality.Presets()
+	fourK := presets[quality.Preset4K]
+	if fourK.UpgradeAllowed {
+		t.Fatal("test expects the stock 4K preset to have upgrades off")
+	}
+	if !wantsUpgrade(fourK, string(quality.TierWebDL1080p), "") {
+		t.Fatal("a 1080p file on the 4K profile must be searched for a 4K release")
+	}
+	results := []indexers.Result{
+		{Title: "Film.2026.1080p.BluRay.x264-GRP", DownloadURL: "1080"},
+		{Title: "Film.2026.2160p.WEB-DL.DDP5.1.H.265-GRP", DownloadURL: "2160"},
+	}
+	best := pickUpgradeResult(results, fourK, quality.TierWebDL1080p, "", 2026)
+	if best == nil || best.DownloadURL != "2160" {
+		t.Fatalf("want the 2160p release, got %+v", best)
+	}
+	hd := presets[quality.Preset1080p]
+	if wantsUpgrade(hd, string(quality.TierWebDL2160p), "") {
+		t.Fatal("a 4K file on the 1080p profile must be left alone")
 	}
 }

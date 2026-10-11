@@ -175,7 +175,7 @@ func (m *musicScans) start(root string) (job *musicScanJob, created bool) {
 func (s *Server) handleMusicImportScan(w http.ResponseWriter, r *http.Request) {
 	root := s.musicRoot()
 	if root == "" {
-		writeError(w, http.StatusPreconditionFailed, "The music folder isn't set. Choose one in Settings > Library > Folders and file names.")
+		writeError(w, http.StatusPreconditionFailed, "The music folder isn't set. Choose one in Settings > Library > Folders.")
 		return
 	}
 	job, created := s.music.scans.start(root)

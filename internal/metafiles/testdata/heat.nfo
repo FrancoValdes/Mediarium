@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<movie>
+  <title>Heat</title>
+  <ratings>
+    <rating name="themoviedb" max="10" default="true">
+      <value>7.9</value>
+      <votes>7234</votes>
+    </rating>
+  </ratings>
+  <plot>A group of professional bank robbers start to feel the heat from police when they unknowingly leave a clue at their latest heist.</plot>
+  <tagline>A Los Angeles crime saga</tagline>
+  <runtime>170</runtime>
+  <mpaa>R</mpaa>
+  <id>tt0113277</id>
+  <tmdbid>949</tmdbid>
+  <imdbid>tt0113277</imdbid>
+  <uniqueid type="tmdb" default="true">949</uniqueid>
+  <uniqueid type="imdb">tt0113277</uniqueid>
+  <genre>Crime</genre>
+  <genre>Drama</genre>
+  <genre>Action</genre>
+  <country>United States of America</country>
+  <credits>Michael Mann</credits>
+  <director>Michael Mann</director>
+  <premiered>1995-12-15</premiered>
+  <year>1995</year>
+  <studio>Regency Enterprises</studio>
+  <studio>Warner Bros. Pictures</studio>
+  <trailer>plugin://plugin.video.youtube/?action=play_video&amp;videoid=2GfZl4kuVNI</trailer>
+  <actor>
+    <name>Al Pacino</name>
+    <role>Lt. Vincent Hanna</role>
+    <order>0</order>
+  </actor>
+  <actor>
+    <name>Robert De Niro</name>
+    <role>Neil McCauley</role>
+    <order>1</order>
+  </actor>
+</movie>

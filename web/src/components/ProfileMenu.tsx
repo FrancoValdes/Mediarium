@@ -3,7 +3,11 @@ import { Link } from 'react-router-dom'
 import { api, displayName, isAdmin } from '../api'
 import { useAuth } from '../AuthContext'
 import { demoEnabled, setDemo } from '../demo'
+import { DOCS_URL, FEEDBACK_URL, REPO_URL, WEBSITE_URL } from '../docs'
+import { LANGUAGES, chooseLanguage, currentLanguage, t } from '../i18n'
+import { openReport } from '../report'
 import Icon from './Icon'
+import ShareDialog from './ShareDialog'
 import { useToast } from './Toast'
 
 function initials(name?: string, username?: string): string {
@@ -16,6 +20,8 @@ export default function ProfileMenu() {
   const { user, setUser } = useAuth()
   const toast = useToast()
   const [open, setOpen] = useState(false)
+  const [sharing, setSharing] = useState(false)
+  const [langOpen, setLangOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const demo = demoEnabled()
 
@@ -25,6 +31,7 @@ export default function ProfileMenu() {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    setLangOpen(false)
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -58,21 +65,71 @@ export default function ProfileMenu() {
             <small>{user.email || `@${user.username}`}</small>
           </div>
           <Link to="/settings/profile" role="menuitem" onClick={() => setOpen(false)}>
-            <Icon name="user" size={16} /> {admin ? 'Accounts' : 'Your profile'}
+            <Icon name="user" size={16} /> {t('Your profile')}
           </Link>
+          <button role="menuitem" aria-haspopup="true" aria-expanded={langOpen} onClick={() => setLangOpen((o) => !o)}>
+            <Icon name="globe" size={16} /> {t('App language')} <small className="menu-current">{LANGUAGES.find((l) => l.code === currentLanguage())?.name}</small>
+          </button>
+          {langOpen && (
+            <div className="menu-sub" role="group" aria-label={t('App language')}>
+              {LANGUAGES.map((l) => (
+                <button key={l.code} role="menuitemradio" aria-checked={l.code === currentLanguage()} lang={l.code} onClick={() => (l.code === currentLanguage() ? setOpen(false) : chooseLanguage(l.code))}>
+                  <span className="menu-tick">{l.code === currentLanguage() ? <Icon name="check" size={14} /> : null}</span> {l.name}
+                </button>
+              ))}
+            </div>
+          )}
           {admin && (
             <Link to="/settings" role="menuitem" onClick={() => setOpen(false)}>
-              <Icon name="sliders" size={16} /> Settings
+              <Icon name="sliders" size={16} /> {t('Settings')}
             </Link>
           )}
-          <button role="menuitem" onClick={() => setDemo(!demo)}>
-            <Icon name="flask" size={16} /> {demo ? 'Turn off demo data' : 'Show demo data'}
+          <div className="menu-sep" role="separator" />
+          <a href={WEBSITE_URL} target="_blank" rel="noreferrer" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="globe" size={16} /> {t('Website')}
+          </a>
+          <Link to="/help" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="book" size={16} /> {t('User guide')}
+          </Link>
+          <a href={DOCS_URL} target="_blank" rel="noreferrer" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="external" size={16} /> {t('Documentation')}
+          </a>
+          <a href={REPO_URL} target="_blank" rel="noreferrer" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="star" size={16} /> {t('Star on GitHub')}
+          </a>
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              openReport()
+            }}
+          >
+            <Icon name="bug" size={16} /> {t('Report a problem or share an idea')}
           </button>
+          <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="chat" size={16} /> {t('Questions and discussions')}
+          </a>
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              setSharing(true)
+            }}
+          >
+            <Icon name="share" size={16} /> {t('Share Mediarium')}
+          </button>
+          <div className="menu-sep" role="separator" />
+          {admin && (
+            <button role="menuitem" onClick={() => setDemo(!demo)} title={t('Made-up titles for screenshots and trying the app out. Only in this browser; nothing is saved to your library.')}>
+              <Icon name="flask" size={16} /> {demo ? t('Turn off demo data') : t('Show demo data')}
+            </button>
+          )}
           <button role="menuitem" className="danger" onClick={() => void signOut()}>
-            <Icon name="logout" size={16} /> Sign out
+            <Icon name="logout" size={16} /> {t('Sign out')}
           </button>
         </div>
       )}
+      {sharing && <ShareDialog onClose={() => setSharing(false)} />}
     </div>
   )
 }

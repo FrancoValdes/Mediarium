@@ -4,11 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "guide": "node --experimental-strip-types --no-warnings tools/build-guide.mjs",
+    "predev": "npm run guide",
     "dev": "vite",
+    "prebuild": "npm run guide",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "i18n": "node tools/i18n-check.mjs",
+    "e2e": "playwright test",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --no-warnings --test src/validate.test.ts src/setupHelpers.test.ts src/importText.test.ts src/busyState.test.ts src/supportReport.test.ts src/librarySelection.test.ts src/queueView.test.ts src/format.test.ts src/updateSteps.test.ts src/problemsView.test.ts src/setupStatus.test.ts src/diskUsage.test.ts src/releaseHint.test.ts src/shortcuts.test.ts src/documentTitle.test.ts src/pages/settings/torrentPort.test.ts src/requestSignal.test.ts src/failureHelp.test.ts src/bookshelf/shelfMath.test.ts src/outsideService.test.ts src/bookSeries.test.ts src/wgConf.test.ts"
+    "test": "node --experimental-strip-types --no-warnings --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "epubjs": "0.3.93",
@@ -17,6 +22,7 @@
     "react-router-dom": "^7.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

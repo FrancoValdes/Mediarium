@@ -12,6 +12,9 @@
 {% do c1.environment.add_env("DOWNLOADS_DIR", values.mediarium.downloads_dir) %}
 {% do c1.environment.add_env("MOVIES_DIR", values.mediarium.movies_dir) %}
 {% do c1.environment.add_env("TV_DIR", values.mediarium.tv_dir) %}
+{% if values.mediarium.umask %}
+  {% do c1.environment.add_env("UMASK", values.mediarium.umask) %}
+{% endif %}
 {% do c1.environment.add_user_envs(values.mediarium.additional_envs) %}
 
 {% do c1.add_port(values.network.web_port, {"container_port": 8264}) %}

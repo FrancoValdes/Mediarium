@@ -10,6 +10,7 @@ import { sourceFromQuery, sourceTitle, sourceToQuery } from '../discoverSources'
 import { useOwned } from '../useOwned'
 import { useIncludeOlder } from '../useIncludeOlder'
 import { useHideOwned } from '../useHideOwned'
+import { t } from '../i18n'
 
 // One Discover list on its own page, split into pages you can step through
 // (or extend with Load more).
@@ -39,10 +40,10 @@ export default function DiscoverAll() {
     <div>
       <div className="toolbar filter-bar">
         <Link to="/discover" className="btn btn-with-icon">
-          <Icon name="chevron-left" size={16} /> Discover
+          <Icon name="chevron-left" size={16} /> {t('Discover')}
         </Link>
         <h2 style={{ margin: 0 }}>{sourceTitle(source, genreName)}</h2>
-        <Switch checked={hideOwned} onChange={setHideOwned} label="Hide what I have" />
+        <Switch checked={hideOwned} onChange={setHideOwned} label={t('Hide what I have')} />
         {similar && (
           <>
             {kindsOn.length > 1 && (
@@ -55,7 +56,7 @@ export default function DiscoverAll() {
               </div>
             )}
             <span className="spacer" />
-            <Switch checked={includeOlder} onChange={setIncludeOlder} label="Include older titles" />
+            <Switch checked={includeOlder} onChange={setIncludeOlder} label={t('Include older titles')} />
           </>
         )}
       </div>

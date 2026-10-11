@@ -41,10 +41,25 @@ func (e *StatusError) Error() string {
 // maxAPIResponse is the biggest answer read from TMDB; real ones are well under a megabyte.
 const maxAPIResponse = 16 << 20
 
+// DefaultLanguage is the language TMDB text comes in unless asked otherwise.
+// Names that end up in file and folder names, and the titles searched for on
+// indexers, are always fetched in it, so changing the language people read
+// titles in never renames anything or changes what is searched for.
+const DefaultLanguage = "en-US"
+
 type Client struct {
 	apiKey     string
 	baseURL    string
 	httpClient *http.Client
+
+	// language is the TMDB language tag ("de-DE") this client asks for; empty
+	// means DefaultLanguage. parent is set on the per-language views made by
+	// Localized, which share the key, the server and the connection of the
+	// client they came from but keep their own caches.
+	language string
+	parent   *Client
+	locMu    sync.Mutex
+	loc      map[string]*Client
 
 	// genres caches TMDB's id -> name genre tables ("movie" and "tv"), each
 	// fetched at most once successfully per process (see GenreNames).
@@ -79,6 +94,48 @@ func NewWithBaseURL(apiKey, base string) *Client {
 
 func (c *Client) SetAPIKey(key string) { c.apiKey = key }
 
+// key is the API key in use: a per-language view reads its parent's, so a key
+// saved later reaches every view.
+func (c *Client) key() string {
+	if c.parent != nil {
+		return c.parent.key()
+	}
+	return c.apiKey
+}
+
+// lang is the language this client asks TMDB for.
+func (c *Client) lang() string {
+	if c.language == "" {
+		return DefaultLanguage
+	}
+	return c.language
+}
+
+// Localized returns a view of the client that asks TMDB for titles, plots,
+// genres and posters in the given language (a tag like "de-DE"). It shares the
+// key and the connection and is made once per language. An empty tag, or the
+// default language, gives the client itself.
+func (c *Client) Localized(lang string) *Client {
+	if lang == "" || lang == c.lang() {
+		return c
+	}
+	root := c
+	if c.parent != nil {
+		root = c.parent
+	}
+	root.locMu.Lock()
+	defer root.locMu.Unlock()
+	if v, ok := root.loc[lang]; ok {
+		return v
+	}
+	if root.loc == nil {
+		root.loc = make(map[string]*Client)
+	}
+	v := &Client{baseURL: root.baseURL, httpClient: root.httpClient, now: root.now, language: lang, parent: root}
+	root.loc[lang] = v
+	return v
+}
+
 // WrapTransport wraps the HTTP transport this client uses, e.g. to count
 // requests. Call it before the client is shared between goroutines.
 func (c *Client) WrapTransport(wrap func(http.RoundTripper) http.RoundTripper) {
@@ -97,20 +154,27 @@ func (c *Client) WithAPIKey(key string) *Client {
 	return n
 }
 
-func (c *Client) HasAPIKey() bool { return c.apiKey != "" }
+func (c *Client) HasAPIKey() bool { return c.key() != "" }
 
 // Movie is the subset of TMDB's movie fields the rest of the app needs.
 type Movie struct {
-	TMDBID      int     `json:"id"`
-	Title       string  `json:"title"`
-	Overview    string  `json:"overview"`
-	ReleaseDate string  `json:"release_date"`
-	PosterPath  string  `json:"poster_path"`
-	VoteAverage float64 `json:"vote_average"`
-	VoteCount   int     `json:"vote_count"`
-	Popularity  float64 `json:"popularity"`
-	GenreIDs    []int   `json:"genre_ids"`
-	Genres      []Genre `json:"genres"` // only on the single-movie endpoint
+	TMDBID      int    `json:"id"`
+	Title       string `json:"title"`
+	Overview    string `json:"overview"`
+	ReleaseDate string `json:"release_date"`
+	PosterPath  string `json:"poster_path"`
+	// BackdropPath is a wide still from the film, for the title page.
+	BackdropPath string  `json:"backdrop_path"`
+	VoteAverage  float64 `json:"vote_average"`
+	VoteCount    int     `json:"vote_count"`
+	Popularity   float64 `json:"popularity"`
+	GenreIDs     []int   `json:"genre_ids"`
+	Genres       []Genre `json:"genres"` // only on the single-movie endpoint
+	// OriginalTitle is the title in the film's own language.
+	OriginalTitle string `json:"original_title"`
+	// BelongsToCollection is the collection (a series of films) this film is
+	// part of, on the single-movie endpoint; nil for a film that is on its own.
+	BelongsToCollection *CollectionRef `json:"belongs_to_collection"`
 }
 
 // Year extracts the 4-digit release year from ReleaseDate ("2024-03-01"),
@@ -229,14 +293,17 @@ func (c *Client) getMovieList(ctx context.Context, path string, extra url.Values
 }
 
 func (c *Client) get(ctx context.Context, path string, extra url.Values, out any) error {
-	if c.apiKey == "" {
+	if c.key() == "" {
 		return ErrNoAPIKey
 	}
 	q := url.Values{}
 	for k, v := range extra {
 		q[k] = v
 	}
-	q.Set("api_key", c.apiKey)
+	if q.Get("language") == "" {
+		q.Set("language", c.lang())
+	}
+	q.Set("api_key", c.key())
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+q.Encode(), nil)
 	if err != nil {
@@ -266,6 +333,15 @@ func (c *Client) get(ctx context.Context, path string, extra url.Values, out any
 // TMDB returns, using its "w500" size — good enough for a poster-grid
 // library view without the app needing to know all TMDB's image
 // size variants.
+// BackdropURL builds a wide backdrop image URL ("w1280": sharp across a
+// laptop screen without the weight of the original).
+func BackdropURL(path string) string {
+	if path == "" {
+		return ""
+	}
+	return "https://image.tmdb.org/t/p/w1280" + path
+}
+
 func PosterURL(posterPath string) string {
 	if posterPath == "" {
 		return ""

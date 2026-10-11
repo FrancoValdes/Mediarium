@@ -2,8 +2,32 @@ import { useEffect, useRef, useState } from 'react'
 import { api, type NamingTokens } from '../api'
 import NamingPreview from './NamingPreview'
 import { FieldError, type Validation } from '../useValidation'
+import { t } from '../i18n'
+import TipLabel from './TipLabel'
 
 type Kind = 'movie' | 'tv'
+
+const EXAMPLES = { a: '{ - Edition Tags}', b: '{[Quality Full]}' }
+
+// The server names the token groups and ready-made formats in English.
+function groupName(g: string): string {
+  const names: Record<string, string> = {
+    Movie: t('Movie'),
+    Show: t('Show'),
+    Episode: t('Episode'),
+    Ids: t('Ids'),
+    Quality: t('Quality'),
+    'Media info': t('Media info'),
+    Release: t('Release'),
+  }
+  return names[g] ?? g
+}
+
+function schemeName(id: string, name: string): string {
+  if (id === 'detailed') return t('Detailed, like Radarr and Sonarr')
+  if (id === 'plex-editions') return t('Plex with editions')
+  return name
+}
 
 // The custom naming builder: start from a ready-made format (or paste the one
 // you use in Radarr or Sonarr), then edit it and click tokens to add them.
@@ -68,23 +92,23 @@ export default function NamingBuilder({
     <div className="naming-builder">
       <div className="naming-builder-forms">
         <label>
-          Start from
+          <TipLabel text={t('Fills both patterns from a ready-made format that you can then change. Your own text is replaced when you pick one.')}>{t('Start from')}</TipLabel>
           <select value={current} onChange={(e) => pickScheme(e.target.value)}>
             <option value="" disabled>
-              Your own format
+              {t('Your own format')}
             </option>
             {data?.schemes.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {schemeName(s.id, s.name)}
               </option>
             ))}
           </select>
         </label>
         <small style={{ color: 'var(--text-dim)' }}>
-          Already have a format in Radarr or Sonarr? Copy it from Settings &gt; Media Management there and paste it below. The same tokens work here.
+          {t('Already have a format in Radarr or Sonarr? Copy it from Settings > Media Management there and paste it below. The same tokens work here.')}
         </small>
         <label>
-          Movie file name
+          <TipLabel text={t('The pattern each movie file is named by. Words in curly braces are swapped for the title, year and so on; click a token below to add one.')}>{t('Movie file name')}</TipLabel>
           <input
             ref={movieRef}
             value={movieFormat}
@@ -98,7 +122,7 @@ export default function NamingBuilder({
         </label>
         <NamingPreview preset="custom" format={movieFormat || undefined} />
         <label>
-          Episode file name
+          <TipLabel text={t('The pattern each episode file is named by. Words in curly braces are swapped for the show, season and episode; click a token below to add one.')}>{t('Episode file name')}</TipLabel>
           <input
             ref={episodeRef}
             value={episodeFormat}
@@ -115,11 +139,13 @@ export default function NamingBuilder({
       {data && (
         <div className="naming-tokens">
           <small style={{ color: 'var(--text-dim)' }}>
-            Click a token to add it to the {target === 'movie' ? 'movie' : 'episode'} file name. Text inside the braces, like {'{ - Edition Tags}'} or {'{[Quality Full]}'}, only shows up when there's a value.
+            {target === 'movie'
+              ? t("Click a token to add it to the movie file name. Text inside the braces, like {a} or {b}, only shows up when there's a value.", EXAMPLES)
+              : t("Click a token to add it to the episode file name. Text inside the braces, like {a} or {b}, only shows up when there's a value.", EXAMPLES)}
           </small>
           {groups.map((g) => (
             <div key={g} className="naming-token-group">
-              <span>{g}</span>
+              <span>{groupName(g)}</span>
               <div className="chip-row">
                 {tokens
                   .filter((t) => t.group === g)

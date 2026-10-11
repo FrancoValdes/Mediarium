@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,17 +10,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rdborg/mediarium/internal/download"
+	"github.com/rdborg/mediarium/internal/metadata"
 	"github.com/rdborg/mediarium/internal/organizer"
 	"github.com/rdborg/mediarium/internal/plainerror"
+	"github.com/rdborg/mediarium/internal/quality"
 	"github.com/rdborg/mediarium/internal/settings"
+	"github.com/rdborg/mediarium/internal/subtitles"
 )
 
 type settingsPayload struct {
-	MoviesPath      string `json:"moviesPath"`
-	TVPath          string `json:"tvPath"`
-	DownloadsPath   string `json:"downloadsPath"`
-	NamingPreset    string `json:"namingPreset"`
-	MovieNameFormat string `json:"movieNameFormat"`
+	MoviesPath string `json:"moviesPath"`
+	TVPath     string `json:"tvPath"`
+	// Where second copies go ("" turns them off); pointers so "" clears.
+	// MoviesExtraPaths and TVExtraPaths are more library folders next to the
+	// main ones; each title says which one its files go to. Sent whole: the
+	// list replaces the saved one.
+	MoviesExtraPaths *[]string `json:"moviesExtraPaths,omitempty"`
+	TVExtraPaths     *[]string `json:"tvExtraPaths,omitempty"`
+	MovieCopiesPath  *string   `json:"movieCopiesPath,omitempty"`
+	TVCopiesPath     *string   `json:"tvCopiesPath,omitempty"`
+	DownloadsPath    string    `json:"downloadsPath"`
+	NamingPreset     string    `json:"namingPreset"`
+	MovieNameFormat  string    `json:"movieNameFormat"`
 	// EpisodeNameFormat is the custom file name format for episodes.
 	EpisodeNameFormat string `json:"episodeNameFormat"`
 	TMDBAPIKey        string `json:"tmdbApiKey,omitempty"`
@@ -63,9 +77,14 @@ type settingsPayload struct {
 
 	// Subtitles: languages to keep (OpenSubtitles codes) and whether to fetch
 	// them automatically after import and on a schedule.
-	SubtitleLanguages    []string `json:"subtitleLanguages,omitempty"`
-	SubtitleAutoDownload *bool    `json:"subtitleAutoDownload,omitempty"`
-	SubtitleUpgrade      *bool    `json:"subtitleUpgrade,omitempty"`
+	SubtitleLanguages []string `json:"subtitleLanguages,omitempty"`
+	// SubtitleProfiles says, per language code, which kind to look for: "full" is
+	// "either" (normal or SDH, the default), "normal", "sdh" or "none", and
+	// "forced" adds a forced track for the foreign-language parts. A language
+	// that isn't listed has the default. Sending {} puts every language back to it.
+	SubtitleProfiles     map[string]subtitles.Profile `json:"subtitleProfiles,omitempty"`
+	SubtitleAutoDownload *bool                        `json:"subtitleAutoDownload,omitempty"`
+	SubtitleUpgrade      *bool                        `json:"subtitleUpgrade,omitempty"`
 	// SubtitlesEnabled is the master switch. While it is off nothing searches
 	// for or downloads subtitles and the app stops mentioning them.
 	SubtitlesEnabled *bool `json:"subtitlesEnabled,omitempty"`
@@ -75,6 +94,39 @@ type settingsPayload struct {
 	// ships with the app) is different from leaving the field out.
 	OpenSubtitlesAPIKey    *string `json:"openSubtitlesApiKey,omitempty"`
 	HasOpenSubtitlesAPIKey bool    `json:"hasOpenSubtitlesApiKey"`
+	// SubDL, the second place subtitles come from ("" removes the key).
+	SubDLAPIKey       *string `json:"subdlApiKey,omitempty"`
+	HasSubDLAPIKey    bool    `json:"hasSubdlApiKey"`
+	HasSubtitleAddons bool    `json:"hasSubtitleAddons"`
+	// The on/off switch of each subtitle source (on unless switched off). A
+	// source is searched only when its switch is on and it has a key (the
+	// add-ons: at least one added), and a switch can't be turned on before then.
+	OpenSubtitlesEnabled  *bool `json:"openSubtitlesEnabled,omitempty"`
+	SubDLEnabled          *bool `json:"subdlEnabled,omitempty"`
+	SubtitleAddonsEnabled *bool `json:"subtitleAddonsEnabled,omitempty"`
+	// SubtitleSources is read only: where each source stands (on, off, needs a
+	// key, or its daily limit is used up).
+	SubtitleSources []subtitleSourceStatus `json:"subtitleSources,omitempty"`
+	// SubtitleCountEmbedded counts subtitle tracks inside the video as there.
+	SubtitleCountEmbedded *bool `json:"subtitleCountEmbedded,omitempty"`
+	// SubtitleWizdom also looks for Hebrew subtitles on Wizdom (off by default).
+	SubtitleWizdom *bool `json:"subtitleWizdom,omitempty"`
+	// NumberingLookup lets Mediarium read scene and anime numbering (TheXEM, the
+	// anime lists and AniList) for anime on its own. On unless switched off.
+	NumberingLookup *bool `json:"numberingLookup,omitempty"`
+	// UnmonitorDownloaded stops monitoring a movie once it is downloaded;
+	// UnmonitorFinished stops monitoring a show once it has ended and every
+	// episode is in.
+	UnmonitorDownloaded *bool `json:"unmonitorDownloaded,omitempty"`
+	// ShowAdvanced shows custom formats and format scores on the Quality page.
+	ShowAdvanced *bool `json:"showAdvanced,omitempty"`
+	// TrailerBackground plays the trailer behind movie and show pages for every
+	// account (a browser can still switch it off for itself).
+	TrailerBackground *bool `json:"trailerBackground,omitempty"`
+	// TrailerSound starts that trailer with its sound on (a browser that does
+	// not allow it keeps it muted, and each browser can choose for itself).
+	TrailerSound      *bool `json:"trailerSound,omitempty"`
+	UnmonitorFinished *bool `json:"unmonitorFinished,omitempty"`
 
 	// Optional OpenSubtitles.com account (raises the daily download limit).
 	OpenSubtitlesUsername    *string `json:"openSubtitlesUsername,omitempty"`
@@ -101,6 +153,12 @@ type settingsPayload struct {
 	// The audio language wanted, as a name like "English" (the default). A
 	// release clearly in another language only is not picked automatically.
 	QualityLanguage string `json:"qualityLanguage,omitempty"`
+
+	// The language titles, plots, genres and posters are shown in, as a TMDB
+	// tag like "de-DE" (English by default), and the choices. File and folder
+	// names always use the English title, whatever is picked.
+	InfoLanguage  string              `json:"infoLanguage,omitempty"`
+	InfoLanguages []metadata.Language `json:"infoLanguages,omitempty"`
 
 	// Manual-import naming-collision conflict policy.
 	ImportConflictPolicy string `json:"importConflictPolicy,omitempty"` // "skip" | "overwrite" | "overwrite_if_better" | "ask"
@@ -147,6 +205,8 @@ type settingsPayload struct {
 	SpeedLimitMB    *int    `json:"speedLimitMB,omitempty"`
 	SpeedLimitHours *string `json:"speedLimitHours,omitempty"`
 	MinFreeGB       *int    `json:"minFreeGB,omitempty"`
+	// TorrentStallHours: hours a torrent may get no data before it is given up on (0 = never, absent = the default of each client).
+	TorrentStallHours *int `json:"torrentStallHours,omitempty"`
 	// DownloadHours is when new downloads may start ("1-7", "" = any time).
 	DownloadHours *string `json:"downloadHours,omitempty"`
 	// NotifyQuietHours is when everyday messages wait ("23-7", "" = never).
@@ -156,6 +216,20 @@ type settingsPayload struct {
 	// and torrents together (1 to 5, one by default). The rest wait in line. A
 	// pointer so an omitted field leaves it alone.
 	DownloadsAtOnce *int `json:"downloadsAtOnce,omitempty"`
+
+	// Checks on releases (Settings > Downloading). UsenetRetentionDays: Usenet
+	// posts older than this many days are not taken (0 = no limit).
+	// RejectExecutables: refuse releases that hold programs or scripts (on by
+	// default). SkipDuplicates: do not download the same release twice (off by
+	// default). UnsafeExtensions is the list RejectExecutables looks for;
+	// read-only.
+	UsenetRetentionDays *int  `json:"usenetRetentionDays,omitempty"`
+	RejectExecutables   *bool `json:"rejectExecutables,omitempty"`
+	SkipDuplicates      *bool `json:"skipDuplicates,omitempty"`
+	// UsenetPrecheck: ask the news servers whether the articles of an NZB exist
+	// before downloading it (off by default).
+	UsenetPrecheck   *bool    `json:"usenetPrecheck,omitempty"`
+	UnsafeExtensions []string `json:"unsafeExtensions,omitempty"`
 
 	// Music module: on/off (off by default; a pointer so an omitted field
 	// leaves it alone) and the music library folder.
@@ -216,6 +290,15 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	legalAt, _ := s.Settings.Get(settings.KeyLegalAcknowledgedAt)
 	subtitleAuto := s.autoSubtitleSetting()
 	subtitleUpgrade := s.subtitleUpgradeSetting()
+	numberingLookup := s.numberingLookupOn()
+	countEmbedded := s.countEmbeddedSubtitles()
+	subtitleWizdom := s.wizdomOn()
+	sources := s.subtitleSources()
+	osEnabled, subdlEnabled, addonsEnabled := sources.OpenSubtitles.Switch, sources.SubDL.Switch, sources.Addons.Switch
+	unmonitorDownloaded, unmonitorFinished := s.unmonitorDownloaded(), s.unmonitorFinished()
+	showAdvanced := s.showAdvanced()
+	trailerBackground := s.trailerBackground()
+	trailerSound := s.trailerSound()
 	subtitlesOn := s.subtitlesEnabled()
 	osUser, _ := s.Settings.Get(settings.KeyOpenSubtitlesUsername)
 	illegalCharMode, _ := s.Settings.Get(settings.KeyIllegalCharMode)
@@ -235,6 +318,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	trashDays := s.trashDays()
 	backupAuto, backupKeep := s.backupAutoEnabled(), s.backupKeep()
 	speedMB, minFree := s.speedLimitMB(), s.minFreeGB()
+	stallHours := s.stallHours()
 	speedHours, quiet := "", ""
 	if from, to, ok := s.quietHours(); ok {
 		quiet = quietHoursText(from, to)
@@ -249,10 +333,15 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	musicEnabled := s.musicEnabled()
 	downloadsAtOnce := s.downloadsAtOnce()
 	huntHours, releaseMinutes := s.huntHours(), s.releaseCheckMinutes()
+	retention, rejectExe, skipDupes, precheck := s.retentionDays(), s.rejectExecutables(), s.skipDuplicates(), s.precheckEnabled()
 
 	writeJSON(w, http.StatusOK, settingsPayload{
 		MoviesPath:               moviesPath,
 		TVPath:                   s.tvRoot(),
+		MoviesExtraPaths:         ptr(nonNil(s.extraFolders(settings.KeyMoviesExtraPaths, moviesPath))),
+		TVExtraPaths:             ptr(nonNil(s.extraFolders(settings.KeyTVExtraPaths, s.tvRoot()))),
+		MovieCopiesPath:          ptr(s.movieCopiesRoot()),
+		TVCopiesPath:             ptr(s.tvCopiesRoot()),
 		DownloadsPath:            downloadsPath,
 		NamingPreset:             namingPreset,
 		MovieNameFormat:          movieFormat,
@@ -271,10 +360,25 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultProfileID:         s.defaultProfileID(),
 		DefaultSources:           s.defaultSources(),
 		SubtitleLanguages:        s.subtitleLanguages(),
+		SubtitleProfiles:         s.subtitleProfiles(),
 		SubtitleAutoDownload:     &subtitleAuto,
 		SubtitleUpgrade:          &subtitleUpgrade,
 		SubtitlesEnabled:         &subtitlesOn,
 		HasOpenSubtitlesAPIKey:   s.Subtitles().HasAPIKey(),
+		HasSubDLAPIKey:           s.SubDL().HasAPIKey(),
+		HasSubtitleAddons:        sources.Addons.Ready,
+		OpenSubtitlesEnabled:     &osEnabled,
+		SubDLEnabled:             &subdlEnabled,
+		SubtitleAddonsEnabled:    &addonsEnabled,
+		SubtitleSources:          s.subtitleSourceStatuses(),
+		SubtitleCountEmbedded:    &countEmbedded,
+		SubtitleWizdom:           &subtitleWizdom,
+		NumberingLookup:          &numberingLookup,
+		UnmonitorDownloaded:      &unmonitorDownloaded,
+		ShowAdvanced:             &showAdvanced,
+		TrailerBackground:        &trailerBackground,
+		TrailerSound:             &trailerSound,
+		UnmonitorFinished:        &unmonitorFinished,
 		HasOpenSubtitlesAccount:  s.Subtitles().HasCredentials(),
 		OpenSubtitlesAccountName: osUser,
 		TMDBKeyBuiltIn:           s.builtin.TMDB != "",
@@ -286,6 +390,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		IllegalCharMode:          illegalCharMode,
 		IllegalCharReplacement:   illegalCharReplacement,
 		QualityLanguage:          s.preferredLanguage(),
+		InfoLanguage:             s.infoLanguage(),
+		InfoLanguages:            metadata.InfoLanguages,
 		RequireVPNForTorrents:    &requireVPNForTorrents,
 		ImportConflictPolicy:     importConflictPolicy,
 		HasTraktClientID:         s.Trakt().HasClientID(),
@@ -301,8 +407,14 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		SpeedLimitHours:          &speedHours,
 		DownloadHours:            &dlHours,
 		MinFreeGB:                &minFree,
+		TorrentStallHours:        &stallHours,
 		NotifyQuietHours:         &quiet,
 		DownloadsAtOnce:          &downloadsAtOnce,
+		UsenetRetentionDays:      &retention,
+		RejectExecutables:        &rejectExe,
+		SkipDuplicates:           &skipDupes,
+		UsenetPrecheck:           &precheck,
+		UnsafeExtensions:         download.UnsafeExtensions,
 		MusicEnabled:             &musicEnabled,
 		MusicPath:                s.musicRoot(),
 		MusicDefaultProfileID:    s.musicDefaultProfileIDNow(),
@@ -339,6 +451,62 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	moviesMain, tvMain := firstNonEmpty(req.MoviesPath, s.moviesRoot()), firstNonEmpty(req.TVPath, s.tvRoot())
+	// More folders next to the main ones.
+	var extraLists = []struct {
+		key  string
+		val  *[]string
+		main string
+		what string
+	}{{settings.KeyMoviesExtraPaths, req.MoviesExtraPaths, moviesMain, "movies"}, {settings.KeyTVExtraPaths, req.TVExtraPaths, tvMain, "TV"}}
+	for _, l := range extraLists {
+		if l.val == nil {
+			continue
+		}
+		clean, problem := s.checkExtraFolders(*l.val, l.main, moviesMain, tvMain, l.what)
+		if problem != "" {
+			writeError(w, http.StatusBadRequest, problem)
+			return
+		}
+		raw, _ := json.Marshal(clean)
+		if len(clean) == 0 {
+			raw = nil
+		}
+		if err := s.Settings.Set(l.key, string(raw), false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	for _, c := range []struct {
+		key string
+		val *string
+	}{{settings.KeyMovieCopiesPath, req.MovieCopiesPath}, {settings.KeyTVCopiesPath, req.TVCopiesPath}} {
+		if c.val == nil {
+			continue
+		}
+		v := strings.TrimSpace(*c.val)
+		if err := checkCopiesFolder(v, moviesMain, tvMain); err != nil {
+			writeError(w, http.StatusBadRequest, capitalise(err.Error())+".")
+			return
+		}
+		if v != "" {
+			v = filepath.Clean(v)
+		}
+		if err := s.Settings.Set(c.key, v, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	// Wanted audio languages: names separated by commas, best first.
+	if req.QualityLanguage != "" {
+		req.QualityLanguage = strings.Join(quality.ParseLanguages(req.QualityLanguage), ",")
+		if len(req.QualityLanguage) > 300 {
+			writeError(w, http.StatusBadRequest, "That is too many audio languages.")
+			return
+		}
+	}
+
 	sets := []struct {
 		key, value string
 	}{
@@ -355,6 +523,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		{settings.KeyIllegalCharReplacement, req.IllegalCharReplacement},
 		{settings.KeyImportConflictPolicy, req.ImportConflictPolicy},
 		{settings.KeyQualityLanguage, req.QualityLanguage},
+		{settings.KeyInfoLanguage, req.InfoLanguage},
 		{settings.KeyMusicPath, req.MusicPath},
 		{settings.KeyEbooksPath, req.EbooksPath},
 		{settings.KeyAudiobooksPath, req.AudiobooksPath},
@@ -371,6 +540,27 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.SubtitleLanguages) > 0 {
 		if err := s.Settings.Set(settings.KeySubtitleLanguages, strings.Join(req.SubtitleLanguages, ","), false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.SubtitleProfiles != nil {
+		profiles := subtitles.Profiles{}
+		for lang, p := range req.SubtitleProfiles {
+			lang = strings.TrimSpace(lang)
+			if !languageCode.MatchString(lang) {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("%q isn't a language code Mediarium can use.", lang))
+				return
+			}
+			switch p.Full {
+			case "", subtitles.FullEither, subtitles.FullNormal, subtitles.FullSDH, subtitles.FullNone:
+			default:
+				writeError(w, http.StatusBadRequest, `The full subtitle must be "either", "normal", "sdh" or "none".`)
+				return
+			}
+			profiles[strings.ToLower(lang)] = p.Normalize()
+		}
+		if err := s.Settings.Set(settings.KeySubtitleProfiles, profiles.Encode(), false); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -401,6 +591,58 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			value = "0"
 		}
 		if err := s.Settings.Set(settings.KeySubtitleUpgrade, value, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.NumberingLookup != nil {
+		if err := setBool(s.Settings, settings.KeyNumberingLookup, *req.NumberingLookup); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if err := s.saveSourceSwitches(&req); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if req.SubtitleCountEmbedded != nil {
+		if err := setBool(s.Settings, settings.KeySubtitleCountEmbedded, *req.SubtitleCountEmbedded); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.SubtitleWizdom != nil {
+		if err := setBool(s.Settings, settings.KeySubtitleWizdom, *req.SubtitleWizdom); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.TrailerSound != nil {
+		if err := setBool(s.Settings, settings.KeyTrailerSound, *req.TrailerSound); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.TrailerBackground != nil {
+		if err := setBool(s.Settings, settings.KeyTrailerBackground, *req.TrailerBackground); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.ShowAdvanced != nil {
+		if err := setBool(s.Settings, settings.KeyShowAdvanced, *req.ShowAdvanced); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.UnmonitorDownloaded != nil {
+		if err := setBool(s.Settings, settings.KeyUnmonitorDownloaded, *req.UnmonitorDownloaded); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.UnmonitorFinished != nil {
+		if err := setBool(s.Settings, settings.KeyUnmonitorFinished, *req.UnmonitorFinished); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -509,6 +751,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.SubDLAPIKey != nil {
+		key := strings.TrimSpace(*req.SubDLAPIKey)
+		if rejectBad(w, checkAPIKey(key)) {
+			return
+		}
+		if err := s.SetSubDLAPIKey(key); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 	if req.TraktClientID != nil {
 		if err := s.SetTraktClientID(strings.TrimSpace(*req.TraktClientID)); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -584,6 +836,21 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.TorrentStallHours != nil {
+		h := *req.TorrentStallHours
+		if h < -1 || h > maxStallHours {
+			writeError(w, http.StatusBadRequest, "Give up after 1 to 72 hours, or 0 for never.")
+			return
+		}
+		v := strconv.Itoa(h)
+		if h < 0 {
+			v = "" // back to each client's own default
+		}
+		if err := s.Settings.Set(settings.KeyStallHours, v, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 	if req.MinFreeGB != nil {
 		if *req.MinFreeGB < 0 || *req.MinFreeGB > 10000 {
 			writeError(w, http.StatusBadRequest, "Keep 0 (off) to 10000 GB free.")
@@ -627,6 +894,29 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.HistoryRetentionDays != nil {
 		if err := s.Settings.Set(settings.KeyHistoryRetentionDays, strconv.Itoa(*req.HistoryRetentionDays), false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.UsenetRetentionDays != nil {
+		if err := s.Settings.Set(settings.KeyRetentionDays, strconv.Itoa(*req.UsenetRetentionDays), false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	for _, f := range []struct {
+		key string
+		on  *bool
+		off string // what is stored for "off"
+	}{{settings.KeyRejectExecutables, req.RejectExecutables, "0"}, {settings.KeySkipDuplicates, req.SkipDuplicates, "0"}, {settings.KeyPrecheck, req.UsenetPrecheck, "0"}} {
+		if f.on == nil {
+			continue
+		}
+		v := "1"
+		if !*f.on {
+			v = f.off
+		}
+		if err := s.Settings.Set(f.key, v, false); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

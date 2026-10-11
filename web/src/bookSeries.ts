@@ -1,5 +1,6 @@
 // The line under a book of a series: "Book 2 · 1998", or "Book 4 · out 1 Mar
 // 2027" for one that isn't out yet. Plain functions, so they can be tested.
+import { locale as appLocale, t } from './i18n.ts'
 
 export interface SeriesEntryLike {
   position: string
@@ -7,7 +8,7 @@ export interface SeriesEntryLike {
   releaseDate?: string // "2027-03-01"
 }
 
-export function releaseLabel(date: string, locale?: string): string {
+export function releaseLabel(date: string, locale = appLocale()): string {
   const d = new Date(date + 'T00:00:00')
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })
@@ -19,10 +20,10 @@ export function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function entryMeta(e: SeriesEntryLike, today = localDate(new Date()), locale?: string): string {
+export function entryMeta(e: SeriesEntryLike, today = localDate(new Date()), locale = appLocale()): string {
   const ahead = e.releaseDate && e.releaseDate > today ? releaseLabel(e.releaseDate, locale) : ''
-  const when = ahead ? `out ${ahead}` : e.year ? String(e.year) : ''
-  return [`Book ${e.position}`, when].filter(Boolean).join(' · ')
+  const when = ahead ? t('out {date}', { date: ahead }) : e.year ? String(e.year) : ''
+  return [t('Book {position}', { position: e.position }), when].filter(Boolean).join(' · ')
 }
 
 // audioDetails is the line about an audiobook: "Read by Ray Porter · 16 h 10 min".
@@ -32,7 +33,7 @@ export function audioDetails(narrators?: string, runtimeMin?: number): string {
     .split(',')
     .map((n) => n.trim())
     .filter(Boolean)
-  const who = names.length === 0 ? '' : names.length > 3 ? `Read by ${names.slice(0, 3).join(', ')} and others` : `Read by ${names.join(', ')}`
+  const who = names.length === 0 ? '' : names.length > 3 ? t('Read by {names} and others', { names: names.slice(0, 3).join(', ') }) : t('Read by {names}', { names: names.join(', ') })
   let length = ''
   if (runtimeMin && runtimeMin > 0) {
     const h = Math.floor(runtimeMin / 60)

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
+import { t } from '../i18n'
 
 // Copies text. The clipboard API only exists on secure pages (https or
 // localhost), and a NAS is usually opened over plain http, so fall back to
@@ -46,7 +47,7 @@ export default function CopyBox({ text, label }: { text: string; label?: string 
       <code aria-label={label}>{text}</code>
       <button type="button" className="btn-sm btn-with-icon" onClick={() => void copy()}>
         {state === 'copied' && <Icon name="check" size={14} />}
-        {state === 'copied' ? 'Copied' : state === 'failed' ? 'Select and copy' : 'Copy'}
+        {state === 'copied' ? t('Copied') : state === 'failed' ? t('Select and copy') : t('Copy')}
       </button>
     </div>
   )

@@ -1,20 +1,16 @@
+import { locale, plural, t } from './i18n.ts'
+
 // "just now", "5 min ago", "3 hours ago", "2 days ago", or the date for anything older.
 export function timeAgo(iso: string | undefined): string {
   if (!iso) return ''
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return ''
   const sec = Math.max(0, Math.round((Date.now() - then) / 1000))
-  if (sec < 45) return 'just now'
-  if (sec < 3600) return `${Math.round(sec / 60)} min ago`
-  if (sec < 86400) {
-    const h = Math.round(sec / 3600)
-    return `${h} ${h === 1 ? 'hour' : 'hours'} ago`
-  }
-  if (sec < 7 * 86400) {
-    const d = Math.round(sec / 86400)
-    return `${d} ${d === 1 ? 'day' : 'days'} ago`
-  }
-  return new Date(then).toLocaleDateString()
+  if (sec < 45) return t('just now')
+  if (sec < 3600) return plural(Math.round(sec / 60), '{n} min ago', '{n} min ago')
+  if (sec < 86400) return plural(Math.round(sec / 3600), '{n} hour ago', '{n} hours ago')
+  if (sec < 7 * 86400) return plural(Math.round(sec / 86400), '{n} day ago', '{n} days ago')
+  return new Date(then).toLocaleDateString(locale())
 }
 
 export function formatBytes(bytes: number): string {
@@ -33,5 +29,5 @@ export function formatBytes(bytes: number): string {
 // rather than an alarming "Unknown".
 export function qualityText(q: string | undefined | null): string {
   if (!q) return '—'
-  return q === 'Unknown' ? 'Not stated' : q
+  return q === 'Unknown' ? t('Not stated') : q
 }

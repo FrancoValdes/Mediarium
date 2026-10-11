@@ -22,9 +22,8 @@ services:
       - DOWNLOADS_DIR=/data/downloads
       - MOVIES_DIR=/data/Movies
       - TV_DIR=/data/tv
-      # Only if you use music. Delete the line if you don't.
+      # Only if you use music, ebooks or audiobooks. Delete the lines you don't need.
       - MUSIC_DIR=/data/Music
-      # Ebooks and audiobooks are on the way. Set their folders now if you like:
       # - EBOOKS_DIR=/data/Ebooks
       # - AUDIOBOOKS_DIR=/data/Audiobooks
     volumes:

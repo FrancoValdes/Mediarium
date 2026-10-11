@@ -79,7 +79,7 @@ func (s *Server) monitorChecks(ctx context.Context) ([]monitor.Check, error) {
 	if err != nil {
 		return nil, err
 	}
-	torrentsOn := s.torrentsEnabled()
+	torrentsOn := s.torrentReleasesOn()
 	for _, inst := range instances {
 		if !inst.Enabled || (inst.Protocol == indexers.ProtocolTorrent && !torrentsOn) {
 			continue

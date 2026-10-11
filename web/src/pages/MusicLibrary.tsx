@@ -4,21 +4,29 @@ import { api, type BulkResult, type MusicArtist, type MusicProfile } from '../ap
 import ActionMenu from '../components/ActionMenu'
 import BulkBar from '../components/BulkBar'
 import { useConfirm } from '../components/ConfirmProvider'
+import { useMusicPlayer } from '../components/MusicPlayer'
 import Dropdown from '../components/Dropdown'
 import Icon from '../components/Icon'
 import PosterCard, { type CardAction } from '../components/PosterCard'
 import { describeState, type ItemState } from '../components/state'
 import { useToast } from '../components/Toast'
-import { chosenOf, count, failureLines, nameList, selectAllKeys, selectionText, selectRange, toggleKey } from '../librarySelection'
+import { chosenOf, failureLines, nameList, selectAllKeys, selectionText, selectRange, toggleKey } from '../librarySelection'
 import { removeOption } from '../diskUsage'
+import { artistQueue } from '../musicPlay'
+import FilterToggle from '../components/FilterToggle'
+import { plural, t, tx } from '../i18n'
+import { useUrlState } from '../useUrlState'
 
 type Sort = 'added' | 'name' | 'missing'
 
 // Where an artist stands: everything downloaded, some of it, nothing yet
 // (searching) or not monitored.
 export function artistState(a: Pick<MusicArtist, 'albumCount' | 'downloadedCount' | 'monitored' | 'monitoredCount'>): ItemState {
-  if (a.albumCount > 0 && a.downloadedCount >= a.albumCount) return describeState('downloaded')
-  if (a.downloadedCount > 0) return describeState('partial', `${a.downloadedCount}/${a.albumCount}`)
+  // What counts is what you asked for: one album added from an artist with 48
+  // releases is complete when that album is in, not "1 of 48".
+  const wanted = a.monitoredCount > 0 ? a.monitoredCount : a.albumCount
+  if (wanted > 0 && a.downloadedCount >= wanted) return describeState('downloaded', undefined, t('Everything you asked for from this artist is downloaded.'))
+  if (a.downloadedCount > 0) return describeState('partial', `${a.downloadedCount}/${wanted}`, t('Some of the albums you want are downloaded.'))
   // Not following an artist only stops new releases being picked up; albums
   // that are monitored are still looked for.
   if (!a.monitored && a.monitoredCount === 0) return describeState('added')
@@ -28,11 +36,11 @@ export function artistState(a: Pick<MusicArtist, 'albumCount' | 'downloadedCount
 const missingOf = (a: MusicArtist) => Math.max(0, a.monitoredCount - a.downloadedCount)
 
 const FILTERS: { id: string; label: string; test: (a: MusicArtist) => boolean }[] = [
-  { id: 'all', label: 'All', test: () => true },
-  { id: 'downloaded', label: 'Complete', test: (a) => artistState(a).key === 'downloaded' },
-  { id: 'partial', label: 'Partial', test: (a) => artistState(a).key === 'partial' },
-  { id: 'searching', label: 'Waiting for a release', test: (a) => artistState(a).key === 'searching' },
-  { id: 'added', label: 'Nothing monitored', test: (a) => artistState(a).key === 'added' },
+  { id: 'all', label: t('All'), test: () => true },
+  { id: 'downloaded', label: t('Complete'), test: (a) => artistState(a).key === 'downloaded' },
+  { id: 'partial', label: t('Partial'), test: (a) => artistState(a).key === 'partial' },
+  { id: 'searching', label: t('Waiting for a release'), test: (a) => artistState(a).key === 'searching' },
+  { id: 'added', label: t('Nothing monitored'), test: (a) => artistState(a).key === 'added' },
 ]
 
 // The Music tab of the library: your artists as cards with how many of their
@@ -50,14 +58,23 @@ export default function MusicLibrary({
   admin: boolean
   reload: () => void
 }) {
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const navigate = useNavigate()
   const confirm = useConfirm()
   const toast = useToast()
-  const [text, setText] = useState('')
-  const [filter, setFilter] = useState('all')
-  const [monitored, setMonitored] = useState('')
-  const [genre, setGenre] = useState('')
-  const [sort, setSort] = useState<Sort>('added')
+  const player = useMusicPlayer()
+  // The search and filters live in the address, so Back from an artist returns to the same list.
+  const [ui, patchUi] = useUrlState({ mq: '', mf: 'all', mm: '', mg: '', ms: 'added' })
+  const text = ui.mq
+  const setText = (v: string) => patchUi({ mq: v })
+  const filter = ui.mf
+  const setFilter = (v: string) => patchUi({ mf: v })
+  const monitored = ui.mm
+  const setMonitored = (v: string) => patchUi({ mm: v })
+  const genre = ui.mg
+  const setGenre = (v: string) => patchUi({ mg: v })
+  const sort = ui.ms as Sort
+  const setSort = (v: Sort) => patchUi({ ms: v })
   const [busy, setBusy] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
@@ -89,9 +106,9 @@ export default function MusicLibrary({
   async function remove(a: MusicArtist) {
     const usage = await api.artistDiskUsage(a.id).catch(() => null)
     const answer = await confirm({
-      title: `Remove ${a.name} from your library?`,
-      body: <p>Mediarium stops tracking this artist and cancels anything still downloading for them. You can add them back any time.</p>,
-      confirmLabel: 'Remove',
+      title: t('Remove {title} from your library?', { title: a.name }),
+      body: <p>{t('Mediarium stops tracking this artist and cancels anything still downloading for them. You can add them back any time.')}</p>,
+      confirmLabel: t('Remove'),
       danger: true,
       option: removeOption('artist', usage),
     })
@@ -99,7 +116,7 @@ export default function MusicLibrary({
     setBusy(true)
     try {
       await api.deleteArtist(a.id, answer.checked)
-      toast.success(`${a.name} removed${answer.checked ? ' and their files' : ''}.`)
+      toast.success(answer.checked ? t('{name} and their files removed.', { name: a.name }) : t('{name} removed.', { name: a.name }))
       reload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -146,29 +163,24 @@ export default function MusicLibrary({
   async function removeChosen() {
     const n = chosen.length
     if (n === 0) return
-    const what = count(n, 'artist')
     const answer = await confirm({
-      title: `Remove ${what} from your library?`,
+      title: plural(n, 'Remove {n} artist from your library?', 'Remove {n} artists from your library?'),
       body: (
         <>
           <p>
             <strong>{nameList(chosen.map((a) => a.name))}</strong>
           </p>
-          <p>
-            Mediarium stops tracking {n === 1 ? 'them' : `all ${n}`} and cancels anything still downloading for them. You can add them back any time.
-          </p>
-          <p>
-            <strong>Your music files stay where they are</strong> unless you tick the box below.
-          </p>
+          <p>{plural(n, 'Mediarium stops tracking them and cancels anything still downloading for them. You can add them back any time.', 'Mediarium stops tracking all {n} and cancels anything still downloading for them. You can add them back any time.')}</p>
+          <p>{tx('{stay} unless you tick the box below.', { stay: <strong>{t('Your music files stay where they are')}</strong> })}</p>
         </>
       ),
-      confirmLabel: `Remove ${what}`,
+      confirmLabel: plural(n, 'Remove {n} artist', 'Remove {n} artists'),
       danger: true,
       option: {
-        label: n === 1 ? 'Also delete their albums from the disk' : `Also delete the albums of all ${n} from the disk`,
-        hint: 'This deletes their album folders in your music library too. It cannot be undone.',
+        label: plural(n, 'Also delete their albums from the disk', 'Also delete the albums of all {n} from the disk'),
+        hint: t('This deletes their album folders in your music library too. It cannot be undone.'),
         defaultChecked: false,
-        warning: `The albums of ${n === 1 ? 'this artist' : `all ${n} artists`} will be deleted from the disk for good.`,
+        warning: plural(n, 'The albums of this artist will be deleted from the disk for good.', 'The albums of all {n} artists will be deleted from the disk for good.'),
       },
     })
     if (!answer) return
@@ -184,54 +196,76 @@ export default function MusicLibrary({
   }
 
   const profileChoices = [
-    { id: '0', label: `Default (${profiles.find((p) => p.default)?.name ?? 'the default profile'})` },
+    { id: '0', label: t('Default ({name})', { name: profiles.find((p) => p.default)?.name ?? t('the default profile') }) },
     ...profiles.map((p) => ({ id: String(p.id), label: p.name })),
   ]
 
+  async function playArtist(a: MusicArtist) {
+    if (!player) return
+    try {
+      const list = await artistQueue(a.id)
+      if (list.length === 0) {
+        toast.error(t('None of this artist is in your library yet.'))
+        return
+      }
+      player.setShuffle(false)
+      player.playQueue(list, 0)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const actionsFor = (a: MusicArtist): CardAction[] => [
-    { icon: 'open', label: 'Open', onClick: () => navigate(`/music/artist/${a.id}`) },
-    ...(admin ? [{ icon: 'trash', label: 'Remove from library', onClick: () => void remove(a), danger: true, disabled: busy } satisfies CardAction] : []),
+    ...(player && a.downloadedCount > 0 ? [{ icon: 'play', label: t('Play'), onClick: () => void playArtist(a) } satisfies CardAction] : []),
+    { icon: 'open', label: t('Open'), onClick: () => navigate(`/music/artist/${a.id}`) },
+    ...(admin ? [{ icon: 'trash', label: t('Remove from library'), onClick: () => void remove(a), danger: true, disabled: busy } satisfies CardAction] : []),
   ]
 
   return (
     <div>
-      <div className="toolbar">
+      <div className={`toolbar lib-toolbar collapsible${filtersOpen ? ' filters-open' : ''}`}>
         {switcher}
-        <input type="search" placeholder="Find in your artists…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Find in your artists" />
-        {genreOptions.length > 0 && <Dropdown label="Genre" value={genre} onChange={setGenre} options={[{ value: '', label: 'All genres' }, ...genreOptions.map((g) => ({ value: g, label: g }))]} />}
+        <input type="search" placeholder={t('Find in your artists…')} value={text} onChange={(e) => setText(e.target.value)} aria-label={t('Find in your artists')} />
+        <FilterToggle open={filtersOpen} onToggle={() => setFiltersOpen((o) => !o)} active={filtersActive} />
+        <div className="fold">
+        {genreOptions.length > 0 && <Dropdown label={t('Genre')} value={genre} onChange={setGenre} options={[{ value: '', label: t('All genres') }, ...genreOptions.map((g) => ({ value: g, label: g }))]} />}
         <Dropdown
-          label="Following"
+          label={t('Following')}
           value={monitored}
           onChange={setMonitored}
           options={[
-            { value: '', label: 'Followed or not' },
-            { value: 'yes', label: 'Followed' },
-            { value: 'no', label: 'Not followed' },
+            { value: '', label: t('Followed or not') },
+            { value: 'yes', label: t('Followed') },
+            { value: 'no', label: t('Not followed') },
           ]}
         />
         <Dropdown
-          label="Sort"
+          label={t('Sort')}
           value={sort}
           onChange={(v) => setSort(v as Sort)}
           options={[
-            { value: 'added', label: 'Recently added' },
-            { value: 'name', label: 'Name A–Z' },
-            { value: 'missing', label: 'Most albums missing' },
+            { value: 'added', label: t('Recently added') },
+            { value: 'name', label: t('Name A–Z') },
+            { value: 'missing', label: t('Most albums missing') },
           ]}
         />
         <span className="spacer" />
         {admin && (
           <button className={`btn-with-icon${selecting ? ' primary' : ''}`} aria-pressed={selecting} onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
-            <Icon name="check" size={16} /> Select
+            <Icon name="check" size={16} /> {t('Select')}
           </button>
         )}
         {admin && (
           <button className="btn-with-icon" onClick={() => navigate('/music/import')}>
-            <Icon name="folder" size={16} /> Import existing
+            <Icon name="folder" size={16} /> {t('Import existing')}
           </button>
         )}
-        <button className="primary btn-with-icon" onClick={() => navigate('/discover?kind=music')}>
-          <Icon name="plus" size={16} /> Add new
+        </div>
+        <button className="btn-with-icon toolbar-playlists" onClick={() => navigate('/music/playlists')}>
+          <Icon name="list" size={16} /> {t('Playlists')}
+        </button>
+        <button className="primary btn-with-icon toolbar-add" onClick={() => navigate('/discover?kind=music')}>
+          <Icon name="plus" size={16} /> {t('Add new')}
         </button>
       </div>
 
@@ -243,7 +277,7 @@ export default function MusicLibrary({
         ))}
         {filtersActive && (
           <button className="btn-sm" onClick={clearFilters}>
-            Clear filters
+            {t('Clear filters')}
           </button>
         )}
       </div>
@@ -251,14 +285,14 @@ export default function MusicLibrary({
       {selecting && admin && (
         <BulkBar text={selText} onSelectAll={() => setSelected(selectAllKeys(keyed))} onSelectNone={() => setSelected(new Set())} onDone={stopSelecting} busy={busy}>
           <button className="btn-sm btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void runBulk(() => api.bulkArtistFollow(ids(), true))}>
-            <Icon name="eye" size={15} /> Follow
+            <Icon name="eye" size={15} /> {t('Follow')}
           </button>
           <button className="btn-sm btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void runBulk(() => api.bulkArtistFollow(ids(), false))}>
-            <Icon name="eye-off" size={15} /> Stop following
+            <Icon name="eye-off" size={15} /> {t('Stop following')}
           </button>
-          <ActionMenu label="Quality profile" disabled={chosen.length === 0 || busy || profiles.length === 0} choices={profileChoices} onPick={(id) => void runBulk(() => api.bulkArtistProfile(ids(), Number(id)))} />
+          <ActionMenu label={t('Quality profile')} disabled={chosen.length === 0 || busy || profiles.length === 0} choices={profileChoices} onPick={(id) => void runBulk(() => api.bulkArtistProfile(ids(), Number(id)))} />
           <button className="btn-sm btn-danger btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void removeChosen()}>
-            <Icon name="trash" size={15} /> Remove from library
+            <Icon name="trash" size={15} /> {t('Remove from library')}
           </button>
         </BulkBar>
       )}
@@ -274,7 +308,7 @@ export default function MusicLibrary({
             </ul>
           </div>
           <button className="btn-sm" onClick={() => setNote(null)}>
-            Dismiss
+            {t('Dismiss')}
           </button>
         </div>
       )}
@@ -292,23 +326,23 @@ export default function MusicLibrary({
           <Icon name="music" size={44} />
           {(artists?.length ?? 0) === 0 ? (
             <>
-              <p>Your music library is empty.</p>
+              <p>{t('Your music library is empty.')}</p>
               <div className="row-actions">
                 <button className="primary btn-with-icon" onClick={() => navigate('/discover?kind=music')}>
-                  <Icon name="search" size={16} /> Search to add an artist
+                  <Icon name="search" size={16} /> {t('Search to add an artist')}
                 </button>
                 {admin && (
                   <button className="btn-with-icon" onClick={() => navigate('/music/import')}>
-                    <Icon name="folder" size={16} /> Import the music you already have
+                    <Icon name="folder" size={16} /> {t('Import the music you already have')}
                   </button>
                 )}
               </div>
             </>
           ) : (
             <>
-              <p>Nothing matches these filters.</p>
+              <p>{t('Nothing matches these filters.')}</p>
               <button className="btn-with-icon" onClick={clearFilters}>
-                Clear filters
+                {t('Clear filters')}
               </button>
             </>
           )}
@@ -323,7 +357,7 @@ export default function MusicLibrary({
                 to={`/music/artist/${a.id}`}
                 poster={a.imageUrl}
                 title={a.name}
-                meta={[a.disambiguation || null, `${a.downloadedCount} of ${a.albumCount} albums`, missing > 0 ? `${missing} missing` : null, a.monitored ? null : 'not followed'].filter(Boolean).join(' · ')}
+                meta={[a.disambiguation || null, plural(a.albumCount, '{have} of {n} album', '{have} of {n} albums', { have: a.downloadedCount }), missing > 0 ? t('{n} missing', { n: missing }) : null, a.monitored ? null : t('not followed')].filter(Boolean).join(' · ')}
                 state={artistState(a)}
                 kind="music"
                 dim={artistState(a).key === 'added'}
@@ -331,7 +365,7 @@ export default function MusicLibrary({
                 selection={selecting ? { selected: selected.has(`artist-${a.id}`), onToggle: (e) => pick(a, e.shiftKey) } : undefined}
                 footer={
                   a.albumCount > 0 ? (
-                    <div className="bar" style={{ width: '100%', marginTop: 6 }} title={`${a.downloadedCount} of ${a.albumCount} albums`}>
+                    <div className="bar" style={{ width: '100%', marginTop: 6 }} title={plural(a.albumCount, '{have} of {n} album', '{have} of {n} albums', { have: a.downloadedCount })}>
                       <span style={{ width: `${(a.downloadedCount / a.albumCount) * 100}%` }} />
                     </div>
                   ) : undefined

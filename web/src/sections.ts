@@ -1,17 +1,18 @@
 import type { IconName } from './components/Icon'
+import { t } from './i18n.ts'
 
 export type SectionKey = 'dashboard' | 'discover' | 'library' | 'wanted' | 'calendar' | 'activity' | 'settings' | 'profile' | 'about'
 
 export const SECTIONS: Record<SectionKey, { label: string; icon: IconName }> = {
-  dashboard: { label: 'Dashboard', icon: 'grid' },
-  discover: { label: 'Discover', icon: 'compass' },
-  library: { label: 'Library', icon: 'film' },
-  wanted: { label: 'Wanted', icon: 'bookmark' },
-  calendar: { label: 'Calendar', icon: 'calendar' },
-  activity: { label: 'Activity', icon: 'activity' },
-  settings: { label: 'Settings', icon: 'sliders' },
-  profile: { label: 'Profile', icon: 'user' },
-  about: { label: 'About and credits', icon: 'info' },
+  dashboard: { label: t('Dashboard'), icon: 'grid' },
+  discover: { label: t('Discover'), icon: 'compass' },
+  library: { label: t('Library'), icon: 'film' },
+  wanted: { label: t('Wanted'), icon: 'bookmark' },
+  calendar: { label: t('Calendar'), icon: 'calendar' },
+  activity: { label: t('Activity'), icon: 'activity' },
+  settings: { label: t('Settings'), icon: 'sliders' },
+  profile: { label: t('Profile'), icon: 'user' },
+  about: { label: t('About and credits'), icon: 'info' },
 }
 
 // Which colour family a URL belongs to.
@@ -24,6 +25,6 @@ export function sectionFor(pathname: string): SectionKey {
   if (pathname.startsWith('/queue')) return 'activity'
   if (pathname.startsWith('/settings')) return 'settings'
   if (pathname.startsWith('/profile')) return 'profile'
-  if (pathname.startsWith('/about')) return 'about'
+  if (pathname.startsWith('/about') || pathname.startsWith('/help')) return 'about'
   return 'dashboard'
 }

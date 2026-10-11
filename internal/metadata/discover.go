@@ -65,7 +65,7 @@ type ShowPage struct {
 // yearParam the exact-year filter ("primary_release_year" or
 // "first_air_date_year").
 func (q DiscoverQuery) params(dateField, yearParam string) url.Values {
-	v := url.Values{"include_adult": {"false"}, "language": {"en-US"}}
+	v := url.Values{"include_adult": {"false"}}
 	if q.Genre > 0 {
 		v.Set("with_genres", strconv.Itoa(q.Genre))
 	}
@@ -214,7 +214,7 @@ func (c *Client) today() string {
 // not depend on a region.
 func (c *Client) upcomingParams(dateField string, page int) url.Values {
 	return url.Values{
-		"include_adult": {"false"}, "language": {"en-US"},
+		"include_adult":    {"false"},
 		dateField + ".gte": {c.today()},
 		"sort_by":          {"popularity.desc"},
 		"page":             {strconv.Itoa(ClampPage(page))},

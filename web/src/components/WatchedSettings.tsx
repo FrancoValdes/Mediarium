@@ -1,30 +1,34 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type LibraryCleanupItem, type CleanupRules, type WatchedSettings as Settings } from '../api'
+import { locale, plural, t } from '../i18n'
 import Icon from './Icon'
 import Switch from './Switch'
 import { useToast } from './Toast'
 import { useConfirm } from './ConfirmProvider'
+import TipLabel from './TipLabel'
 
 // Settings > Connections > Media servers: reading what's been watched from
 // Plex, Jellyfin and Emby, and the cleanup rules built on it. Both are off
 // until switched on; cleanup always shows what it would remove first.
 
 function when(iso?: string): string {
-  if (!iso) return 'never'
+  if (!iso) return t('never')
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? 'never' : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return Number.isNaN(d.getTime()) ? t('never') : d.toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 function DaysRule({ label, hint, value, onChange, disabled }: { label: string; hint: string; value: number; onChange: (v: number) => void; disabled?: boolean }) {
   const on = value > 0
+  // The number box sits inside the phrase, so split it around the box.
+  const [before, after] = t('after {days} days').split('{days}').map((s) => s.trim())
   return (
     <div className="cleanup-rule">
       <Switch checked={on} onChange={(v) => onChange(v ? 30 : 0)} disabled={disabled} label={label} description={hint} />
       {on && (
         <label className="cleanup-days">
-          after
+          {before}
           <input type="number" min={1} max={3650} value={value} disabled={disabled} onChange={(e) => onChange(Math.max(1, Math.min(3650, Number(e.target.value) || 1)))} />
-          days
+          {after}
         </label>
       )}
     </div>
@@ -74,11 +78,10 @@ export default function WatchedSettings() {
     <>
       <fieldset className="group span-all">
         <legend>
-          <Icon name="eye" size={14} /> What&apos;s been watched
+          <Icon name="eye" size={14} /> <TipLabel help="media-servers#whats-been-watched">{t("What's been watched")}</TipLabel>
         </legend>
         <p style={{ color: 'var(--text-dim)', marginTop: 0 }}>
-          Mediarium can ask Plex, Jellyfin and Emby what has been played, every six hours, and show it on title pages. Plex tells it what the account
-          connected above has watched; Jellyfin and Emby tell it about all their users. Nothing is changed on your media servers.
+          {t('Mediarium can ask Plex, Jellyfin and Emby what has been played, every six hours, and show it on title pages. Plex tells it what the account connected above has watched; Jellyfin and Emby tell it about all their users. Nothing is changed on your media servers.')}
         </p>
         <Switch
           checked={st.sync}
@@ -88,21 +91,23 @@ export default function WatchedSettings() {
               const s = await api.putWatchedSettings({ sync: v })
               setSt(s)
               setRules(s.cleanup)
-              toast.success(v ? 'Mediarium reads what has been watched now and every six hours.' : 'No longer reading what has been watched. Cleanup is off too.')
+              toast.success(v ? t('Mediarium reads what has been watched now and every six hours.') : t('No longer reading what has been watched. Cleanup is off too.'))
               if (v) {
                 await api.syncWatched()
                 load()
               }
             })
           }
-          label="Read what's been watched"
-          description="Off unless you switch it on."
+          label={t("Read what's been watched")}
+          description={t('Off unless you switch it on.')}
         />
         {st.sync && (
           <div className="row-actions" style={{ marginTop: 10, alignItems: 'center' }}>
             <span className="hint">
-              Last read {when(status.lastSync)}
-              {status.lastSync ? ` · ${status.movies} movies and ${status.episodes} episodes watched` : ''}
+              {t('Last read {when}', { when: when(status.lastSync) })}
+              {status.lastSync
+                ? ` · ${t('{movies} and {episodes} watched', { movies: plural(status.movies, '{n} movie', '{n} movies'), episodes: plural(status.episodes, '{n} episode', '{n} episodes') })}`
+                : ''}
             </span>
             <button
               className="btn-sm btn-with-icon"
@@ -110,12 +115,17 @@ export default function WatchedSettings() {
               onClick={() =>
                 void run('sync', async () => {
                   const s = await api.syncWatched()
-                  toast.success(`Read from ${s.servers} media ${s.servers === 1 ? 'server' : 'servers'}: ${s.movies} movies and ${s.episodes} episodes watched.`)
+                  toast.success(
+                    plural(s.servers, 'Read from {n} media server: {movies} and {episodes} watched.', 'Read from {n} media servers: {movies} and {episodes} watched.', {
+                      movies: plural(s.movies, '{n} movie', '{n} movies'),
+                      episodes: plural(s.episodes, '{n} episode', '{n} episodes'),
+                    }),
+                  )
                   load()
                 })
               }
             >
-              <Icon name="refresh" size={14} /> {busy === 'sync' ? 'Reading…' : 'Read now'}
+              <Icon name="refresh" size={14} /> {busy === 'sync' ? t('Reading…') : t('Read now')}
             </button>
           </div>
         )}
@@ -125,38 +135,36 @@ export default function WatchedSettings() {
       {st.sync && (
         <fieldset className="group span-all">
           <legend>
-            <Icon name="trash" size={14} /> Cleanup rules
+            <Icon name="trash" size={14} /> <TipLabel help="media-servers#cleanup-rules">{t('Cleanup rules')}</TipLabel>
           </legend>
           <p style={{ color: 'var(--text-dim)', marginTop: 0 }}>
-            Free up space by removing what has been watched. Once a day the files of titles matching a rule are deleted (into the recycle bin when it is
-            on), the title stays in your library, and Mediarium stops looking for it. Every removal is listed under Activity. Check the preview before
-            you switch it on.
+            {t('Free up space by removing what has been watched. Once a day the files of titles matching a rule are deleted (into the recycle bin when it is on), the title stays in your library, and Mediarium stops looking for it. Every removal is listed under Activity. Check the preview before you switch it on.')}
           </p>
           <DaysRule
-            label="Movies watched a while ago"
-            hint="Remove a movie once it was last watched this many days ago."
+            label={t('Movies watched a while ago')}
+            hint={t('Remove a movie once it was last watched this many days ago.')}
             value={rules.moviesWatchedDays}
             onChange={(v) => setRules({ ...rules, moviesWatchedDays: v })}
             disabled={!!busy}
           />
           <DaysRule
-            label="Movies nobody watched"
-            hint="Remove a movie that was never watched, this many days after it was added."
+            label={t('Movies nobody watched')}
+            hint={t('Remove a movie that was never watched, this many days after it was added.')}
             value={rules.moviesUnwatchedDays}
             onChange={(v) => setRules({ ...rules, moviesUnwatchedDays: v })}
             disabled={!!busy}
           />
           <DaysRule
-            label="Episodes watched a while ago"
-            hint="Remove an episode once it was last watched this many days ago."
+            label={t('Episodes watched a while ago')}
+            hint={t('Remove an episode once it was last watched this many days ago.')}
             value={rules.episodesWatchedDays}
             onChange={(v) => setRules({ ...rules, episodesWatchedDays: v })}
             disabled={!!busy}
           />
           <label className="cleanup-keep">
-            <span>Always keep titles tagged</span>
-            <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Keep, Kids" disabled={!!busy} />
-            <small className="hint">Separate tags with commas. A tagged movie or show is never removed.</small>
+            <TipLabel text={t('Tags are labels you put on titles. A movie or show with one of these tags is never touched by the cleanup rules.')}>{t('Always keep titles tagged')}</TipLabel>
+            <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={t('Keep, Kids')} disabled={!!busy} />
+            <small className="hint">{t('Separate tags with commas. A tagged movie or show is never removed.')}</small>
           </label>
           <div className="row-actions" style={{ marginTop: 12 }}>
             <button
@@ -171,7 +179,7 @@ export default function WatchedSettings() {
                 })
               }
             >
-              <Icon name="eye" size={15} /> {busy === 'preview' ? 'Checking…' : 'Preview'}
+              <Icon name="eye" size={15} /> {busy === 'preview' ? t('Checking…') : t('Preview')}
             </button>
             <button
               className="primary btn-with-icon"
@@ -182,37 +190,37 @@ export default function WatchedSettings() {
                   setSt(s)
                   setRules(s.cleanup)
                   setTags(s.cleanup.keepTags.join(', '))
-                  toast.success('Cleanup rules saved.')
+                  toast.success(t('Cleanup rules saved.'))
                 })
               }
             >
-              Save rules
+              {t('Save rules')}
             </button>
             <Switch
               checked={rules.enabled}
               disabled={!!busy || !anyRule}
               onChange={(v) =>
                 void run('enable', async () => {
-                  if (v && !(await confirm({ title: 'Switch cleanup on?', body: 'Once a day Mediarium deletes the files of titles that match these rules. Check the preview first.', confirmLabel: 'Switch on', danger: true })))
+                  if (v && !(await confirm({ title: t('Switch cleanup on?'), body: t('Once a day Mediarium deletes the files of titles that match these rules. Check the preview first.'), confirmLabel: t('Switch on'), danger: true })))
                     return
                   const s = await api.putWatchedSettings({ cleanup: { ...draft(), enabled: v } })
                   setSt(s)
                   setRules(s.cleanup)
-                  toast.success(v ? 'Cleanup is on. It runs once a day.' : 'Cleanup is off.')
+                  toast.success(v ? t('Cleanup is on. It runs once a day.') : t('Cleanup is off.'))
                 })
               }
-              label="Run once a day"
+              label={t('Run once a day')}
             />
           </div>
           {preview && (
             <div className="cleanup-preview">
               {preview.length === 0 ? (
-                <p className="hint">Nothing matches these rules right now.</p>
+                <p className="hint">{t('Nothing matches these rules right now.')}</p>
               ) : (
                 <>
                   <p className="hint">
-                    {preview.length === 1 ? 'One title matches' : `${preview.length} titles match`}. Nothing has been removed.
-                    {preview.length > 50 ? ' A run removes up to 50 at a time.' : ''}
+                    {plural(preview.length, 'One title matches. Nothing has been removed.', '{n} titles match. Nothing has been removed.')}
+                    {preview.length > 50 ? ` ${t('A run removes up to 50 at a time.')}` : ''}
                   </p>
                   <ul>
                     {preview.slice(0, 100).map((it) => (
@@ -221,30 +229,34 @@ export default function WatchedSettings() {
                       </li>
                     ))}
                   </ul>
-                  {previewRules !== JSON.stringify(draft()) && <p className="hint">The rules changed since this preview. Press Preview again before removing anything.</p>}
+                  {previewRules !== JSON.stringify(draft()) && <p className="hint">{t('The rules changed since this preview. Press Preview again before removing anything.')}</p>}
                   <button
                     className="btn-sm danger-ghost btn-with-icon"
                     disabled={!!busy || previewRules !== JSON.stringify(draft())}
                     onClick={() =>
                       void run('run', async () => {
-                        if (!(await confirm({ title: 'Remove these now?', body: 'The files of the titles listed are deleted now (into the recycle bin when it is on).', confirmLabel: 'Remove now', danger: true })))
+                        if (!(await confirm({ title: t('Remove these now?'), body: t('The files of the titles listed are deleted now (into the recycle bin when it is on).'), confirmLabel: t('Remove now'), danger: true })))
                           return
                         await api.putWatchedSettings({ cleanup: JSON.parse(previewRules) })
                         const r = await api.runLibraryCleanup()
-                        toast.success(`Removed ${r.removed.length} ${r.removed.length === 1 ? 'title' : 'titles'}${r.failed.length ? `, ${r.failed.length} couldn't be removed` : ''}.`)
+                        toast.success(
+                          r.failed.length
+                            ? plural(r.removed.length, "Removed {n} title, {failed} couldn't be removed.", "Removed {n} titles, {failed} couldn't be removed.", { failed: r.failed.length })
+                            : plural(r.removed.length, 'Removed {n} title.', 'Removed {n} titles.'),
+                        )
                         setPreview(null)
                         load()
                       })
                     }
                   >
-                    <Icon name="trash" size={14} /> Remove these now
+                    <Icon name="trash" size={14} /> {t('Remove these now')}
                   </button>
                 </>
               )}
             </div>
           )}
           <p className="hint" style={{ marginBottom: 0 }}>
-            Last cleanup {when(status.lastCleanup)}.
+            {t('Last cleanup {when}.', { when: when(status.lastCleanup) })}
           </p>
         </fieldset>
       )}

@@ -2,8 +2,9 @@ import { coreParent, foldersToAsk, pathInside, type Chosen, type FolderKind, typ
 import type { Validation } from '../useValidation'
 import FolderBox from './FolderBox'
 import HardlinkWarning from './HardlinkWarning'
+import { t } from '../i18n'
 
-const LIBRARY_WORD: Record<string, string> = { movies: 'movies', tv: 'TV shows', music: 'music', ebooks: 'ebooks', audiobooks: 'audiobooks' }
+const LIBRARY_WORD: Record<string, string> = { movies: t('movies'), tv: t('TV shows'), music: t('music'), ebooks: t('ebooks'), audiobooks: t('audiobooks') }
 
 // The library paths step: one box for each kind of media that was chosen,
 // then Downloads, then the (optional) folders for the kinds left off, in case
@@ -26,6 +27,8 @@ export default function SetupPaths({
   const asked = foldersToAsk(chosen)
   const libraries = asked.filter((k) => k !== 'downloads')
   const later = (['ebooks', 'audiobooks'] as const).filter((k) => !asked.includes(k))
+  const laterWords = later.map((k) => LIBRARY_WORD[k])
+  const laterList = laterWords.length > 1 ? t('{list} and {last}', { list: laterWords.slice(0, -1).join(', '), last: laterWords[laterWords.length - 1] }) : (laterWords[0] ?? '')
 
   // A folder that already holds the others (for example /data), so a new kind
   // can be offered inside it instead of a second mapping.
@@ -53,14 +56,14 @@ export default function SetupPaths({
     <>
       <div className="folder-grid">
         {libraries.map((k) => box(k))}
-        {box('downloads', { hint: 'Where files are saved while they download.' })}
+        {box('downloads', { hint: t('Where files are saved while they download.') })}
       </div>
       <HardlinkWarning libraries={libraries.map((k) => ({ label: LIBRARY_WORD[k], path: values[k] ?? '' }))} downloads={values.downloads ?? ''} />
       {later.length > 0 && (
         <details className="later-folders">
-          <summary>Folders for {later.join(' and ')} (optional, for later)</summary>
-          <p className="fbox-small">You left these off. Set their folders now if you might switch them on later.</p>
-          <div className="folder-grid">{later.map((k) => box(k, { optionalNote: 'Optional', quiet: true }))}</div>
+          <summary>{t('Folders for {kinds} (optional, for later)', { kinds: laterList })}</summary>
+          <p className="fbox-small">{t('You left these off. Set their folders now if you might switch them on later.')}</p>
+          <div className="folder-grid">{later.map((k) => box(k, { optionalNote: t('Optional'), quiet: true }))}</div>
         </details>
       )}
     </>

@@ -1,17 +1,13 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/rdborg/mediarium/internal/books"
-	"github.com/rdborg/mediarium/internal/fsinfo"
 	"github.com/rdborg/mediarium/internal/indexers"
-	"github.com/rdborg/mediarium/internal/library"
 	"github.com/rdborg/mediarium/internal/metadata"
 	"github.com/rdborg/mediarium/internal/organizer"
 	"github.com/rdborg/mediarium/internal/queue"
@@ -29,16 +25,54 @@ type libraryStats struct {
 const libraryStatsTTL = 60 * time.Second
 
 type statsCache struct {
-	mu    sync.Mutex
-	stats libraryStats
+	mu         sync.Mutex
+	stats      libraryStats
+	refreshing bool
 }
 
+// libraryStats returns the library totals. They come from a walk over every
+// downloaded file, which on a big library (or a slow disk) takes a while, so
+// the answer is kept for libraryStatsTTL and, once it is older, still handed
+// out at once while a fresh one is made in the background. Only the very
+// first call waits for the walk.
 func (s *Server) libraryStats() (libraryStats, error) {
 	s.statsCache.mu.Lock()
-	defer s.statsCache.mu.Unlock()
-	if time.Since(s.statsCache.stats.at) < libraryStatsTTL && s.statsCache.stats.qualities != nil {
-		return s.statsCache.stats, nil
+	cached := s.statsCache.stats
+	have := cached.qualities != nil
+	if have && time.Since(cached.at) < libraryStatsTTL {
+		s.statsCache.mu.Unlock()
+		return cached, nil
 	}
+	if have {
+		if !s.statsCache.refreshing {
+			s.statsCache.refreshing = true
+			go func() {
+				st, err := s.walkLibraryStats()
+				s.statsCache.mu.Lock()
+				if err == nil {
+					s.statsCache.stats = st
+				}
+				s.statsCache.refreshing = false
+				s.statsCache.mu.Unlock()
+			}()
+		}
+		s.statsCache.mu.Unlock()
+		return cached, nil
+	}
+	s.statsCache.mu.Unlock()
+
+	st, err := s.walkLibraryStats()
+	if err != nil {
+		return st, err
+	}
+	s.statsCache.mu.Lock()
+	s.statsCache.stats = st
+	s.statsCache.mu.Unlock()
+	return st, nil
+}
+
+// walkLibraryStats adds up the size and quality of every downloaded file.
+func (s *Server) walkLibraryStats() (libraryStats, error) {
 	st := libraryStats{at: time.Now(), qualities: map[string]int{}}
 	sizeOf := func(path string) int64 {
 		if path == "" {
@@ -49,46 +83,33 @@ func (s *Server) libraryStats() (libraryStats, error) {
 		}
 		return 0
 	}
-	movies, err := s.MovieRepo.List()
+	count := func(q string) {
+		if tierKnown(q) {
+			st.qualities[q]++
+		} else {
+			st.qualities["Unknown"]++
+		}
+	}
+	movies, err := s.MovieRepo.DownloadedMovieFiles()
 	if err != nil {
 		return st, err
 	}
 	for _, m := range movies {
-		if m.Status == library.StatusDownloaded {
-			st.movieBytes += sizeOf(m.FilePath)
-			if tierKnown(m.Quality) {
-				st.qualities[m.Quality]++
-			} else {
-				st.qualities["Unknown"]++
-			}
-		}
+		st.movieBytes += sizeOf(m.Path)
+		count(m.Quality)
 	}
-	seriesList, err := s.MovieRepo.ListSeries()
+	episodes, err := s.MovieRepo.DownloadedEpisodeFiles()
 	if err != nil {
 		return st, err
 	}
-	for _, sr := range seriesList {
-		eps, err := s.MovieRepo.ListEpisodes(sr.ID)
-		if err != nil {
-			return st, err
+	seenFiles := map[string]bool{} // a multi-episode file is one file
+	for _, ep := range episodes {
+		if ep.Path != "" && !seenFiles[ep.Path] {
+			seenFiles[ep.Path] = true
+			st.tvBytes += sizeOf(ep.Path)
 		}
-		seenFiles := map[string]bool{} // a multi-episode file is one file
-		for _, ep := range eps {
-			if ep.Status != library.StatusDownloaded {
-				continue
-			}
-			if ep.FilePath != "" && !seenFiles[ep.FilePath] {
-				seenFiles[ep.FilePath] = true
-				st.tvBytes += sizeOf(ep.FilePath)
-			}
-			if tierKnown(ep.Quality) {
-				st.qualities[ep.Quality]++
-			} else {
-				st.qualities["Unknown"]++
-			}
-		}
+		count(ep.Quality)
 	}
-	s.statsCache.stats = st
 	return st, nil
 }
 
@@ -107,6 +128,8 @@ type dashFolder struct {
 	ItemsLabel   string   `json:"itemsLabel"`
 	Hardlinks    *bool    `json:"hardlinks,omitempty"` // shares a drive with Downloads, so imports don't copy
 	Warnings     []string `json:"warnings"`
+	// Off: that media type is switched off (Settings > Media types).
+	Off bool `json:"off,omitempty"`
 }
 
 type dashActive struct {
@@ -127,15 +150,12 @@ type dashBookCounts struct {
 	Missing    int `json:"missing"`
 }
 
-func (c *dashBookCounts) add(status string) {
-	c.Books++
-	switch status {
-	case books.StatusDownloaded:
-		c.Downloaded++
-	case books.StatusMissing:
-		c.Missing++
-	}
-}
+// recentShown is how many recently added titles each list holds; recentScan
+// how many of the newest are looked at to fill both halves.
+const (
+	recentShown = 12
+	recentScan  = 150
+)
 
 type dashRecent struct {
 	Kind      string `json:"kind"`
@@ -195,9 +215,14 @@ type dashboardPayload struct {
 		SizeBytes  int64          `json:"sizeBytes"`
 		Qualities  []dashQuality  `json:"qualities"`
 	} `json:"library"`
-	Folders         []dashFolder           `json:"folders"`
-	Active          []dashActive           `json:"active"`
-	RecentlyAdded   []dashRecent           `json:"recentlyAdded"`
+	Folders       []dashFolder `json:"folders"`
+	Active        []dashActive `json:"active"`
+	RecentlyAdded []dashRecent `json:"recentlyAdded"`
+	// The same, split: titles with files in the library (downloaded, or a
+	// show with some episodes), and titles still to come (waiting for a
+	// release, downloading, or not monitored). Up to 12 each.
+	RecentInLibrary []dashRecent           `json:"recentInLibrary"`
+	RecentToCome    []dashRecent           `json:"recentToCome"`
 	RecentDownloads []dashRecent           `json:"recentDownloads"`
 	Upcoming        []calendarEntryPayload `json:"upcoming"`
 	Health          []healthItem           `json:"health"`
@@ -221,34 +246,22 @@ type dashboardPayload struct {
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	var out dashboardPayload
 
-	movies, err := s.MovieRepo.List()
+	movieCounts, err := s.MovieRepo.MovieCounts()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	moviesDownloaded := 0
-	for _, m := range movies {
-		out.Library.Movies.Total++
-		switch m.Status {
-		case library.StatusDownloaded:
-			out.Library.Movies.Downloaded++
-			moviesDownloaded++
-		case library.StatusDownloading:
-			out.Library.Movies.Downloading++
-		default:
-			out.Library.Movies.Missing++
-		}
-	}
-	seriesList, err := s.MovieRepo.ListSeries()
+	out.Library.Movies.Total, out.Library.Movies.Downloaded = movieCounts.Total, movieCounts.Downloaded
+	out.Library.Movies.Downloading, out.Library.Movies.Missing = movieCounts.Downloading, movieCounts.Missing
+	moviesDownloaded := movieCounts.Downloaded
+	seriesCounts, err := s.MovieRepo.SeriesCounts()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out.Library.Series.Total = len(seriesList)
-	for _, sr := range seriesList {
-		out.Library.Series.Episodes += sr.EpisodeCount
-		out.Library.Series.EpisodesDownloaded += sr.DownloadedCount
-	}
+	out.Library.Series.Total = seriesCounts.Series
+	out.Library.Series.Episodes = seriesCounts.Episodes
+	out.Library.Series.EpisodesDownloaded = seriesCounts.EpisodesDownloaded
 	out.Library.Series.EpisodesMissing = out.Library.Series.Episodes - out.Library.Series.EpisodesDownloaded
 
 	if out.Library.Wanted.Movies, out.Library.Wanted.Episodes, err = s.wantedMissingCounts(); err != nil {
@@ -264,19 +277,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	out.Library.Music.Artists, out.Library.Music.Albums = counts.Artists, counts.Albums
 	out.Library.Music.Downloaded, out.Library.Music.Missing = counts.Downloaded, counts.Missing
 
-	bookList, err := s.BookRepo.List()
+	ebooks, audiobooks, err := s.BookRepo.Counts()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	for _, b := range bookList {
-		if b.WantEbook {
-			out.Library.Ebooks.add(b.EbookStatus)
-		}
-		if b.WantAudiobook {
-			out.Library.Audiobooks.add(b.AudioStatus)
-		}
-	}
+	out.Library.Ebooks = dashBookCounts{Books: ebooks.Books, Downloaded: ebooks.Downloaded, Missing: ebooks.Missing}
+	out.Library.Audiobooks = dashBookCounts{Books: audiobooks.Books, Downloaded: audiobooks.Downloaded, Missing: audiobooks.Missing}
 
 	stats, err := s.libraryStats()
 	if err != nil {
@@ -298,7 +305,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Folders.
 	movieRoot, tvRoot, dlRoot := s.moviesRoot(), s.tvRoot(), s.downloadsRoot()
 	mkFolder := func(key, label, path string, bytes int64, items int, itemsLabel string) dashFolder {
-		f := fsinfo.Inspect(path)
+		f := inspectCached(path)
 		d := dashFolder{
 			Key: key, Label: label, Path: path, Exists: f.Exists && f.IsDir, Writable: f.Writable,
 			FreeBytes: f.FreeBytes, TotalBytes: f.TotalBytes, Mounted: f.Mounted, MountKnown: f.MountKnown,
@@ -314,24 +321,41 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		return d
 	}
+	// Every media type has its folder here, the switched-off ones marked so
+	// the page can dim them.
+	offFolder := func(key, label, path string) dashFolder {
+		return dashFolder{Key: key, Label: label, Path: path, Warnings: []string{}, Off: true}
+	}
+	folderFor := func(on bool, key, label, path string, bytes int64, items int, itemsLabel string) dashFolder {
+		if !on {
+			return offFolder(key, label, path)
+		}
+		return mkFolder(key, label, path, bytes, items, itemsLabel)
+	}
 	out.Folders = []dashFolder{
-		mkFolder("movies", "Movies", movieRoot, stats.movieBytes, moviesDownloaded, "movies"),
-		mkFolder("tv", "TV shows", tvRoot, stats.tvBytes, out.Library.Series.EpisodesDownloaded, "episodes"),
+		folderFor(s.moviesEnabled(), "movies", "Movies", movieRoot, stats.movieBytes, moviesDownloaded, "movies"),
+		folderFor(s.tvEnabled(), "tv", "TV shows", tvRoot, stats.tvBytes, out.Library.Series.EpisodesDownloaded, "episodes"),
+		folderFor(s.musicEnabled(), "music", "Music", s.musicRoot(), 0, out.Library.Music.Downloaded, "albums"),
+		folderFor(s.ebooksEnabled(), "ebooks", "Ebooks", s.ebooksRoot(), 0, out.Library.Ebooks.Downloaded, "books"),
+		folderFor(s.audiobooksEnabled(), "audiobooks", "Audiobooks", s.audiobooksRoot(), 0, out.Library.Audiobooks.Downloaded, "books"),
 		mkFolder("downloads", "Downloads", dlRoot, 0, 0, "active"),
 	}
 
 	// Downloads in flight.
 	out.Active = []dashActive{}
-	queueItems, err := s.QueueRepo.List()
+	queueItems, err := s.QueueRepo.ListUnfinished()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	recentDone, recentErr := s.QueueRepo.RecentCompleted(8)
+	doneItems := make([]queue.Item, len(recentDone))
+	for i, c := range recentDone {
+		doneItems[i] = c.Item
+	}
+	namer := s.newQueueNamer(queueItems, doneItems)
 	for _, it := range queueItems {
-		if it.Status == queue.StatusCompleted || it.Status == queue.StatusFailed || it.Status == queue.StatusStopped {
-			continue
-		}
-		title, subtitle, poster := s.describeQueueItem(it)
+		title, subtitle, poster := namer.describe(it)
 		out.Active = append(out.Active, dashActive{
 			ID: it.ID, Title: title, Subtitle: subtitle, PosterURL: poster, Status: string(it.Status),
 			Protocol: string(it.Protocol), ProgressPct: it.ProgressPct, SizeBytes: it.SizeBytes, Release: it.ReleaseTitle,
@@ -344,8 +368,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Recently added and recently downloaded.
-	out.RecentlyAdded = []dashRecent{}
-	if recent, err := s.MovieRepo.RecentlyAdded(12); err == nil {
+	out.RecentlyAdded, out.RecentInLibrary, out.RecentToCome = []dashRecent{}, []dashRecent{}, []dashRecent{}
+	if recent, err := s.MovieRepo.RecentlyAdded(recentScan); err == nil {
+		var arrived []dashRecent
 		for _, it := range recent {
 			d := dashRecent{Kind: it.Kind, ID: it.ID, Title: it.Title, Year: it.Year, PosterURL: metadata.PosterURL(it.PosterPath), At: it.AddedAt, State: it.State}
 			if it.Kind == "movie" {
@@ -353,13 +378,22 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			} else {
 				d.SeriesID = it.ID
 			}
-			out.RecentlyAdded = append(out.RecentlyAdded, d)
+			if len(out.RecentlyAdded) < recentShown {
+				out.RecentlyAdded = append(out.RecentlyAdded, d)
+			}
+			switch {
+			case it.State == "downloaded" || it.State == "partial":
+				arrived = append(arrived, d)
+			case len(out.RecentToCome) < recentShown:
+				out.RecentToCome = append(out.RecentToCome, d) // newest added first
+			}
 		}
+		out.RecentInLibrary = s.latestArrivals(arrived)
 	}
 	out.RecentDownloads = []dashRecent{}
-	if done, err := s.QueueRepo.RecentCompleted(8); err == nil {
-		for _, c := range done {
-			title, subtitle, poster := s.describeQueueItem(c.Item)
+	if recentErr == nil {
+		for _, c := range recentDone {
+			title, subtitle, poster := namer.describe(c.Item)
 			d := dashRecent{Kind: "movie", ID: c.ID, Title: title, Subtitle: subtitle, PosterURL: poster, SizeBytes: c.SizeBytes, At: c.CompletedAt}
 			if c.SeriesID > 0 {
 				d.Kind, d.SeriesID = "series", c.SeriesID
@@ -367,7 +401,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 				d.Kind, d.AlbumID = "album", c.AlbumID
 			} else if c.BookID > 0 {
 				d.Kind, d.BookID = "book", c.BookID
-			} else if m, err := s.MovieRepo.Get(c.MovieID); err == nil {
+			} else if m, ok := namer.movie(c.MovieID); ok {
 				d.TMDBID, d.Year, d.Quality = m.TMDBID, m.Year, m.Quality
 			}
 			out.RecentDownloads = append(out.RecentDownloads, d)
@@ -376,10 +410,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Coming up.
 	out.Upcoming = []calendarEntryPayload{}
-	if entries, err := s.calendarEntries(); err == nil {
-		today := time.Now().UTC().Format("2006-01-02")
+	today := time.Now().UTC().Format("2006-01-02")
+	if entries, err := s.calendarEntriesSince(today); err == nil {
 		for _, e := range entries {
-			if e.ReleaseDate >= today && len(out.Upcoming) < 6 {
+			if len(out.Upcoming) < 6 {
 				out.Upcoming = append(out.Upcoming, e)
 			}
 		}
@@ -412,7 +446,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		out.Setup.Servers = len(servers)
 	}
 	out.Setup.VPN = s.VPNManager.Status().Connected
-	out.Setup.Torrents = torrentSource && s.torrentsEnabled()
+	out.Setup.Torrents = torrentSource && s.torrentReleasesOn()
 	if list, err := s.MediaServers.List(); err == nil {
 		out.Setup.MediaServers = len(list)
 	}
@@ -421,39 +455,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // describeQueueItem names a queue entry after the movie or show it is for
-// (falling back to the release title) and finds its poster.
+// (falling back to the release title) and finds its poster. A list of entries
+// uses a queueNamer instead, so the lookups are shared (queue_describe.go).
 func (s *Server) describeQueueItem(it queue.Item) (title, subtitle, poster string) {
-	title = it.ReleaseTitle
-	switch {
-	case it.AlbumID > 0:
-		if t, sub, cover, ok := s.describeAlbum(it.AlbumID); ok {
-			title, subtitle, poster = t, sub, cover
-		}
-	case it.BookID > 0:
-		if b, err := s.BookRepo.Get(it.BookID); err == nil {
-			title, poster = b.Title, books.CoverURL(b.CoverID, "M")
-			subtitle = "Ebook · " + b.Author
-			if it.BookFormat == string(books.Audiobook) {
-				subtitle = "Audiobook · " + b.Author
-			}
-		}
-	case it.SeriesID > 0:
-		if sr, err := s.MovieRepo.GetSeries(it.SeriesID); err == nil {
-			title, poster = sr.Title, metadata.PosterURL(sr.PosterPath)
-			switch {
-			case it.Season > 0 && it.Episode > 0:
-				subtitle = fmt.Sprintf("S%02dE%02d", it.Season, it.Episode)
-			case it.Season > 0:
-				subtitle = fmt.Sprintf("Season %d", it.Season)
-			}
-		}
-	case it.MovieID > 0:
-		if m, err := s.MovieRepo.Get(it.MovieID); err == nil {
-			title, poster = m.Title, metadata.PosterURL(m.PosterPath)
-			if m.Year > 0 {
-				subtitle = fmt.Sprintf("%d", m.Year)
-			}
-		}
-	}
-	return title, subtitle, poster
+	return s.newQueueNamer([]queue.Item{it}).describe(it)
 }

@@ -297,6 +297,9 @@ type ServerState struct {
 	InUse      int
 	Limit      int // what is allowed now
 	Configured int // what the person set
+	// LastRefusal is when the provider last said "too many connections" (zero
+	// when it hasn't since the number was last set).
+	LastRefusal time.Time
 }
 
 // ServerStates lists every login the downloader has used since it started.
@@ -310,7 +313,7 @@ func ServerStates() []ServerState {
 	out := make([]ServerState, 0, len(all))
 	for _, g := range all {
 		g.mu.Lock()
-		out = append(out, ServerState{Host: g.key.host + ":" + strconv.Itoa(g.key.port), InUse: g.inUse, Limit: g.limitLocked(), Configured: g.configured})
+		out = append(out, ServerState{Host: g.key.host + ":" + strconv.Itoa(g.key.port), InUse: g.inUse, Limit: g.limitLocked(), Configured: g.configured, LastRefusal: g.softLast})
 		g.mu.Unlock()
 	}
 	return out

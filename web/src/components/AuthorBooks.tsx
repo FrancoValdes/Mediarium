@@ -6,6 +6,7 @@ import { useGridColumns } from '../useGridColumns'
 import { BookAddDialog, BookCard } from './BookDiscover'
 import Switch from './Switch'
 import { useToast } from './Toast'
+import { t } from '../i18n'
 
 // "More by <author>" on a book's page: the author's other books (the most
 // read first), each with Add, and a switch to follow the author so their new
@@ -49,10 +50,10 @@ export default function AuthorBooks({ authorKey, author, exclude }: { authorKey:
     try {
       if (next) {
         await api.followAuthor(authorKey, { name: author, ebook: on('ebooks'), audiobook: !on('ebooks') && on('audiobooks') })
-        toast.success(`Following ${author}. Their new books are added by themselves.`)
+        toast.success(t('Following {author}. Their new books are added by themselves.', { author }))
       } else {
         await api.unfollowAuthor(authorKey)
-        toast.success(`Stopped following ${author}. Their books stay in your library.`)
+        toast.success(t('Stopped following {author}. Their books stay in your library.', { author }))
       }
       setFollowed(next)
     } catch (e) {
@@ -67,8 +68,8 @@ export default function AuthorBooks({ authorKey, author, exclude }: { authorKey:
   return (
     <section className="discover-rail author-books">
       <div className="rail-head">
-        <h2>More by {author}</h2>
-        {mayFollow && <Switch checked={followed} onChange={(v) => void follow(v)} disabled={busy} label="Follow this author" description="New books by them are added and looked for by themselves." />}
+        <h2>{t('More by {author}', { author })}</h2>
+        {mayFollow && <Switch checked={followed} onChange={(v) => void follow(v)} disabled={busy} label={t('Follow this author')} description={t('New books by them are added and looked for by themselves.')} />}
       </div>
       <div className="poster-grid" ref={grid}>
         {works === null
@@ -78,7 +79,7 @@ export default function AuthorBooks({ authorKey, author, exclude }: { authorKey:
       {works && works.length > shown.length && (
         <div className="rail-foot">
           <button className="btn-sm" onClick={() => setRows((r) => r + 2)}>
-            Show more
+            {t('Show more')}
           </button>
         </div>
       )}

@@ -34,8 +34,13 @@ func init() {
 
 var (
 	ErrInvalidCredentials = errors.New("invalid username or password")
-	ErrUsernameTaken      = errors.New("username already taken")
-	ErrSessionNotFound    = errors.New("session not found or expired")
+	// ErrNotLocal is returned when a password is set or changed on an account
+	// that signs in through single sign-on or the directory.
+	ErrNotLocal = errors.New("this account signs in through single sign-on or the directory and has no password here")
+	// ErrAccountDisabled is returned for an account an administrator turned off.
+	ErrAccountDisabled = errors.New("this account is turned off")
+	ErrUsernameTaken   = errors.New("username already taken")
+	ErrSessionNotFound = errors.New("session not found or expired")
 	// ErrSetupDone is returned by CreateFirstAdmin once any account exists.
 	ErrSetupDone = errors.New("an admin account already exists")
 	// ErrPasswordTooLong is returned for a password bcrypt cannot use whole.
@@ -55,22 +60,54 @@ type User struct {
 	FirstName string
 	LastName  string
 	Email     string
+	// Viewer is the read-only role: browse, never change (see ReadOnly).
+	Viewer bool
+	// Disabled accounts cannot sign in and their sessions and keys stop working.
+	Disabled bool
+	// Source is where the password lives: SourceLocal, SourceOIDC or SourceLDAP.
+	Source string
+	// ReadOnlyKey is set for the length of a request made with a read-only
+	// API key. It is never stored on the account.
+	ReadOnlyKey bool
 }
 
-// Roles. is_admin in the users table is the source of truth; Role is the
-// name the API and the docs use for it.
+// Where an account's sign-in lives. Accounts made on a first sign-in through
+// single sign-on or the directory have no password here.
+const (
+	SourceLocal = "local"
+	SourceOIDC  = "oidc"
+	SourceLDAP  = "ldap"
+)
+
+// Roles. is_admin in the users table is the source of truth for the
+// administrator; is_viewer marks the read-only role. Role is the name the API
+// and the docs use for it.
 const (
 	RoleAdmin  = "admin"  // everything, including settings and accounts
 	RoleMember = "member" // browse, add titles and follow downloads; no settings
+	RoleViewer = "viewer" // browse, discover and follow activity; changes nothing
 )
 
-// Role is RoleAdmin or RoleMember.
+// Role is RoleAdmin, RoleMember or RoleViewer.
 func (u *User) Role() string {
-	if u.IsAdmin {
+	switch {
+	case u.IsAdmin:
 		return RoleAdmin
+	case u.Viewer:
+		return RoleViewer
 	}
 	return RoleMember
 }
+
+// ReadOnly reports whether the caller may only read: a viewer account, or a
+// request made with a read-only API key. An administrator account is never
+// read-only by role, only through a read-only key.
+func (u *User) ReadOnly() bool {
+	return u.ReadOnlyKey || (u.Viewer && !u.IsAdmin)
+}
+
+// IsLocal reports whether the account signs in with a password kept here.
+func (u *User) IsLocal() bool { return u.Source == "" || u.Source == SourceLocal }
 
 // Name is "First Last" as stored (either half may be missing, both may be
 // empty), without DisplayName's fallback to the username.
@@ -142,7 +179,7 @@ func (s *Service) CreateUserWithProfile(username, password, firstName, lastName,
 	if err != nil {
 		return nil, fmt.Errorf("get inserted id: %w", err)
 	}
-	return &User{ID: id, Username: username, IsAdmin: firstRun, FirstName: firstName, LastName: lastName, Email: email}, nil
+	return &User{ID: id, Username: username, IsAdmin: firstRun, FirstName: firstName, LastName: lastName, Email: email, Source: SourceLocal}, nil
 }
 
 // CreateFirstAdmin creates the first account, an administrator, for the
@@ -170,7 +207,7 @@ func (s *Service) CreateFirstAdmin(username, password, firstName, lastName, emai
 	if err != nil {
 		return nil, fmt.Errorf("get inserted id: %w", err)
 	}
-	return &User{ID: id, Username: username, IsAdmin: true, FirstName: firstName, LastName: lastName, Email: email}, nil
+	return &User{ID: id, Username: username, IsAdmin: true, FirstName: firstName, LastName: lastName, Email: email, Source: SourceLocal}, nil
 }
 
 // dummyHash is compared against when the username does not exist, so a
@@ -189,16 +226,10 @@ func fakeCompare(password string) {
 
 // Authenticate verifies a username/password pair.
 func (s *Service) Authenticate(username, password string) (*User, error) {
-	var (
-		id      int64
-		hash    string
-		isAdmin bool
-		first   string
-		last    string
-		email   string
-	)
-	err := s.db.QueryRow(`SELECT id, password_hash, is_admin, first_name, last_name, email FROM users WHERE username = ?`, username).
-		Scan(&id, &hash, &isAdmin, &first, &last, &email)
+	u := &User{}
+	var hash string
+	err := s.db.QueryRow(`SELECT `+userCols+`, password_hash FROM users WHERE username = ?`, username).
+		Scan(append(u.scanDest(), &hash)...)
 	if err == sql.ErrNoRows {
 		fakeCompare(password)
 		return nil, ErrInvalidCredentials
@@ -206,11 +237,33 @@ func (s *Service) Authenticate(username, password string) (*User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("lookup user: %w", err)
 	}
+	// An account that signs in through single sign-on or the directory has no
+	// password here, so no password may ever open it, whatever is typed.
+	if !u.IsLocal() || hash == "" {
+		fakeCompare(password)
+		return nil, ErrInvalidCredentials
+	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
 		return nil, ErrInvalidCredentials
 	}
-	s.upgradeHash(id, hash, password)
-	return &User{ID: id, Username: username, IsAdmin: isAdmin, FirstName: first, LastName: last, Email: email}, nil
+	if u.Disabled {
+		return nil, ErrAccountDisabled
+	}
+	s.upgradeHash(u.ID, hash, password)
+	return u, nil
+}
+
+// userCols are the columns every lookup of an account reads, in the order
+// User.scanDest expects.
+const userCols = `id, username, is_admin, first_name, last_name, email, is_viewer, disabled, auth_source`
+
+// userColsOf is userCols for a table alias (a join).
+func userColsOf(alias string) string {
+	return alias + `.id, ` + alias + `.username, ` + alias + `.is_admin, ` + alias + `.first_name, ` + alias + `.last_name, ` + alias + `.email, ` + alias + `.is_viewer, ` + alias + `.disabled, ` + alias + `.auth_source`
+}
+
+func (u *User) scanDest() []any {
+	return []any{&u.ID, &u.Username, &u.IsAdmin, &u.FirstName, &u.LastName, &u.Email, &u.Viewer, &u.Disabled, &u.Source}
 }
 
 // upgradeHash replaces a password hash made with a lower work factor by one
@@ -241,9 +294,8 @@ func (s *Service) nameInUse(username string, exceptID int64) (bool, error) {
 
 // GetUser loads one account by id, or ErrInvalidCredentials if it's gone.
 func (s *Service) GetUser(id int64) (*User, error) {
-	u := &User{ID: id}
-	err := s.db.QueryRow(`SELECT username, is_admin, first_name, last_name, email FROM users WHERE id = ?`, id).
-		Scan(&u.Username, &u.IsAdmin, &u.FirstName, &u.LastName, &u.Email)
+	u := &User{}
+	err := s.db.QueryRow(`SELECT `+userCols+` FROM users WHERE id = ?`, id).Scan(u.scanDest()...)
 	if err == sql.ErrNoRows {
 		return nil, ErrInvalidCredentials
 	}
@@ -257,8 +309,7 @@ func (s *Service) GetUser(id int64) (*User, error) {
 // ErrInvalidCredentials when there is none.
 func (s *Service) UserByName(username string) (*User, error) {
 	u := &User{}
-	err := s.db.QueryRow(`SELECT id, username, is_admin, first_name, last_name, email FROM users WHERE username = ? COLLATE NOCASE`, username).
-		Scan(&u.ID, &u.Username, &u.IsAdmin, &u.FirstName, &u.LastName, &u.Email)
+	err := s.db.QueryRow(`SELECT `+userCols+` FROM users WHERE username = ? COLLATE NOCASE`, username).Scan(u.scanDest()...)
 	if err == sql.ErrNoRows {
 		return nil, ErrInvalidCredentials
 	}
@@ -296,12 +347,15 @@ func (s *Service) ChangePassword(userID int64, currentPassword, newPassword stri
 	if len(newPassword) > MaxPasswordBytes {
 		return ErrPasswordTooLong
 	}
-	var hash string
-	if err := s.db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash); err != nil {
+	var hash, source string
+	if err := s.db.QueryRow(`SELECT password_hash, auth_source FROM users WHERE id = ?`, userID).Scan(&hash, &source); err != nil {
 		if err == sql.ErrNoRows {
 			return ErrInvalidCredentials
 		}
 		return fmt.Errorf("lookup user: %w", err)
+	}
+	if source != SourceLocal || hash == "" {
+		return ErrNotLocal
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(currentPassword)); err != nil {
 		return ErrInvalidCredentials
@@ -340,12 +394,12 @@ func (s *Service) ResetPassword(username, newPassword string) error {
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	res, err := s.db.Exec(`UPDATE users SET password_hash = ? WHERE username = ?`, string(hash), username)
+	res, err := s.db.Exec(`UPDATE users SET password_hash = ? WHERE username = ? AND auth_source = 'local'`, string(hash), username)
 	if err != nil {
 		return fmt.Errorf("update password: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("no user named %q", username)
+		return fmt.Errorf("no password account named %q (accounts that sign in through single sign-on or the directory have no password here)", username)
 	}
 	if _, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = ?)`, username); err != nil {
 		return fmt.Errorf("clear sessions: %w", err)
@@ -356,6 +410,20 @@ func (s *Service) ResetPassword(username, newPassword string) error {
 // CreateSession issues a new opaque session token, returning the raw token
 // (only this call ever sees the plaintext — the DB stores its hash).
 func (s *Service) CreateSession(userID int64) (token string, expiresAt time.Time, err error) {
+	return s.CreateSessionVia(userID, MethodPassword)
+}
+
+// How a session was started.
+const (
+	MethodPassword = "password"
+	MethodOIDC     = "oidc"
+	MethodLDAP     = "ldap"
+	MethodPasskey  = "passkey"
+	MethodProxy    = "proxy"
+)
+
+// CreateSessionVia is CreateSession that also records how the person signed in.
+func (s *Service) CreateSessionVia(userID int64, method string) (token string, expiresAt time.Time, err error) {
 	token, err = randomToken()
 	if err != nil {
 		return "", time.Time{}, err
@@ -363,8 +431,8 @@ func (s *Service) CreateSession(userID int64) (token string, expiresAt time.Time
 	expiresAt = time.Now().Add(sessionTTL)
 	// Sessions nobody signed out of would otherwise stay in the table forever.
 	_, _ = s.db.Exec(`DELETE FROM sessions WHERE expires_at < ?`, time.Now().UTC().Format(time.RFC3339Nano))
-	_, err = s.db.Exec(`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)`,
-		hashToken(token), userID, expiresAt.UTC().Format(time.RFC3339Nano))
+	_, err = s.db.Exec(`INSERT INTO sessions (token_hash, user_id, expires_at, method) VALUES (?, ?, ?, ?)`,
+		hashToken(token), userID, expiresAt.UTC().Format(time.RFC3339Nano), method)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("insert session: %w", err)
 	}
@@ -374,20 +442,13 @@ func (s *Service) CreateSession(userID int64) (token string, expiresAt time.Time
 // UserForSession resolves a raw session token to its user, or
 // ErrSessionNotFound if it's missing/expired.
 func (s *Service) UserForSession(token string) (*User, error) {
-	var (
-		id       int64
-		username string
-		isAdmin  bool
-		first    string
-		last     string
-		email    string
-		expires  string
-	)
+	u := &User{}
+	var expires string
 	err := s.db.QueryRow(`
-		SELECT u.id, u.username, u.is_admin, u.first_name, u.last_name, u.email, sess.expires_at
+		SELECT `+userColsOf("u")+`, sess.expires_at
 		FROM sessions sess JOIN users u ON u.id = sess.user_id
 		WHERE sess.token_hash = ?`, hashToken(token)).
-		Scan(&id, &username, &isAdmin, &first, &last, &email, &expires)
+		Scan(append(u.scanDest(), &expires)...)
 	if err == sql.ErrNoRows {
 		return nil, ErrSessionNotFound
 	}
@@ -402,7 +463,21 @@ func (s *Service) UserForSession(token string) (*User, error) {
 		_, _ = s.db.Exec(`DELETE FROM sessions WHERE token_hash = ?`, hashToken(token))
 		return nil, ErrSessionNotFound
 	}
-	return &User{ID: id, Username: username, IsAdmin: isAdmin, FirstName: first, LastName: last, Email: email}, nil
+	// An account an administrator turned off is signed out at once.
+	if u.Disabled {
+		return nil, ErrSessionNotFound
+	}
+	return u, nil
+}
+
+// SessionMethod says how the session behind token was started ("password",
+// "oidc", "ldap" or "passkey"), or "" when there is no such session.
+func (s *Service) SessionMethod(token string) string {
+	var m string
+	if err := s.db.QueryRow(`SELECT method FROM sessions WHERE token_hash = ?`, hashToken(token)).Scan(&m); err != nil {
+		return ""
+	}
+	return m
 }
 
 // DeleteSession logs a single session out.
@@ -417,12 +492,18 @@ func (s *Service) DeleteSession(token string) error {
 // CreateAPIKey generates a new API key for userID. The raw key is returned
 // once and never recoverable afterward.
 func (s *Service) CreateAPIKey(userID int64, name string) (rawKey string, err error) {
+	return s.CreateAPIKeyScoped(userID, name, false)
+}
+
+// CreateAPIKeyScoped is CreateAPIKey for a key that may be read-only: such a
+// key only ever gets GET requests through.
+func (s *Service) CreateAPIKeyScoped(userID int64, name string, readOnly bool) (rawKey string, err error) {
 	rawKey, err = randomToken()
 	if err != nil {
 		return "", err
 	}
-	_, err = s.db.Exec(`INSERT INTO api_keys (user_id, name, key_hash) VALUES (?, ?, ?)`,
-		userID, name, hashToken(rawKey))
+	_, err = s.db.Exec(`INSERT INTO api_keys (user_id, name, key_hash, read_only) VALUES (?, ?, ?, ?)`,
+		userID, name, hashToken(rawKey), readOnly)
 	if err != nil {
 		return "", fmt.Errorf("insert api key: %w", err)
 	}
@@ -432,6 +513,7 @@ func (s *Service) CreateAPIKey(userID int64, name string) (rawKey string, err er
 type APIKey struct {
 	ID        int64
 	Name      string
+	ReadOnly  bool
 	CreatedAt time.Time
 	RevokedAt *time.Time
 }
@@ -441,7 +523,7 @@ type APIKey struct {
 // creation (credentials are never exposed beyond what's needed).
 func (s *Service) ListAPIKeys(userID int64) ([]APIKey, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, created_at, revoked_at FROM api_keys
+		SELECT id, name, read_only, created_at, revoked_at FROM api_keys
 		WHERE user_id = ? ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list api keys: %w", err)
@@ -455,7 +537,7 @@ func (s *Service) ListAPIKeys(userID int64) ([]APIKey, error) {
 			created    string
 			revokedRaw sql.NullString
 		)
-		if err := rows.Scan(&k.ID, &k.Name, &created, &revokedRaw); err != nil {
+		if err := rows.Scan(&k.ID, &k.Name, &k.ReadOnly, &created, &revokedRaw); err != nil {
 			return nil, fmt.Errorf("scan api key: %w", err)
 		}
 		createdAt, err := time.Parse(time.RFC3339Nano, created)
@@ -503,26 +585,24 @@ func (s *Service) DeleteRevokedAPIKey(userID, id int64) (bool, error) {
 
 // UserForAPIKey resolves a raw API key header value to its user.
 func (s *Service) UserForAPIKey(rawKey string) (*User, error) {
-	var (
-		id       int64
-		username string
-		isAdmin  bool
-		first    string
-		last     string
-		email    string
-	)
+	u := &User{}
+	var readOnly bool
 	err := s.db.QueryRow(`
-		SELECT u.id, u.username, u.is_admin, u.first_name, u.last_name, u.email
+		SELECT `+userColsOf("u")+`, k.read_only
 		FROM api_keys k JOIN users u ON u.id = k.user_id
 		WHERE k.key_hash = ? AND k.revoked_at IS NULL`, hashToken(rawKey)).
-		Scan(&id, &username, &isAdmin, &first, &last, &email)
+		Scan(append(u.scanDest(), &readOnly)...)
 	if err == sql.ErrNoRows {
 		return nil, ErrSessionNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lookup api key: %w", err)
 	}
-	return &User{ID: id, Username: username, IsAdmin: isAdmin, FirstName: first, LastName: last, Email: email}, nil
+	if u.Disabled {
+		return nil, ErrSessionNotFound
+	}
+	u.ReadOnlyKey = readOnly
+	return u, nil
 }
 
 func randomToken() (string, error) {

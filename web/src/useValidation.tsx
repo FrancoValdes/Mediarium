@@ -1,4 +1,5 @@
 import { useId, useState, type FocusEvent } from 'react'
+import { t } from './i18n'
 import type { Message } from './validate'
 
 // Inline field errors for a form.
@@ -128,11 +129,11 @@ export function FieldError({ v, name }: { v: Validation; name: string }) {
 }
 
 /** A line under the submit button after a blocked attempt, so it is clear why nothing happened. */
-export function FormProblem({ v, verb = 'save' }: { v: Validation; verb?: string }) {
+export function FormProblem({ v, verb = t('save') }: { v: Validation; verb?: string }) {
   if (!v.attempted || v.ok) return null
   return (
     <p className="form-problem" role="alert">
-      A field above needs fixing before you can {verb}. It is marked in red.
+      {t('A field above needs fixing before you can {verb}. It is marked in red.', { verb })}
     </p>
   )
 }

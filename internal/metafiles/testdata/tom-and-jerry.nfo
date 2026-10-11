@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<movie>
+  <title>Tom &amp; Jerry: &lt;The "Movie"&gt;</title>
+  <originaltitle>Tom &amp; Jerry</originaltitle>
+  <plot>Line one.
+Line two with a  control character and a tab	here.</plot>
+  <tmdbid>587807</tmdbid>
+  <uniqueid type="tmdb" default="true">587807</uniqueid>
+  <genre>Family</genre>
+  <set>
+    <name>Tom and Jerry Collection</name>
+    <overview>Cat and mouse.</overview>
+  </set>
+  <year>2021</year>
+</movie>

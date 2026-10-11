@@ -39,8 +39,14 @@ func TestDefinitionStoreDownloadsAndCaches(t *testing.T) {
 	for _, d := range idx.Definitions {
 		byID[d.ID] = d
 	}
-	if len(byID) != 5 {
-		t.Fatalf("expected 5 definitions (v11 only, no escaping paths), got %v", idx.Definitions)
+	if len(byID) != 5+len(builtinDefinitions()) {
+		t.Fatalf("expected 5 definitions (v11 only, no escaping paths) and the built-in ones, got %v", idx.Definitions)
+	}
+	if _, ok := byID["toloka"]; !ok {
+		t.Error("the built-in Toloka definition is missing from the list")
+	}
+	if _, ok := byID["iptorrents"]; !ok {
+		t.Error("the built-in IPTorrents definition is missing from the list")
 	}
 	pub := byID["fixturepublic"]
 	if pub.Name != "Fixture Public" || pub.Type != "public" || pub.Protocol != "torrent" || !pub.Supported || pub.Language != "en-US" {
@@ -87,7 +93,7 @@ func TestDefinitionStoreDownloadsAndCaches(t *testing.T) {
 	// a fresh store on the same folder reads the cache from disk
 	store2 := NewDefinitionStore(dir)
 	store2.SourceURL = srv.URL
-	if idx2, err := store2.Catalogue(context.Background(), false); err != nil || len(idx2.Definitions) != 5 || hits.Load() != 1 {
+	if idx2, err := store2.Catalogue(context.Background(), false); err != nil || len(idx2.Definitions) != 5+len(builtinDefinitions()) || hits.Load() != 1 {
 		t.Fatalf("disk cache not used: hits=%d err=%v", hits.Load(), err)
 	}
 
@@ -136,7 +142,7 @@ func TestDefinitionStoreZipAndFailures(t *testing.T) {
 	store := NewDefinitionStore(filepath.Join(t.TempDir(), "defs"))
 	store.SourceURL = srv.URL
 	idx, err := store.Catalogue(context.Background(), false)
-	if err != nil || len(idx.Definitions) != 1 || idx.Definitions[0].ID != "fixturejson" {
+	if err != nil || len(idx.Definitions) != 1+len(builtinDefinitions()) || idx.Definitions[0].ID != "fixturejson" {
 		t.Fatalf("zip archive: %v %+v", err, idx)
 	}
 
@@ -144,7 +150,7 @@ func TestDefinitionStoreZipAndFailures(t *testing.T) {
 	srv.Close()
 	store.lastAttempt = time.Time{}
 	idx, err = store.Catalogue(context.Background(), true)
-	if err == nil || idx == nil || len(idx.Definitions) != 1 {
+	if err == nil || idx == nil || len(idx.Definitions) != 1+len(builtinDefinitions()) {
 		t.Fatalf("expected cached list plus an error, got %v %v", idx, err)
 	}
 

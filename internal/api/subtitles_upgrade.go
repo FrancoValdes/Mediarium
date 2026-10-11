@@ -3,9 +3,9 @@ package api
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/rdborg/mediarium/internal/settings"
@@ -29,17 +29,23 @@ const (
 
 // subtitlePick is how a subtitle came to be chosen, kept with it.
 type subtitlePick struct {
-	fileID    int
-	hashMatch bool   // made for the exact video file
-	chosen    bool   // picked by hand
-	videoHash string // the video's hash, when known
-	upgrade   bool   // replaces a subtitle Mediarium picked before
+	fileID    int               // OpenSubtitles
+	source    string            // subtitles.SourceSubDL, or empty for OpenSubtitles
+	link      string            // SubDL's download path
+	hashMatch bool              // made for the exact video file
+	chosen    bool              // picked by hand
+	videoHash string            // the video's hash, when known
+	upgrade   bool              // replaces a subtitle Mediarium picked before
+	lang      string            // the language it is saved for (set when it is written)
+	variant   subtitles.Variant // plain, SDH or forced: part of the file's name
 }
 
 // subtitleUpgradesOn: on unless switched off, and only while subtitles
-// download automatically.
+// download automatically. Only OpenSubtitles can match a subtitle to the exact
+// video file, so with it switched off (or without a key) there is nothing to
+// look for.
 func (s *Server) subtitleUpgradesOn() bool {
-	return s.autoSubtitlesEnabled() && s.subtitleUpgradeSetting()
+	return s.autoSubtitlesEnabled() && s.subtitleUpgradeSetting() && s.useOpenSubtitles()
 }
 
 func (s *Server) subtitleUpgradeSetting() bool { return s.settingOn(settings.KeySubtitleUpgrade, true) }
@@ -72,9 +78,14 @@ func (s *Server) recordSubtitle(it subtitleItem, lang, path string, pick subtitl
 }
 
 // unchangedSubtitle reports whether a saved subtitle is still where and as
-// Mediarium left it, next to the same video file.
+// Mediarium left it, next to the same video file. f.Language is the slot key
+// ("en" or "en.forced").
 func unchangedSubtitle(f subtitles.SavedFile, it subtitleItem) bool {
-	if it.filePath == "" || f.Path != fmt.Sprintf("%s.%s.srt", subtitleBase(it.filePath), f.Language) {
+	if it.filePath == "" {
+		return false
+	}
+	lang, _ := subtitles.SplitSlotKey(f.Language)
+	if _, ok := subtitles.VariantOfPath(it.filePath, lang, f.Path); !ok {
 		return false
 	}
 	if f.VideoHash != "" && videoHash(it.filePath) != f.VideoHash {
@@ -92,6 +103,9 @@ type subtitleUpgradeResult struct {
 // replace ones Mediarium picked by name in the last month.
 func (s *Server) upgradeSubtitles(ctx context.Context) (subtitleUpgradeResult, error) {
 	var res subtitleUpgradeResult
+	if !s.useOpenSubtitles() {
+		return res, nil
+	}
 	now := time.Now()
 	cands, err := s.SubtitleFiles.UpgradeCandidates(now.Add(-subtitleUpgradeWindow), now.Add(-subtitleUpgradeRecheck), maxSubtitleUpgradeLook)
 	if err != nil {
@@ -123,7 +137,13 @@ func (s *Server) upgradeSubtitles(ctx context.Context) (subtitleUpgradeResult, e
 		if hash == "" {
 			continue
 		}
-		q := it.query(f.Language)
+		lang, slot := subtitles.SplitSlotKey(f.Language)
+		profile := s.subtitleProfiles().For(lang)
+		// A better subtitle is the same kind as the one it replaces; where the
+		// profile takes a normal or an SDH one, either kind will do (the old
+		// file is then removed, since it is replaced).
+		variant, _ := subtitles.VariantOfPath(it.filePath, lang, f.Path)
+		q := profile.Apply(slot, it.query(lang))
 		q.MovieHash = hash
 		results, err := s.Subtitles().Find(ctx, q)
 		res.looked++
@@ -134,17 +154,40 @@ func (s *Server) upgradeSubtitles(ctx context.Context) (subtitleUpgradeResult, e
 			log.Printf("subtitles: look for a better %s subtitle for %s %d: %v", f.Language, f.Kind, f.MediaID, err)
 			continue
 		}
-		best := subtitles.Pick(results, pathBase(it.filePath))
+		var sameKind []subtitles.Result
+		for _, r := range profile.Filter(slot, results) {
+			if r.Variant() == variant || (slot == subtitles.SlotFull && profile.Normalize().Full == subtitles.FullEither) {
+				sameKind = append(sameKind, r)
+			}
+		}
+		best := subtitles.Pick(sameKind, pathBase(it.filePath))
 		if best == nil || !best.HashMatch || best.FileID == f.FileID {
 			continue
 		}
-		_, err = s.writeSubtitle(ctx, it, f.Language, subtitlePick{fileID: best.FileID, hashMatch: true, videoHash: hash, upgrade: true})
+		newVariant := variant
+		if slot == subtitles.SlotFull {
+			newVariant = best.Variant()
+		}
+		if newVariant != variant {
+			if _, statErr := os.Lstat(subtitles.SidecarPath(it.filePath, lang, newVariant)); statErr == nil {
+				continue // another subtitle of that kind is already there: not Mediarium's to overwrite
+			}
+		}
+		newPath, err := s.writeSubtitle(ctx, it, lang, subtitlePick{fileID: best.FileID, hashMatch: true, videoHash: hash, upgrade: true, variant: newVariant})
 		switch {
 		case errors.Is(err, subtitles.ErrQuota):
 			return res, nil
 		case err != nil:
 			log.Printf("subtitles: swap the %s subtitle for %s %d: %v", f.Language, f.Kind, f.MediaID, err)
 			continue
+		}
+		if newPath != f.Path {
+			// The better one has another name (plain against SDH): the old file is replaced.
+			for _, old := range []string{f.Path, f.Path + ".bak"} {
+				if rmErr := os.Remove(old); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+					log.Printf("subtitles: remove the replaced %s: %v", filepath.Base(old), rmErr)
+				}
+			}
 		}
 		res.swapped++
 	}

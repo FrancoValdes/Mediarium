@@ -18,18 +18,21 @@ type accountPayload struct {
 	Username    string     `json:"username"`
 	Name        string     `json:"name"`
 	Email       string     `json:"email"`
-	Role        string     `json:"role"` // "admin" or "member"
+	Role        string     `json:"role"` // "admin", "member" or "viewer"
 	IsAdmin     bool       `json:"isAdmin"`
+	Disabled    bool       `json:"disabled"` // turned off: cannot sign in
+	Source      string     `json:"source"`   // "local" (a password here), "oidc" or "ldap"
 	CreatedAt   time.Time  `json:"createdAt"`
 	LastLoginAt *time.Time `json:"lastLoginAt"` // null until the first sign-in
 	// What a basic account may do (everything, for an administrator).
 	Permissions auth.Permissions `json:"permissions"`
+	TwoStep     bool             `json:"twoStep"` // two-step sign-in is on
 }
 
 func toAccountPayload(a *auth.Account) accountPayload {
 	return accountPayload{
 		ID: a.ID, Username: a.Username, Name: a.Name(), Email: a.Email,
-		Role: a.Role(), IsAdmin: a.IsAdmin, CreatedAt: a.CreatedAt, LastLoginAt: a.LastLoginAt, Permissions: a.Permissions,
+		Role: a.Role(), IsAdmin: a.IsAdmin, Disabled: a.Disabled, Source: sourceOf(a.Source), CreatedAt: a.CreatedAt, LastLoginAt: a.LastLoginAt, Permissions: a.Permissions,
 	}
 }
 
@@ -76,16 +79,24 @@ func requester(r *http.Request) (id int64, byline string) {
 	return u.ID, " by " + u.DisplayName()
 }
 
-// parseRole maps "admin"/"member" to is_admin.
-func parseRole(role string) (isAdmin bool, ok bool) {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case auth.RoleAdmin:
-		return true, true
-	case auth.RoleMember:
-		return false, true
+// sourceOf is an account's sign-in source, "local" when none is stored.
+func sourceOf(s string) string {
+	if s == "" {
+		return auth.SourceLocal
 	}
-	return false, false
+	return s
 }
+
+// parseRole maps "admin", "member" and "viewer" to the role name.
+func parseRole(role string) (string, bool) {
+	switch r := strings.ToLower(strings.TrimSpace(role)); r {
+	case auth.RoleAdmin, auth.RoleMember, auth.RoleViewer:
+		return r, true
+	}
+	return "", false
+}
+
+const roleChoices = `Pick a role for this account: "admin", "member" or "viewer".`
 
 // writeAccountError turns the account rules into plain answers.
 func writeAccountError(w http.ResponseWriter, err error) {
@@ -96,6 +107,8 @@ func writeAccountError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "That username is already taken.")
 	case errors.Is(err, auth.ErrLastAdmin):
 		writeError(w, http.StatusConflict, "There must always be at least one administrator.")
+	case errors.Is(err, auth.ErrNotLocal):
+		writeError(w, http.StatusBadRequest, "This account signs in through single sign-on or the directory, so it has no password here.")
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
@@ -108,9 +121,15 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	twoStep, err := s.Auth.TwoStepUsers()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	out := make([]accountPayload, len(list))
 	for i := range list {
 		out[i] = toAccountPayload(&list[i])
+		out[i].TwoStep = twoStep[list[i].ID]
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -143,17 +162,17 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	if rejectBad(w, checkUsername(req.Username), checkPassword(req.Password, "Password"), checkEmail(req.Email), checkMaxLen(first, "Name", nameMax)) {
 		return
 	}
-	isAdmin, ok := parseRole(req.Role)
+	role, ok := parseRole(req.Role)
 	if !ok {
-		writeError(w, http.StatusBadRequest, `Pick a role for this account: "admin" or "member".`)
+		writeError(w, http.StatusBadRequest, roleChoices)
 		return
 	}
-	created, err := s.Auth.CreateAccount(req.Username, req.Password, first, last, req.Email, isAdmin)
+	created, err := s.Auth.CreateAccountWithRole(req.Username, req.Password, first, last, req.Email, role)
 	if err != nil {
 		writeAccountError(w, err)
 		return
 	}
-	if req.Permissions != nil && !isAdmin {
+	if req.Permissions != nil && role == auth.RoleMember {
 		if err := s.Auth.SetPermissions(created.ID, *req.Permissions); err != nil {
 			writeAccountError(w, err)
 			return
@@ -169,6 +188,7 @@ type updateUserRequest struct {
 	Name        *string           `json:"name"`
 	Email       *string           `json:"email"`
 	Role        *string           `json:"role"`
+	Disabled    *bool             `json:"disabled"`
 	Password    *string           `json:"password"`
 	Permissions *auth.Permissions `json:"permissions"`
 }
@@ -214,16 +234,24 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		upd.Email = &email
 	}
 	if req.Role != nil {
-		isAdmin, ok := parseRole(*req.Role)
+		role, ok := parseRole(*req.Role)
 		if !ok {
-			writeError(w, http.StatusBadRequest, `Pick a role for this account: "admin" or "member".`)
+			writeError(w, http.StatusBadRequest, roleChoices)
 			return
 		}
-		if me := auth.UserFromContext(r.Context()); me != nil && me.ID == id && !isAdmin {
+		if me := auth.UserFromContext(r.Context()); me != nil && me.ID == id && role != auth.RoleAdmin {
 			writeError(w, http.StatusBadRequest, "You can't remove your own administrator role. Ask another administrator to do it.")
 			return
 		}
-		upd.IsAdmin = &isAdmin
+		isAdmin, viewer := role == auth.RoleAdmin, role == auth.RoleViewer
+		upd.IsAdmin, upd.Viewer = &isAdmin, &viewer
+	}
+	if req.Disabled != nil {
+		if me := auth.UserFromContext(r.Context()); me != nil && me.ID == id && *req.Disabled {
+			writeError(w, http.StatusBadRequest, "You can't turn off your own account. Ask another administrator to do it.")
+			return
+		}
+		upd.Disabled = req.Disabled
 	}
 	if req.Password != nil {
 		if rejectBad(w, checkPassword(*req.Password, "Password")) {

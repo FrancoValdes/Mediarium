@@ -170,7 +170,7 @@ func (s *Server) handleScanLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.TMDB().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie info and lists).")
+		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie and show info).")
 		return
 	}
 	info, err := os.Stat(req.Path)
@@ -395,7 +395,7 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.TMDB().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie info and lists).")
+		writeError(w, http.StatusPreconditionFailed, "Add your TMDB API key first (Settings > Info, lists and subtitles > Movie and show info).")
 		return
 	}
 	out := []importCandidatePayload{}
@@ -406,6 +406,7 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 			writeUpstreamError(w, "search", err)
 			return
 		}
+		newestFirst(shows, query, func(sh metadata.Show) string { return sh.Name }, func(sh metadata.Show) int { return sh.Year() })
 		for _, sh := range shows {
 			out = append(out, importCandidatePayload{TMDBID: sh.TMDBID, Title: sh.Name, Year: sh.Year(), PosterURL: metadata.PosterURL(sh.PosterPath)})
 		}
@@ -415,6 +416,7 @@ func (s *Server) handleTMDBSearch(w http.ResponseWriter, r *http.Request) {
 			writeUpstreamError(w, "search", err)
 			return
 		}
+		newestFirst(movies, query, func(m metadata.Movie) string { return m.Title }, func(m metadata.Movie) int { return m.Year() })
 		for _, m := range movies {
 			out = append(out, importCandidatePayload{TMDBID: m.TMDBID, Title: m.Title, Year: m.Year(), PosterURL: metadata.PosterURL(m.PosterPath)})
 		}

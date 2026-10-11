@@ -1,14 +1,15 @@
 import type { QualityProfile } from '../api'
+import { t } from '../i18n.ts'
 
 // A one-line, plain-language description of what a quality profile gets you.
 export function profileBlurb(p: QualityProfile): string {
   const n = p.name.toLowerCase()
-  if (n.startsWith('cinema')) return 'Recordings made in a cinema (CAM, TeleSync) and screeners. Poor picture and sound, so only worth it for a film you can\'t wait for.'
-  if (n === 'any') return 'Takes the first thing it finds, even at low quality. Gets things fastest.'
-  if (n.startsWith('720')) return 'Smaller files (about 1 to 4 GB a movie). Good for phones, tablets and slow connections.'
-  if (n.startsWith('1080')) return 'Full HD, the sweet spot for most TVs (about 4 to 15 GB a movie). Recommended.'
-  if (n.startsWith('4k') || n.includes('2160') || n.includes('ultra')) return 'Best picture for 4K TVs (about 15 to 60 GB a movie). Only takes 4K, so a title waits until a 4K release exists.'
-  return `Up to ${p.cutoff}. A profile you made.`
+  if (n.startsWith('cinema')) return t("Recordings made in a cinema (CAM, TeleSync) and screeners. Poor picture and sound, so only worth it for a film you can't wait for.")
+  if (n === 'any') return t('Takes the first thing it finds, even at low quality. Gets things fastest.')
+  if (n.startsWith('720')) return t('Smaller files (about 1 to 4 GB a movie). Good for phones, tablets and slow connections.')
+  if (n.startsWith('1080')) return t('Full HD, the sweet spot for most TVs (about 4 to 15 GB a movie). Recommended.')
+  if (n.startsWith('4k') || n.includes('2160') || n.includes('ultra')) return t('Best picture for 4K TVs (about 15 to 60 GB a movie). Only takes 4K, so a title waits until a 4K release exists.')
+  return t('Up to {cutoff}. A profile you made.', { cutoff: p.cutoff })
 }
 
 // How good a profile aims to be, from its cutoff: 720p < 1080p < 4K.

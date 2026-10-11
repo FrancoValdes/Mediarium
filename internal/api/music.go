@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/rdborg/mediarium/internal/listenbrainz"
+	"github.com/rdborg/mediarium/internal/lrclib"
 	"github.com/rdborg/mediarium/internal/musicbrainz"
 	"github.com/rdborg/mediarium/internal/organizer"
 	"github.com/rdborg/mediarium/internal/settings"
@@ -21,6 +22,12 @@ type musicState struct {
 
 	lbMu sync.Mutex
 	lb   *listenbrainz.Client // Discover lists (music_discover.go); created on first use
+
+	playerMu   sync.Mutex
+	lyrics     *lrclib.Client          // online lyrics (music_lyrics.go); created on first use
+	scrobble   *listenbrainz.Submitter // sends plays to ListenBrainz (music_scrobble.go); created on first use
+	lyricsAt   keyedLocks              // one online lookup per track at a time
+	scrobbleAt keyedLocks              // one send of kept plays per account at a time
 }
 
 // MusicBrainz returns the MusicBrainz client. There is one per server, so

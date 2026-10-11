@@ -17,11 +17,13 @@ services:
       - DOWNLOADS_DIR=${DOWNLOADS_DIR:-/data/downloads}
       - MOVIES_DIR=${MOVIES_DIR:-/data/movies}
       - TV_DIR=${TV_DIR:-/data/tv}
-      # Optional folders (music today; ebooks and audiobooks are on the way).
+      # Optional folders for music, ebooks and audiobooks.
       # Empty means the app's own default (/music, /ebooks, /audiobooks).
       - MUSIC_DIR=${MUSIC_DIR:-}
       - EBOOKS_DIR=${EBOOKS_DIR:-}
       - AUDIOBOOKS_DIR=${AUDIOBOOKS_DIR:-}
+      # Optional: the permissions new files get, for example 022 or 002. Empty keeps the default.
+      - UMASK=${UMASK:-}
     volumes:
       # Mediarium's own settings and database.
       - ${CONFIG_PATH:-/srv/mediarium/config}:/config

@@ -27,12 +27,24 @@ func hasToken(normalizedRelease, token string) bool {
 // matches dominate; rating and popularity break ties.
 func Score(r Result, videoName string) float64 {
 	video := parser.Parse(videoName)
-	rel := normalizeRelease(r.Release)
-
-	score := 0.0
+	score := releaseScore(r.Release, video)
+	for _, other := range r.Releases {
+		score = max(score, releaseScore(other, video))
+	}
 	if r.HashMatch {
 		score += HashMatchScore
 	}
+	dl := float64(r.DownloadsAll) / 1000
+	if dl > 40 {
+		dl = 40
+	}
+	return score + dl + r.Rating*2
+}
+
+// releaseScore is how closely one release name matches the video's.
+func releaseScore(release string, video parser.Release) float64 {
+	rel := normalizeRelease(release)
+	score := 0.0
 	if hasToken(rel, video.Group) {
 		score += 100
 	}
@@ -45,11 +57,7 @@ func Score(r Result, videoName string) float64 {
 	if hasToken(rel, video.Codec) {
 		score += 20
 	}
-	dl := float64(r.DownloadsAll) / 1000
-	if dl > 40 {
-		dl = 40
-	}
-	return score + dl + r.Rating*2
+	return score
 }
 
 // Pick returns the best-fitting result for videoName, or nil if there are

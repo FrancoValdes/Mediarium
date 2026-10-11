@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { api } from '../api'
+import { t } from '../i18n'
 import { USENET_PROVIDERS } from '../usenetProviders'
 import Icon from './Icon'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
@@ -60,12 +61,12 @@ export default function UsenetServerForm({
   const detailsKey = `${d.host.trim()}|${d.port}|${d.useSsl}|${d.username}|${d.password}`
   const tested = test.state === 'ok' && test.forKey === detailsKey
   const v = useValidation({
-    name: maxLength(d.name, 80, 'The name'),
-    host: firstError(required(d.host, 'Add the address of your Usenet server, for example news.example.com.'), hostOrIP(d.host, 'news.example.com')),
-    port: firstError(required(d.port || '', 'Port must be a number between 1 and 65535.'), portCheck(d.port)),
-    username: d.password.trim() ? required(d.username, 'Add the username that goes with this password.') : null,
-    connections: numberRange(d.connections, 'Connections', { min: 1, max: 100, allowBlank: false }),
-    ...(showPriority ? { priority: numberRange(d.priority, 'Priority', { min: 0, max: 99, allowBlank: false }) } : {}),
+    name: maxLength(d.name, 80, t('The name')),
+    host: firstError(required(d.host, t('Add the address of your Usenet server, for example news.example.com.')), hostOrIP(d.host, 'news.example.com')),
+    port: firstError(required(d.port || '', t('Port must be a number between 1 and 65535.')), portCheck(d.port)),
+    username: d.password.trim() ? required(d.username, t('Add the username that goes with this password.')) : null,
+    connections: numberRange(d.connections, t('Connections'), { min: 1, max: 100, allowBlank: false }),
+    ...(showPriority ? { priority: numberRange(d.priority, t('Priority'), { min: 0, max: 99, allowBlank: false }) } : {}),
   })
 
   function applyPreset(name: string) {
@@ -101,9 +102,9 @@ export default function UsenetServerForm({
       <div className="form-cols">
         {!editing && (
           <label>
-            Provider
+            {t('Provider')}
             <select value={preset} onChange={(e) => applyPreset(e.target.value)}>
-              <option value="">Other (type the details)</option>
+              <option value="">{t('Other (type the details)')}</option>
               {USENET_PROVIDERS.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.name}
@@ -113,63 +114,63 @@ export default function UsenetServerForm({
           </label>
         )}
         <label>
-          Name
-          <input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} placeholder="e.g. My provider" {...v.bind('name', d.name, (t) => setD((c) => ({ ...c, name: t })))} />
+          {t('Name')}
+          <input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} placeholder={t('e.g. My provider')} {...v.bind('name', d.name, (t) => setD((c) => ({ ...c, name: t })))} />
           <FieldError v={v} name="name" />
         </label>
         <label>
-          Server host
+          {t('Server host')}
           <input value={d.host} onChange={(e) => setD({ ...d, host: e.target.value })} placeholder="news.example.com" {...v.bind('host', d.host, (t) => setD((c) => ({ ...c, host: t })))} />
           <FieldError v={v} name="host" />
         </label>
         <label>
-          Port
+          {t('Port')}
           <input type="number" value={d.port} onChange={(e) => setD({ ...d, port: Number(e.target.value) })} {...v.bind('port')} />
           <FieldError v={v} name="port" />
         </label>
         <label>
-          Username
+          {t('Username')}
           <input value={d.username} onChange={(e) => setD({ ...d, username: e.target.value })} autoComplete="off" {...v.bind('username', d.username, (t) => setD((c) => ({ ...c, username: t })))} />
           <FieldError v={v} name="username" />
         </label>
         <label>
-          Password
+          {t('Password')}
           <input
             type="password"
             value={d.password}
             onChange={(e) => setD({ ...d, password: e.target.value })}
-            placeholder={editing && d.hasPassword ? 'leave blank to keep the saved password' : ''}
+            placeholder={editing && d.hasPassword ? t('leave blank to keep the saved password') : ''}
             autoComplete="new-password"
             {...v.bind('password')}
           />
         </label>
         <label>
-          Connections
+          {t('Connections')}
           <input type="number" min={1} max={100} value={d.connections} onChange={(e) => setD({ ...d, connections: Number(e.target.value) })} {...v.bind('connections')} />
           <FieldError v={v} name="connections" />
-          <small className="field-hint">Start with 10. Stay within your plan's limit, and count any other program using the same login.</small>
+          <small className="field-hint">{t("Start with 10. Stay within your plan's limit, and count any other program using the same login.")}</small>
         </label>
         {showPriority && (
           <label>
-            Priority
+            {t('Priority')}
             <input type="number" min={0} max={99} value={d.priority} onChange={(e) => setD({ ...d, priority: Number(e.target.value) })} {...v.bind('priority')} />
             <FieldError v={v} name="priority" />
-            <small className="field-hint">0 is the main provider. Higher numbers are backups.</small>
+            <small className="field-hint">{t('0 is the main provider. Higher numbers are backups.')}</small>
           </label>
         )}
         <div className="cell-check">
-          <span className="cell-label">Security</span>
+          <span className="cell-label">{t('Security')}</span>
           <label className="check-row">
             <input type="checkbox" checked={d.useSsl} onChange={(e) => setD({ ...d, useSsl: e.target.checked, port: e.target.checked && d.port === 119 ? 563 : !e.target.checked && d.port === 563 ? 119 : d.port })} />
-            Use SSL (recommended)
+            {t('Use SSL (recommended)')}
           </label>
         </div>
         {editing && (
           <div className="cell-check">
-            <span className="cell-label">Status</span>
+            <span className="cell-label">{t('Status')}</span>
             <label className="check-row">
               <input type="checkbox" checked={d.enabled} onChange={(e) => setD({ ...d, enabled: e.target.checked })} />
-              Enabled
+              {t('Enabled')}
             </label>
           </div>
         )}
@@ -177,23 +178,23 @@ export default function UsenetServerForm({
       <div className="form-actions">
         <div className="fa-left">
           {left}
-          {onCancel && <button onClick={onCancel}>Cancel</button>}
+          {onCancel && <button onClick={onCancel}>{t('Cancel')}</button>}
         </div>
         <div className="fa-mid">
           <button className="btn-with-icon" onClick={() => void runTest()} disabled={test.state === 'running'}>
-            <Icon name="refresh" size={15} /> {test.state === 'running' ? 'Testing…' : 'Test connection'}
+            <Icon name="refresh" size={15} /> {test.state === 'running' ? t('Testing…') : t('Test connection')}
           </button>
-          <button className="primary btn-with-icon" onClick={() => void submit()} disabled={!tested || busy} title={tested ? '' : 'Test the connection first'}>
+          <button className="primary btn-with-icon" onClick={() => void submit()} disabled={!tested || busy} title={tested ? '' : t('Test the connection first')}>
             <Icon name="plus" size={15} /> {submitLabel}
           </button>
         </div>
         <div className="fa-right">{right}</div>
       </div>
-      {!tested && test.state !== 'fail' && <small className="test-hint">Test the connection to unlock {submitLabel}.</small>}
-      <FormProblem v={v} verb="test the connection" />
+      {!tested && test.state !== 'fail' && <small className="test-hint">{t('Test the connection to unlock {action}.', { action: submitLabel })}</small>}
+      <FormProblem v={v} verb={t('test the connection')} />
       {test.forKey === detailsKey && test.state === 'ok' && (
         <div className="test-result ok">
-          <Icon name="check" size={15} /> {test.message || 'Connected.'}
+          <Icon name="check" size={15} /> {test.message || t('Connected.')}
         </div>
       )}
       {test.forKey === detailsKey && test.state === 'fail' && (

@@ -52,11 +52,12 @@ func TestTitleSearchMergesMoviesAndShowsAndFlagsLibrary(t *testing.T) {
 	if len(res) != 2 {
 		t.Fatalf("expected the movie and the show (person dropped), got %+v", res)
 	}
-	if res[0]["kind"] != "movie" || res[0]["inLibrary"] != true || res[0]["status"] != "missing" || res[0]["year"] != float64(1999) {
-		t.Fatalf("movie hit should be flagged as in the library: %+v", res[0])
+	// The newest comes first, so the 2011 show is above the 1999 film.
+	if res[0]["kind"] != "tv" || res[0]["inLibrary"] != false || res[0]["title"] != "Matrix Show" {
+		t.Fatalf("show hit: %+v", res[0])
 	}
-	if res[1]["kind"] != "tv" || res[1]["inLibrary"] != false || res[1]["title"] != "Matrix Show" {
-		t.Fatalf("show hit: %+v", res[1])
+	if res[1]["kind"] != "movie" || res[1]["inLibrary"] != true || res[1]["status"] != "missing" || res[1]["year"] != float64(1999) {
+		t.Fatalf("movie hit should be flagged as in the library: %+v", res[1])
 	}
 }
 

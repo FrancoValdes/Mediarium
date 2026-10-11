@@ -13,6 +13,7 @@ import (
 
 	"github.com/rdborg/mediarium/internal/auth"
 	"github.com/rdborg/mediarium/internal/backup"
+	"github.com/rdborg/mediarium/internal/cloudbackup"
 )
 
 // defaultRestartDelay gives the restore response time to reach the browser
@@ -108,8 +109,9 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleRestore takes a backup zip (form field "file", at most 1 GB), checks
-// it strictly, stages it in <config>/restore-pending/ and restarts the app so
+// handleRestore takes a backup zip (form field "file", at most 1 GB), or a
+// cloud copy locked with a passphrase (form field "passphrase"), checks it
+// strictly, stages it in <config>/restore-pending/ and restarts the app so
 // main applies it before the database is opened.
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) || !requireSession(w, r) {
@@ -130,7 +132,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upload, err := s.receiveBackupUpload(mr)
+	upload, passphrase, err := s.receiveBackupUpload(mr)
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		switch {
@@ -146,7 +148,24 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.Remove(upload)
 
-	if _, err := backup.Stage(s.cfg.ConfigDir, upload); err != nil {
+	zipPath, err := unlockUpload(upload, passphrase)
+	switch {
+	case errors.Is(err, errNeedPassphrase):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "This backup is locked. Enter the passphrase it was locked with.", "needPassphrase": true})
+		return
+	case errors.Is(err, cloudbackup.ErrWrongPassphrase):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "That passphrase doesn't open this backup (or the file is damaged).", "needPassphrase": true})
+		return
+	case err != nil:
+		log.Printf("backup: unlock restore upload: %v", err)
+		writeError(w, http.StatusBadRequest, "The backup couldn't be unlocked. Check the file and try again.")
+		return
+	}
+	if zipPath != upload {
+		defer os.Remove(zipPath)
+	}
+
+	if _, err := backup.Stage(s.cfg.ConfigDir, zipPath); err != nil {
 		var invalid *backup.InvalidError
 		if errors.As(err, &invalid) {
 			writeError(w, http.StatusBadRequest, invalid.Reason)
@@ -166,6 +185,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	if delay == 0 {
 		delay = defaultRestartDelay
 	}
+	s.restartInPlace.Store(true)
 	go func() {
 		time.Sleep(delay)
 		s.exit()
@@ -178,38 +198,56 @@ var (
 )
 
 // receiveBackupUpload copies the "file" part into a temporary file in the
-// config folder (same disk as the staging area) and returns its path. The
+// config folder (same disk as the staging area) and returns its path, with
+// the "passphrase" field when one was sent (before or after the file). The
 // part is capped at backup.MaxRestoreBytes exactly.
-func (s *Server) receiveBackupUpload(mr *multipart.Reader) (string, error) {
+func (s *Server) receiveBackupUpload(mr *multipart.Reader) (path, passphrase string, err error) {
+	defer func() {
+		if err != nil && path != "" {
+			os.Remove(path)
+			path = ""
+		}
+	}()
 	for {
 		part, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
-			return "", errNoBackupFile
+			if path == "" {
+				return "", "", errNoBackupFile
+			}
+			return path, passphrase, nil
 		}
 		if err != nil {
-			return "", err
+			return path, "", err
 		}
-		if part.FormName() != "file" {
+		switch part.FormName() {
+		case "passphrase":
+			b, err := io.ReadAll(io.LimitReader(part, 1024))
+			if err != nil {
+				return path, "", err
+			}
+			passphrase = string(b)
+		case "file":
+			if path != "" {
+				part.Close()
+				continue
+			}
+			tmp, err := os.CreateTemp(s.cfg.ConfigDir, ".restore-upload-*.zip")
+			if err != nil {
+				return "", "", fmt.Errorf("create upload file: %w", err)
+			}
+			path = tmp.Name()
+			n, copyErr := io.Copy(tmp, io.LimitReader(part, backup.MaxRestoreBytes+1))
+			closeErr := tmp.Close()
+			switch {
+			case copyErr != nil:
+				return path, "", copyErr
+			case closeErr != nil:
+				return path, "", fmt.Errorf("write upload file: %w", closeErr)
+			case n > backup.MaxRestoreBytes:
+				return path, "", errBackupTooLarge
+			}
+		default:
 			part.Close()
-			continue
 		}
-		tmp, err := os.CreateTemp(s.cfg.ConfigDir, ".restore-upload-*.zip")
-		if err != nil {
-			return "", fmt.Errorf("create upload file: %w", err)
-		}
-		n, copyErr := io.Copy(tmp, io.LimitReader(part, backup.MaxRestoreBytes+1))
-		closeErr := tmp.Close()
-		switch {
-		case copyErr != nil:
-			os.Remove(tmp.Name())
-			return "", copyErr
-		case closeErr != nil:
-			os.Remove(tmp.Name())
-			return "", fmt.Errorf("write upload file: %w", closeErr)
-		case n > backup.MaxRestoreBytes:
-			os.Remove(tmp.Name())
-			return "", errBackupTooLarge
-		}
-		return tmp.Name(), nil
 	}
 }

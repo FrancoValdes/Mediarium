@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { api, isAdmin, type Book, type BookFormat, type BulkResult, type BulkTitle, type Movie, type MusicArtist, type QualityProfile, type QueueItem, type Series, type SourcePref } from '../api'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { api, can, isAdmin, type Book, type BookFormat, type BulkResult, type BulkTitle, type CollectionListItem, type Movie, type MusicArtist, type QualityProfile, type QueueItem, type Series, type SourcePref } from '../api'
 import { useAuth } from '../AuthContext'
 import { useKinds, useModules, type MediaKind } from '../ModulesContext'
 import MusicLibrary from './MusicLibrary'
@@ -9,8 +9,12 @@ import ActionMenu from '../components/ActionMenu'
 import BulkBar from '../components/BulkBar'
 import { BulkTagMenu, TagChips } from '../components/Tags'
 import Dropdown from '../components/Dropdown'
-import Icon from '../components/Icon'
+import Icon, { type IconName } from '../components/Icon'
+import KindGlyph from '../components/KindGlyph'
+import MoveToFolderDialog from '../components/MoveToFolderDialog'
 import PosterCard, { PosterFallback, type CardAction } from '../components/PosterCard'
+import StarterPicks from '../components/StarterPicks'
+import { WindowedBody, WindowedGrid } from '../components/Windowed'
 import { sortProfiles } from '../components/qualityBlurb'
 import { detailsState, movieState, progressFor, seriesState, type ItemState } from '../components/state'
 import { useToast } from '../components/Toast'
@@ -19,10 +23,16 @@ import { useConfirm } from '../components/ConfirmProvider'
 import { useLive } from '../useLive'
 import { chosenOf, count, failureLines, nameList, selectAllKeys, selectionText, selectRange, toggleKey } from '../librarySelection'
 import { removeOption } from '../diskUsage'
+import FilterToggle from '../components/FilterToggle'
+import InfoTip from '../components/InfoTip'
+import HelpLink from '../components/HelpLink'
+import { useUrlState } from '../useUrlState'
+import { plural, t, tx } from '../i18n'
 
 type Kind = 'movie' | 'tv'
 type View = 'grid' | 'list'
-type Sort = 'added' | 'title' | 'year' | 'status'
+type Sort = 'added' | 'title' | 'released' | 'size' | 'status'
+const SORTS: Sort[] = ['added', 'title', 'released', 'size', 'status']
 
 // One shape for a movie or a show, so filtering, sorting, selecting and the
 // action buttons work the same for both.
@@ -46,12 +56,20 @@ interface Item {
   genres: string[]
   tags: string[]
   gettingDetails: boolean // an import is still filling in this title's details
+  copies: number // second copies kept in another quality
+  released: string // "2024-03-01", or the year alone when that is all there is
+  sizeBytes: number // on disk
 }
 
 // The most titles one "search now" for a selection looks up (the server enforces it).
 const BULK_SEARCH_LIMIT = 25
 
-const STORAGE = { kind: 'mediarium-library-tab', view: 'mediarium-library-view', sort: 'mediarium-library-sort', reverse: 'mediarium-library-reverse' }
+const STORAGE = { kind: 'mediarium-library-tab', view: 'mediarium-library-view', sort: 'mediarium-library-sort', reverse: 'mediarium-library-reverse', size: 'mediarium-library-poster-size' }
+
+// Poster widths the size slider moves between, in pixels.
+const POSTER_MIN = 110
+const POSTER_MAX = 280
+const POSTER_DEFAULT = 168
 const remember = (k: string, v: string) => {
   try {
     localStorage.setItem(k, v)
@@ -73,6 +91,9 @@ function fromMovie(m: Movie, queue: QueueItem[]): Item {
     monitored: m.monitored !== false, profileId: m.profileId ?? 0, status: m.status, quality: m.quality, have: m.status === 'downloaded' ? 1 : 0, total: 1, filePath: m.filePath,
     state: detailsState(m) ?? movieState(m, queue), live: progressFor(queue, (q) => q.movieId === m.id && !q.seriesId), genres: m.genres ?? [], tags: m.tags ?? [],
     gettingDetails: !!m.detailsState,
+    copies: m.copies ?? 0,
+    released: m.releaseDate || (m.year ? String(m.year) : ''),
+    sizeBytes: m.sizeBytes ?? 0,
   }
 }
 
@@ -83,19 +104,24 @@ function fromSeries(s: Series, queue: QueueItem[]): Item {
     monitored: s.monitored, profileId: s.profileId ?? 0, status, have: s.downloadedCount, total: s.episodeCount,
     state: detailsState(s) ?? seriesState(s, queue), live: progressFor(queue, (q) => q.seriesId === s.id), genres: s.genres ?? [], tags: s.tags ?? [],
     gettingDetails: !!s.detailsState,
+    copies: s.copies ?? 0,
+    released: s.firstAirDate || (s.year ? String(s.year) : ''),
+    sizeBytes: s.sizeBytes ?? 0,
   }
 }
 
 const STATE_FILTERS: { id: string; label: string; test: (i: Item) => boolean }[] = [
-  { id: 'all', label: 'All', test: () => true },
-  { id: 'downloaded', label: 'Downloaded', test: (i) => i.state.key === 'downloaded' },
-  { id: 'downloading', label: 'Downloading', test: (i) => i.state.key === 'downloading' },
-  { id: 'pending', label: 'Pending', test: (i) => i.state.key === 'pending' },
-  { id: 'searching', label: 'Waiting for a release', test: (i) => i.state.key === 'searching' },
-  { id: 'partial', label: 'Partial', test: (i) => i.state.key === 'partial' },
-  { id: 'added', label: 'Not monitored', test: (i) => i.state.key === 'added' },
-  { id: 'failed', label: 'Failed', test: (i) => i.state.key === 'failed' },
+  { id: 'all', label: t('All'), test: () => true },
+  { id: 'downloaded', label: t('Downloaded'), test: (i) => i.state.key === 'downloaded' },
+  { id: 'downloading', label: t('Downloading'), test: (i) => i.state.key === 'downloading' },
+  { id: 'pending', label: t('Pending'), test: (i) => i.state.key === 'pending' },
+  { id: 'searching', label: t('Waiting for a release'), test: (i) => i.state.key === 'searching' },
+  { id: 'partial', label: t('Partial'), test: (i) => i.state.key === 'partial' },
+  { id: 'added', label: t('Not monitored'), test: (i) => i.state.key === 'added' },
+  { id: 'failed', label: t('Failed'), test: (i) => i.state.key === 'failed' },
 ]
+// The symbol each state filter wears (the same ones the posters' pills use).
+const FILTER_ICON: Record<string, IconName> = { all: 'grid', downloaded: 'check', downloading: 'download', pending: 'clock', searching: 'search', partial: 'download', added: 'bookmark', failed: 'warning' }
 const FILTERS: Record<Kind, { id: string; label: string; test: (i: Item) => boolean }[]> = { movie: STATE_FILTERS, tv: STATE_FILTERS }
 
 // Your library: movies and shows as posters or a list, with the things you do
@@ -103,17 +129,25 @@ const FILTERS: Record<Kind, { id: string; label: string; test: (i: Item) => bool
 // remove) and a select mode for doing them to many at once.
 // A Library tab: a kind of media, or one of the two book formats.
 type Tab = MediaKind | BookFormat
-const TAB_LABEL: Record<Tab, string> = { movie: 'Movies', tv: 'TV', music: 'Music', ebook: 'Ebooks', audiobook: 'Audiobooks' }
+// Each tab wears its kind's colour, as everywhere else.
+const TAB_COLOR: Record<Tab, string> = { movie: 'var(--c-movie)', tv: 'var(--c-tv)', music: 'var(--c-music)', ebook: 'var(--c-book)', audiobook: 'var(--c-audiobook)' }
+
+const TAB_LABEL: Record<Tab, string> = { movie: t('Movies'), tv: t('TV'), music: t('Music'), ebook: t('Ebooks'), audiobook: t('Audiobooks') }
 const isTab = (v: string | null): v is Tab => v !== null && v in TAB_LABEL
 
 export default function Library() {
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const confirm = useConfirm()
   const navigate = useNavigate()
   const toast = useToast()
   // Removing titles, changing their quality profile and importing a library
   // are for administrators.
-  const admin = isAdmin(useAuth().user)
-  const [params] = useSearchParams()
+  const me = useAuth().user
+  const admin = isAdmin(me)
+  // Searching and monitoring need the "manage" permission; a viewer only looks.
+  const canManage = can(me, 'manage')
+  // The tab and the filters live in the address, so Back from a title brings the list back as it was.
+  const [ui, patchUi] = useUrlState({ kind: 'movie', st: 'all', q: '', genre: '', tag: '', decade: '', collection: '' })
   const { on } = useModules()
   const musicOn = on('music')
   const booksOn = on('ebooks') || on('audiobooks')
@@ -124,15 +158,8 @@ export default function Library() {
     ...(on('ebooks') ? (['ebook'] as const) : []),
     ...(on('audiobooks') ? (['audiobook'] as const) : []),
   ]
-  const [tab, setTab] = useState<Tab>(() => {
-    // The Library always opens on the first tab (Movies) unless a link asks for another.
-    const asked = params.get('kind')
-    return isTab(asked) ? asked : 'movie'
-  })
-  useEffect(() => {
-    const asked = params.get('kind')
-    if (isTab(asked)) setTab(asked)
-  }, [params])
+  // The Library opens on the first tab (Movies) unless the address asks for another.
+  const tab: Tab = isTab(ui.kind) ? ui.kind : 'movie'
   // A kind that is switched off cannot be shown: fall back to the first that is on.
   const active: Tab = kinds.includes(tab) ? tab : kinds[0]
   const kind: Kind = active === 'tv' ? 'tv' : 'movie'
@@ -145,10 +172,25 @@ export default function Library() {
   const [profiles, setProfiles] = useState<QualityProfile[]>([])
   const [defaultProfile, setDefaultProfile] = useState(0)
   const [error, setError] = useState('')
-  const [text, setText] = useState('')
-  const [filter, setFilter] = useState('all')
+  const text = ui.q
+  const setText = (v: string) => patchUi({ q: v })
+  const filter = ui.st
+  const setFilter = (v: string) => patchUi({ st: v })
   // The sort and its direction are remembered in this browser.
-  const [sort, setSortState] = useState<Sort>(() => (['added', 'title', 'year', 'status'].includes(recall(STORAGE.sort) ?? '') ? (recall(STORAGE.sort) as Sort) : 'added'))
+  const [sort, setSortState] = useState<Sort>(() => {
+    const saved = recall(STORAGE.sort)
+    if (saved === 'year') return 'released' // the older name of this sort
+    return SORTS.includes(saved as Sort) ? (saved as Sort) : 'added'
+  })
+  // The poster size in the grid, remembered in this browser.
+  const [posterSize, setPosterSizeState] = useState(() => {
+    const n = Number(recall(STORAGE.size))
+    return n >= POSTER_MIN && n <= POSTER_MAX ? n : POSTER_DEFAULT
+  })
+  const setPosterSize = (n: number) => {
+    setPosterSizeState(n)
+    remember(STORAGE.size, String(n))
+  }
   const [reverse, setReverseState] = useState(() => recall(STORAGE.reverse) === '1')
   const setSort = (s: Sort) => {
     setSortState(s)
@@ -158,28 +200,51 @@ export default function Library() {
     setReverseState(r)
     remember(STORAGE.reverse, r ? '1' : '0')
   }
-  const [genre, setGenre] = useState('')
-  const [tag, setTag] = useState('')
-  const [decade, setDecade] = useState('')
+  const genre = ui.genre
+  const setGenre = (v: string) => patchUi({ genre: v })
+  const tag = ui.tag
+  const setTag = (v: string) => patchUi({ tag: v })
+  const decade = ui.decade
+  const setDecade = (v: string) => patchUi({ decade: v })
+  const collection = ui.collection
+  const setCollection = (v: string) => patchUi({ collection: v })
+  // The series of films (trilogies, franchises) with a film in the library, for the Collection filter.
+  const [collections, setCollections] = useState<CollectionListItem[]>([])
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const anchor = useRef<string | null>(null) // the last one ticked, for shift-click
   const [note, setNote] = useState<{ message: string; lines: string[] } | null>(null)
   const [busy, setBusy] = useState(false)
+  // The folders a title can be kept in (the main one first), and the folder being moved to.
+  const [libraryFolders, setLibraryFolders] = useState<{ movies: string[]; tv: string[] }>({ movies: [], tv: [] })
+  const [moveTo, setMoveTo] = useState<{ folder: string; titles: BulkTitle[] } | null>(null)
 
+  // Every few seconds the lists are read again; an answer that is the same as what is on screen changes nothing, so
+  // a big library is not redrawn for no reason.
+  const seen = useRef<{ movies?: [QueueItem[], Movie[]]; shows?: [QueueItem[], Series[]] }>({})
   const load = useCallback(() => {
-    api
-      .listQueue()
-      .catch(() => [] as QueueItem[])
-      .then((queue) => {
-        // A list that arrives clears an earlier message, so one failed refresh does not stay on the page.
-        const failed = (e: unknown) => setError(e instanceof Error ? e.message : String(e))
-        api.listMovies().then((m) => { setMovies(m.map((x) => fromMovie(x, queue))); setError('') }).catch(failed)
-        api.listSeries().then((s) => { setShows(s.map((x) => fromSeries(x, queue))); setError('') }).catch(failed)
-        if (musicOn) api.listArtists().then((a) => { setArtists(a); setError('') }).catch(failed)
-        if (booksOn) api.listBooks().then((b) => { setBookList(b); setError('') }).catch(failed)
-        setQueueNow(queue)
-      })
+    // All of it is asked at once; the queue only adds each title's progress, so nothing waits for it.
+    const queue = api.listQueue().catch(() => [] as QueueItem[])
+    const same = <T,>(next: T) => (prev: T | null): T => (prev !== null && JSON.stringify(prev) === JSON.stringify(next) ? prev : next)
+    // A list that arrives clears an earlier message, so one failed refresh does not stay on the page.
+    const failed = (e: unknown) => setError(e instanceof Error ? e.message : String(e))
+    // The server answers "nothing changed" with the very same objects as last time. Then neither the titles nor the
+    // queue are new, and there is nothing to build, compare or draw.
+    Promise.all([queue, api.listMovies()]).then(([q, m]) => {
+      setError('')
+      if (seen.current.movies?.[0] === q && seen.current.movies[1] === m) return
+      seen.current.movies = [q, m]
+      setMovies(same(m.map((x) => fromMovie(x, q))))
+    }).catch(failed)
+    Promise.all([queue, api.listSeries()]).then(([q, s]) => {
+      setError('')
+      if (seen.current.shows?.[0] === q && seen.current.shows[1] === s) return
+      seen.current.shows = [q, s]
+      setShows(same(s.map((x) => fromSeries(x, q))))
+    }).catch(failed)
+    if (musicOn) api.listArtists().then((a) => { setArtists(same(a)); setError('') }).catch(failed)
+    if (booksOn) api.listBooks().then((b) => { setBookList(same(b)); setError('') }).catch(failed)
+    queue.then((q) => setQueueNow(same(q)))
   }, [musicOn, booksOn])
   useEffect(() => {
     load()
@@ -192,41 +257,49 @@ export default function Library() {
     }).catch(() => undefined)
   }, [])
 
+  const movieCount = movies?.length
+  useEffect(() => {
+    api.collections().then(setCollections).catch(() => undefined)
+  }, [movieCount])
+
+  useEffect(() => {
+    if (admin) api.libraryFolders().then(setLibraryFolders).catch(() => undefined)
+  }, [admin])
+  const folderChoices = kind === 'movie' ? libraryFolders.movies : libraryFolders.tv
+
   const items = kind === 'movie' ? movies : shows
   const shown = useMemo(() => {
     if (!items) return null
     const test = FILTERS[kind].find((f) => f.id === filter)?.test ?? (() => true)
     const needle = text.trim().toLowerCase()
+    const inCollection = kind === 'movie' && collection ? new Set(collections.find((c) => String(c.id) === collection)?.movieIds ?? []) : null
     const list = items.filter(
       (i) =>
         test(i) &&
         (!needle || i.title.toLowerCase().includes(needle)) &&
         (!genre || i.genres.includes(genre)) &&
         (!tag || i.tags.some((t) => t.toLowerCase() === tag.toLowerCase())) &&
-        (!decade || (i.year >= Number(decade) && i.year < Number(decade) + 10)),
+        (!decade || (i.year >= Number(decade) && i.year < Number(decade) + 10)) &&
+        (!inCollection || inCollection.has(i.id)),
     )
     if (sort === 'title') list.sort((a, b) => a.title.localeCompare(b.title))
-    else if (sort === 'year') list.sort((a, b) => b.year - a.year)
+    else if (sort === 'released') list.sort((a, b) => b.released.localeCompare(a.released) || a.title.localeCompare(b.title))
+    else if (sort === 'size') list.sort((a, b) => b.sizeBytes - a.sizeBytes || a.title.localeCompare(b.title))
     else if (sort === 'status') list.sort((a, b) => a.state.key.localeCompare(b.state.key) || a.title.localeCompare(b.title))
     if (reverse) list.reverse()
     return list
-  }, [items, kind, filter, text, sort, reverse, genre, tag, decade])
+  }, [items, kind, filter, text, sort, reverse, genre, tag, decade, collection, collections])
   // Everything that narrows the list (sorting does not), and the way back.
-  const filtersActive = text.trim() !== '' || filter !== 'all' || genre !== '' || tag !== '' || decade !== ''
+  const filtersActive = text.trim() !== '' || filter !== 'all' || genre !== '' || tag !== '' || decade !== '' || (kind === 'movie' && collection !== '')
   function clearFilters() {
-    setText('')
-    setFilter('all')
-    setGenre('')
-    setTag('')
-    setDecade('')
+    patchUi({ q: '', st: 'all', genre: '', tag: '', decade: '', collection: '' })
   }
   const genreOptions = useMemo(() => [...new Set((items ?? []).flatMap((i) => i.genres))].sort(), [items])
   const tagOptions = useMemo(() => [...new Set((items ?? []).flatMap((i) => i.tags))].sort((a, b) => a.localeCompare(b)), [items])
   const decadeOptions = useMemo(() => [...new Set((items ?? []).filter((i) => i.year).map((i) => Math.floor(i.year / 10) * 10))].sort((a, b) => b - a), [items])
 
   function chooseKind(k: Tab) {
-    setTab(k)
-    setFilter('all')
+    patchUi({ kind: k, st: 'all' })
     setSelected(new Set())
   }
   function chooseView(v: View) {
@@ -264,29 +337,33 @@ export default function Library() {
     }
   }
   const setMonitored = (i: Item, v: boolean) =>
-    run(() => (i.kind === 'movie' ? api.setMovieMonitored(i.id, v) : api.setSeriesMonitored(i.id, v)), `${i.title} ${v ? 'is now monitored' : 'is no longer monitored'}.`)
+    run(() => (i.kind === 'movie' ? api.setMovieMonitored(i.id, v) : api.setSeriesMonitored(i.id, v)), v ? t('{title} is now monitored.', { title: i.title }) : t('{title} is no longer monitored.', { title: i.title }))
 
   // One title's Remove button on its card or row: the question and the
   // "also delete the files" box are the same as ever.
   async function removeOne(i: Item) {
     const usage = await (i.kind === 'movie' ? api.movieDiskUsage(i.id) : api.seriesDiskUsage(i.id)).catch(() => null)
     const answer = await confirm({
-      title: `Remove ${i.title} from your library?`,
-      body: <p>Mediarium stops tracking it. You can add it back any time.</p>,
-      confirmLabel: 'Remove',
+      title: t('Remove {title} from your library?', { title: i.title }),
+      body: <p>{t('Mediarium stops tracking it. You can add it back any time.')}</p>,
+      confirmLabel: t('Remove'),
       danger: true,
       option: removeOption(i.kind === 'movie' ? 'movie' : 'show', usage),
     })
     if (!answer) return
     const files = answer.checked
-    await run(() => (i.kind === 'movie' ? api.deleteMovie(i.id, files) : api.deleteSeries(i.id, files)), `Removed ${i.title}${files ? ' and its files' : ''}.`)
+    await run(() => (i.kind === 'movie' ? api.deleteMovie(i.id, files) : api.deleteSeries(i.id, files)), files ? t('Removed {title} and its files.', { title: i.title }) : t('Removed {title}.', { title: i.title }))
   }
 
   const actionsFor = (i: Item): CardAction[] => [
-    { icon: 'search', label: 'Search for a release now', onClick: () => void searchNow(i), disabled: busy },
-    { icon: i.monitored ? 'eye' : 'eye-off', label: i.monitored ? 'Monitored (click to stop)' : 'Not monitored (click to monitor)', onClick: () => void setMonitored(i, !i.monitored), active: i.monitored, disabled: busy },
-    { icon: 'open', label: 'Open', onClick: () => navigate(openPath(i)) },
-    ...(admin ? [{ icon: 'trash', label: 'Remove from library', onClick: () => void removeOne(i), danger: true, disabled: busy } satisfies CardAction] : []),
+    ...(canManage
+      ? [
+          { icon: 'search', label: t('Search for a release now'), onClick: () => void searchNow(i), disabled: busy } satisfies CardAction,
+          { icon: i.monitored ? 'eye' : 'eye-off', label: i.monitored ? t('Monitored (click to stop)') : t('Not monitored (click to monitor)'), onClick: () => void setMonitored(i, !i.monitored), active: i.monitored, disabled: busy } satisfies CardAction,
+        ]
+      : []),
+    { icon: 'open', label: t('Open'), onClick: () => navigate(openPath(i)) },
+    ...(admin ? [{ icon: 'trash', label: t('Remove from library'), onClick: () => void removeOne(i), danger: true, disabled: busy } satisfies CardAction] : []),
   ]
 
   // Ticking one, or a whole stretch with shift held.
@@ -335,26 +412,26 @@ export default function Library() {
     // The same test the server uses: monitored, and something missing.
     const wanted = chosen.filter((i) => i.monitored && (i.kind === 'movie' ? i.status === 'missing' : i.total > 0 && i.have < i.total))
     if (wanted.length === 0) {
-      toast.info('Nothing to search for. Only monitored titles that are missing something are searched.')
+      toast.info(t('Nothing to search for. Only monitored titles that are missing something are searched.'))
       return
     }
     const over = Math.max(0, wanted.length - BULK_SEARCH_LIMIT)
     const answer = await confirm({
-      title: `Search for ${count(Math.min(wanted.length, BULK_SEARCH_LIMIT), noun)} now?`,
+      title: t('Search for {what} now?', { what: count(Math.min(wanted.length, BULK_SEARCH_LIMIT), noun) }),
       body: (
         <>
           <p>
-            {wanted.length} of the {chosen.length} selected {wanted.length === 1 ? 'is' : 'are'} monitored and missing something, so {wanted.length === 1 ? 'that one is' : 'those are'} searched. The rest are left alone.
+            {plural(wanted.length, '{n} of the {total} selected is monitored and missing something, so that one is searched. The rest are left alone.', '{n} of the {total} selected are monitored and missing something, so those are searched. The rest are left alone.', { total: chosen.length })}
           </p>
           {over > 0 && (
             <p>
-              It searches at most {BULK_SEARCH_LIMIT} titles at a time. The other {over} are left to the automatic search.
+              {t('It searches at most {limit} titles at a time. The other {over} are left to the automatic search.', { limit: BULK_SEARCH_LIMIT, over })}
             </p>
           )}
-          <p>The search runs in the background. Anything it finds shows up in Activity.</p>
+          <p>{t('The search runs in the background. Anything it finds shows up in Activity.')}</p>
         </>
       ),
-      confirmLabel: `Search ${Math.min(wanted.length, BULK_SEARCH_LIMIT)}`,
+      confirmLabel: t('Search {n}', { n: Math.min(wanted.length, BULK_SEARCH_LIMIT) }),
     })
     if (!answer) return
     setBusy(true)
@@ -376,27 +453,32 @@ export default function Library() {
     if (n === 0) return
     const what = count(n, noun)
     const answer = await confirm({
-      title: `Remove ${what} from your library?`,
+      title: t('Remove {title} from your library?', { title: what }),
       body: (
         <>
           <p>
             <strong>{nameList(chosen.map((i) => i.title))}</strong>
           </p>
           <p>
-            Mediarium stops tracking {n === 1 ? 'it' : `all ${n}`} and cancels anything still downloading for {n === 1 ? 'it' : 'them'}. You can add {n === 1 ? 'it' : 'them'} back any time.
+            {plural(n, 'Mediarium stops tracking it and cancels anything still downloading for it. You can add it back any time.', 'Mediarium stops tracking all {n} and cancels anything still downloading for them. You can add them back any time.')}
           </p>
           <p>
-            <strong>Your files stay where they are</strong> unless you tick the box below.
+            {tx('{files} unless you tick the box below.', { files: <strong>{t('Your files stay where they are')}</strong> })}
           </p>
         </>
       ),
-      confirmLabel: `Remove ${what}`,
+      confirmLabel: t('Remove {what}', { what }),
       danger: true,
       option: {
-        label: n === 1 ? 'Also delete its files from the disk' : `Also delete the files of all ${n} from the disk`,
-        hint: 'This deletes their folders in your library too. It cannot be undone.',
+        label: n === 1 ? t('Also delete its files from the disk') : t('Also delete the files of all {n} from the disk', { n }),
+        hint: t('This deletes their folders in your library too. It cannot be undone.'),
         defaultChecked: false,
-        warning: n === 1 ? `The files of this ${noun} will be deleted for good.` : `The files of all ${what} will be deleted for good.`,
+        warning:
+          n === 1
+            ? noun === 'movie'
+              ? t('The files of this movie will be deleted for good.')
+              : t('The files of this show will be deleted for good.')
+            : t('The files of all {what} will be deleted for good.', { what }),
       },
     })
     if (!answer) return
@@ -405,7 +487,7 @@ export default function Library() {
 
   const profileChoices = useMemo(
     () => [
-      { id: '0', label: `Default (${profiles.find((p) => p.id === defaultProfile)?.name ?? 'the default profile'})` },
+      { id: '0', label: t('Default ({name})', { name: profiles.find((p) => p.id === defaultProfile)?.name ?? t('the default profile') }) },
       ...sortProfiles(profiles).map((p) => ({ id: String(p.id), label: p.name })),
     ],
     [profiles, defaultProfile],
@@ -417,10 +499,11 @@ export default function Library() {
   const bookCount = (f: BookFormat) => bookList?.filter((b) => b[f].wanted || b[f].status === 'downloaded').length
   const counts: Record<Tab, number | undefined> = { movie: movies?.length, tv: shows?.length, music: artists?.length, ebook: bookCount('ebook'), audiobook: bookCount('audiobook') }
   const kindSwitch = (
-    <div className="seg">
+    <div className="seg kind-tabs">
       {kinds.map((k) => (
-        <button key={k} className={active === k ? 'active' : ''} onClick={() => chooseKind(k)}>
-          {TAB_LABEL[k]} {counts[k] !== undefined ? <small>({counts[k]})</small> : null}
+        <button key={k} className={active === k ? 'active' : ''} style={{ ['--kc' as string]: TAB_COLOR[k] }} onClick={() => chooseKind(k)}>
+          <KindGlyph kind={k === 'ebook' ? 'book' : k} size={17} />
+          {TAB_LABEL[k]} {counts[k] !== undefined ? <small className="mono">{counts[k]}</small> : null}
         </button>
       ))}
     </div>
@@ -431,64 +514,93 @@ export default function Library() {
 
   return (
     <div>
-      <div className="toolbar">
+      <div className={`toolbar lib-toolbar collapsible${filtersOpen ? ' filters-open' : ''}`}>
         {kindSwitch}
-        <input type="search" placeholder={`Find in your ${kind === 'movie' ? 'movies' : 'shows'}…`} value={text} onChange={(e) => setText(e.target.value)} aria-label="Find in your library" />
+        <input type="search" placeholder={kind === 'movie' ? t('Find in your movies…') : t('Find in your shows…')} value={text} onChange={(e) => setText(e.target.value)} aria-label={t('Find in your library')} />
+        <FilterToggle open={filtersOpen} onToggle={() => setFiltersOpen((o) => !o)} active={filtersActive} />
+        <div className="fold">
         {tagOptions.length > 0 && (
-          <Dropdown label="Tag" value={tag} onChange={setTag} options={[{ value: '', label: 'All tags' }, ...tagOptions.map((t) => ({ value: t, label: t }))]} />
+          <Dropdown icon="bookmark" label={t('Tag')} value={tag} onChange={setTag} options={[{ value: '', label: t('All tags') }, ...tagOptions.map((t) => ({ value: t, label: t }))]} />
         )}
         {genreOptions.length > 0 && (
-          <Dropdown label="Genre" value={genre} onChange={setGenre} options={[{ value: '', label: 'All genres' }, ...genreOptions.map((g) => ({ value: g, label: g }))]} />
+          <Dropdown icon="sparkles" label={t('Genre')} value={genre} onChange={setGenre} options={[{ value: '', label: t('All genres') }, ...genreOptions.map((g) => ({ value: g, label: g }))]} />
         )}
-        <Dropdown label="Year" value={decade} onChange={setDecade} options={[{ value: '', label: 'Any year' }, ...decadeOptions.map((d) => ({ value: String(d), label: `${d}s` }))]} />
+        {kind === 'movie' && collections.length > 0 && (
+          <Dropdown icon="film" label={t('Collection')} value={collection} onChange={setCollection} options={[{ value: '', label: t('All collections') }, ...collections.map((c) => ({ value: String(c.id), label: c.name }))]} />
+        )}
+        <Dropdown icon="calendar" label={t('Year')} value={decade} onChange={setDecade} options={[{ value: '', label: t('Any year') }, ...decadeOptions.map((d) => ({ value: String(d), label: t('{decade}s', { decade: String(d) }) }))]} />
         <Dropdown
-          label="Sort"
+          icon="sort"
+          label={t('Sort')}
           value={sort}
           onChange={(v) => setSort(v as Sort)}
           options={[
-            { value: 'added', label: 'Recently added' },
-            { value: 'title', label: 'Title A–Z' },
-            { value: 'year', label: 'Newest year' },
-            { value: 'status', label: 'Status' },
+            { value: 'added', label: t('Recently added') },
+            { value: 'title', label: t('Title A–Z') },
+            { value: 'released', label: t('Newest release') },
+            { value: 'size', label: t('Largest on disk') },
+            { value: 'status', label: t('Status') },
           ]}
         />
-        <button className="icon-btn" onClick={() => setReverse(!reverse)} aria-pressed={reverse} title={reverse ? 'Reversed order. Click for the normal order.' : 'Reverse the order'} aria-label="Reverse the order">
+        <button className="icon-btn" onClick={() => setReverse(!reverse)} aria-pressed={reverse} title={reverse ? t('Reversed order. Click for the normal order.') : t('Reverse the order')} aria-label={t('Reverse the order')}>
           <Icon name="sort" size={16} />
         </button>
         <div className="toolbar-end">
           {admin && (
             <button className={`btn-with-icon${selecting ? ' primary' : ''}`} aria-pressed={selecting} onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
-              <Icon name="check" size={16} /> Select
+              <Icon name="check" size={16} /> {t('Select')}
             </button>
           )}
+          {admin && <HelpLink topic="library#selecting-many-titles" text={t('Pick several titles, then change them all at once: monitoring, quality profile, where they download from, tags, folder, searching or removing. Nothing changes until you press one of the actions.')} />}
+          {view === 'grid' && (
+            <label className="poster-size" title={t('Poster size')}>
+              <Icon name="image" size={14} />
+              <input
+                type="range"
+                min={POSTER_MIN}
+                max={POSTER_MAX}
+                step={2}
+                value={posterSize}
+                onChange={(e) => setPosterSize(Number(e.target.value))}
+                aria-label={t('Poster size')}
+              />
+            </label>
+          )}
           <div className="seg">
-            <button className={view === 'grid' ? 'active' : ''} onClick={() => chooseView('grid')} aria-label="Grid view">
+            <button className={view === 'grid' ? 'active' : ''} onClick={() => chooseView('grid')} aria-label={t('Grid view')}>
               <Icon name="grid" size={16} />
             </button>
-            <button className={view === 'list' ? 'active' : ''} onClick={() => chooseView('list')} aria-label="List view">
+            <button className={view === 'list' ? 'active' : ''} onClick={() => chooseView('list')} aria-label={t('List view')}>
               <Icon name="list" size={16} />
             </button>
           </div>
           {admin && (
             <button className="btn-with-icon" onClick={() => navigate(`/import?kind=${kind}`)}>
-              <Icon name="folder" size={16} /> Import
+              <Icon name="folder" size={16} /> {t('Import')}
             </button>
           )}
-          <button className="primary btn-with-icon" onClick={() => navigate('/search')}>
-            <Icon name="plus" size={16} /> Add
-          </button>
         </div>
+        </div>
+        <button className="primary btn-with-icon toolbar-add" onClick={() => navigate('/search')}>
+          <Icon name="plus" size={16} /> {t('Add')}
+        </button>
       </div>
 
-      <div className="chip-row" style={{ marginBottom: 18, alignItems: 'center' }}>
+      <div className="chip-row state-chips" style={{ marginBottom: 18, alignItems: 'center' }}>
+        <InfoTip
+          text={t(
+            'Downloaded: the file is in your library.\nDownloading: coming in now.\nPending: queued and waiting its turn.\nWaiting for a release: monitored, and Mediarium keeps checking.\nPartial: some episodes are downloaded.\nNot monitored: in your library, but nothing downloads by itself.\nFailed: the last attempt failed.',
+          )}
+        />
         {FILTERS[kind].map((f) => (
-          <button key={f.id} className={`chip${filter === f.id ? ' active' : ''}`} onClick={() => setFilter(f.id)}>
+          <button key={f.id} className={`chip st-${f.id}${filter === f.id ? ' active' : ''}${f.id === 'downloading' && items?.some(f.test) ? ' live' : ''}`} onClick={() => setFilter(f.id)}>
+            <Icon name={FILTER_ICON[f.id] ?? 'grid'} size={14} />
             {f.label} {items ? <small>{items.filter(f.test).length}</small> : null}
           </button>
         ))}
         {filtersActive && (
           <button className="btn-sm" onClick={clearFilters}>
-            Clear filters
+            {t('Clear filters')}
           </button>
         )}
       </div>
@@ -496,21 +608,24 @@ export default function Library() {
       {selecting && admin && (
         <BulkBar text={selText} onSelectAll={() => shown && setSelected(selectAllKeys(shown))} onSelectNone={() => setSelected(new Set())} onDone={stopSelecting} busy={busy}>
           <button className="btn-sm btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void runBulk(() => api.bulkMonitored(bulkTitles(), true))}>
-            <Icon name="eye" size={15} /> Monitor
+            <Icon name="eye" size={15} /> {t('Monitor')}
           </button>
           <button className="btn-sm btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void runBulk(() => api.bulkMonitored(bulkTitles(), false))}>
-            <Icon name="eye-off" size={15} /> Stop monitoring
+            <Icon name="eye-off" size={15} /> {t('Stop monitoring')}
           </button>
+          <InfoTip text={t('Monitor turns automatic searching on for the selected titles; Stop monitoring turns it off and also removes downloads that were only waiting for them.')} />
           <ActionMenu
-            label="Better versions"
+            label={t('Better versions')}
             disabled={chosen.length === 0 || busy}
             onPick={(id) => void runBulk(() => api.bulkNoUpgrade(bulkTitles(), id === 'leave'))}
             choices={[
-              { id: 'look', label: 'Look for better versions', hint: 'Swap a download for a better one when its quality profile allows it.' },
-              { id: 'leave', label: 'Leave what I have alone', hint: 'Keep the files as they are, even if a better one is out there.' },
+              { id: 'look', label: t('Look for better versions'), hint: t('Swap a download for a better one when its quality profile allows it.') },
+              { id: 'leave', label: t('Leave what I have alone'), hint: t('Keep the files as they are, even if a better one is out there.') },
             ]}
           />
-          <ActionMenu label="Quality profile" disabled={chosen.length === 0 || busy || profiles.length === 0} choices={profileChoices} onPick={(id) => void runBulk(() => api.bulkProfile(bulkTitles(), Number(id)))} />
+          <InfoTip text={t("Look for better versions lets Mediarium swap a download for a better one when the title's quality profile allows it. Leave what I have alone stops that for these titles, whatever their profile says.")} />
+          <ActionMenu label={t('Quality profile')} disabled={chosen.length === 0 || busy || profiles.length === 0} choices={profileChoices} onPick={(id) => void runBulk(() => api.bulkProfile(bulkTitles(), Number(id)))} />
+          <InfoTip text={t("Gives the selected titles another quality profile, or the default. A title whose file is below the new profile's cutoff starts looking for that quality straight away.")} />
           <BulkTagMenu
             disabled={chosen.length === 0 || busy}
             inSelection={[...new Set(chosen.flatMap((i) => i.tags))].sort((a, b) => a.localeCompare(b))}
@@ -518,23 +633,45 @@ export default function Library() {
             onRemove={(t) => void runBulk(() => api.bulkTags(bulkTitles(), [], [t]))}
           />
           <ActionMenu
-            label="Download from"
+            label={t('Download from')}
             disabled={chosen.length === 0 || busy}
             onPick={(id) => void runBulk(() => api.bulkSources(bulkTitles(), (id === 'default' ? '' : id) as SourcePref))}
             choices={[
-              { id: 'default', label: 'Use the default' },
-              { id: 'usenet', label: 'Usenet only' },
-              { id: 'torrent', label: 'Torrents only' },
-              { id: 'both', label: 'Usenet and torrents' },
+              { id: 'default', label: t('Use the default') },
+              { id: 'usenet', label: t('Usenet only') },
+              { id: 'torrent', label: t('Torrents only') },
+              { id: 'both', label: t('Usenet and torrents') },
             ]}
           />
+          <InfoTip text={t('Which downloaders the selected titles may use: Usenet only, torrents only, both, or whatever your settings say.')} />
+          {folderChoices.length > 1 && (
+            <ActionMenu
+              label={t('Move to folder')}
+              disabled={chosen.length === 0 || busy}
+              choices={folderChoices.map((f, i) => ({ id: String(i), label: f, hint: i === 0 ? t('The main folder') : undefined }))}
+              onPick={(id) => setMoveTo({ folder: folderChoices[Number(id)] ?? folderChoices[0], titles: bulkTitles() })}
+            />
+          )}
+          {folderChoices.length > 1 && <InfoTip text={t('Sends the next files of the selected titles to another library folder. You can also move the files that are already there; Mediarium shows what would happen before it starts.')} />}
           <button className="btn-sm btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void searchChosen()}>
-            <Icon name="search" size={15} /> Search now
+            <Icon name="search" size={15} /> {t('Search now')}
           </button>
+          <InfoTip text={t('Looks for releases of the selected titles that are monitored and missing something, at most 25 at a time. The search runs in the background and anything it finds shows up in Activity.')} />
           <button className="btn-sm btn-danger btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void removeChosen()}>
-            <Icon name="trash" size={15} /> Remove from library
+            <Icon name="trash" size={15} /> {t('Remove from library')}
           </button>
         </BulkBar>
+      )}
+
+      {moveTo !== null && (
+        <MoveToFolderDialog
+          kind={kind}
+          titles={moveTo.titles}
+          folders={folderChoices}
+          initial={moveTo.folder}
+          onClose={() => setMoveTo(null)}
+          onChanged={load}
+        />
       )}
 
       {note && (
@@ -548,7 +685,7 @@ export default function Library() {
             </ul>
           </div>
           <button className="btn-sm" onClick={() => setNote(null)}>
-            Dismiss
+            {t('Dismiss')}
           </button>
         </div>
       )}
@@ -556,49 +693,55 @@ export default function Library() {
       {error && <p className="error-text">{error}</p>}
 
       {shown === null ? (
-        <div className="poster-grid" key={`grid-${active}`}>
+        <div className="poster-grid" key={`grid-${active}`} style={{ '--poster-min': `${posterSize}px` } as CSSProperties}>
           {Array.from({ length: 12 }, (_, i) => (
             <div key={i} className="skeleton" style={{ aspectRatio: '2 / 3.5' }} />
           ))}
         </div>
       ) : shown.length === 0 ? (
+        <>
         <div className="empty-state" key={`empty-${active}`}>
           <Icon name={kind === 'movie' ? 'film' : 'tv'} size={44} />
           {total === 0 ? (
             <>
-              <p>Your {kind === 'movie' ? 'movie' : 'TV'} library is empty.</p>
+              <p>{kind === 'movie' ? t('Your movie library is empty.') : t('Your TV library is empty.')}</p>
               <div className="row-actions">
                 <button className="primary btn-with-icon" onClick={() => navigate('/search')}>
-                  <Icon name="search" size={16} /> Search to add {kind === 'movie' ? 'a movie' : 'a show'}
+                  <Icon name="search" size={16} /> {kind === 'movie' ? t('Search to add a movie') : t('Search to add a show')}
                 </button>
                 {admin && (
                   <button className="btn-with-icon" onClick={() => navigate(`/import?kind=${kind}`)}>
-                    <Icon name="folder" size={16} /> Import what you already have
+                    <Icon name="folder" size={16} /> {t('Import what you already have')}
                   </button>
                 )}
               </div>
             </>
           ) : (
             <>
-              <p>Nothing matches these filters.</p>
+              <p>{t('Nothing matches these filters.')}</p>
               <button className="btn-with-icon" onClick={clearFilters}>
-                Clear filters
+                {t('Clear filters')}
               </button>
             </>
           )}
         </div>
+        {total === 0 && <StarterPicks key={`picks-${kind}`} kind={kind} onAdded={load} />}
+        </>
       ) : view === 'grid' ? (
-        <div className="poster-grid" key={`grid-${active}`}>
-          {shown.map((i) => (
+        <WindowedGrid
+          key={`grid-${active}`}
+          style={{ '--poster-min': `${posterSize}px` } as CSSProperties}
+          items={shown}
+          render={(i) => (
             <PosterCard
               key={i.key}
               to={openPath(i)}
               poster={i.posterUrl}
               title={i.title}
-              meta={[i.year || null, i.kind === 'movie' ? i.quality : i.gettingDetails ? null : `${i.have}/${i.total} episodes`, i.monitored ? null : 'unmonitored'].filter(Boolean).join(' · ')}
+              meta={[i.year || null, i.kind === 'movie' ? i.quality : i.gettingDetails ? null : t('{have}/{total} episodes', { have: i.have, total: i.total }), i.copies ? plural(i.copies, '+{n} copy', '+{n} copies') : null, i.monitored ? null : t('unmonitored')].filter(Boolean).join(' · ')}
               state={i.state}
               kind={i.kind}
-              progress={i.live ? { pct: i.live.progressPct, label: `${Math.round(i.live.progressPct)}%${i.live.sizeBytes ? ` of ${formatBytes(i.live.sizeBytes)}` : ''} · ${i.live.protocol}` } : undefined}
+              progress={i.live ? { pct: i.live.progressPct, label: `${i.live.sizeBytes ? t('{pct}% of {size}', { pct: Math.round(i.live.progressPct), size: formatBytes(i.live.sizeBytes) }) : `${Math.round(i.live.progressPct)}%`} · ${i.live.protocol}` } : undefined}
               dim={!i.monitored}
               actions={actionsFor(i)}
               selection={selecting ? { selected: selected.has(i.key), onToggle: (e) => pick(i.key, e.shiftKey) } : undefined}
@@ -606,7 +749,7 @@ export default function Library() {
                 (i.kind === 'tv' && i.total > 0 && !i.gettingDetails) || i.tags.length > 0 ? (
                   <>
                     {i.kind === 'tv' && i.total > 0 && !i.gettingDetails && (
-                      <div className="bar" style={{ width: '100%', marginTop: 6 }} title={`${i.have} of ${i.total} episodes`}>
+                      <div className="bar" style={{ width: '100%', marginTop: 6 }} title={t('{have} of {total} episodes', { have: i.have, total: i.total })}>
                         <span style={{ width: `${(i.have / i.total) * 100}%` }} />
                       </div>
                     )}
@@ -619,8 +762,8 @@ export default function Library() {
                 ) : undefined
               }
             />
-          ))}
-        </div>
+          )}
+        />
       ) : (
         <table className="data-table lib-list">
           <thead>
@@ -631,23 +774,25 @@ export default function Library() {
                     type="checkbox"
                     checked={selText.allSelected}
                     onChange={() => setSelected(selText.allSelected ? new Set() : selectAllKeys(shown))}
-                    aria-label="Select all in this view"
+                    aria-label={t('Select all in this view')}
                   />
                 </th>
               )}
-              <th>Title</th>
-              <th>Status</th>
-              <th>{kind === 'movie' ? 'Quality' : 'Episodes'}</th>
-              <th>Profile</th>
+              <th>{t('Title')}</th>
+              <th>{t('Status')}</th>
+              <th>{kind === 'movie' ? t('Quality') : t('Episodes')}</th>
+              <th>{t('Profile')}</th>
               <th />
             </tr>
           </thead>
-          <tbody>
-            {shown.map((i) => (
+          <WindowedBody
+            items={shown}
+            columns={selecting ? 6 : 5}
+            render={(i) => (
               <tr key={i.key} className={selecting && selected.has(i.key) ? 'selected' : undefined} style={i.monitored ? undefined : { opacity: 0.65 }}>
                 {selecting && (
                   <td>
-                    <input type="checkbox" checked={selected.has(i.key)} onChange={() => undefined} onClick={(e) => pick(i.key, e.shiftKey)} aria-label={`Select ${i.title}`} />
+                    <input type="checkbox" checked={selected.has(i.key)} onChange={() => undefined} onClick={(e) => pick(i.key, e.shiftKey)} aria-label={t('Select {title}', { title: i.title })} />
                   </td>
                 )}
                 <td>
@@ -657,7 +802,7 @@ export default function Library() {
                       <strong>{i.title}</strong>
                       <small>
                         {i.year || '—'}
-                        {i.monitored ? '' : ' · unmonitored'}
+                        {i.monitored ? '' : ` · ${t('unmonitored')}`}
                       </small>
                     </span>
                   </Link>
@@ -688,15 +833,15 @@ export default function Library() {
                 <td>
                   <div className="row-actions">
                     {actionsFor(i).map((a) => (
-                      <button key={a.label} className={`icon-btn${a.active ? ' on' : ''}${a.danger ? ' danger' : ''}`} title={a.label} aria-label={a.label} disabled={a.disabled} onClick={a.onClick}>
+                      <button key={a.label} className={`icon-btn${a.active ? ' on' : ''}${a.danger ? ' danger' : ''}`} title={a.label} aria-label={a.label} aria-pressed={a.active === undefined ? undefined : a.active} disabled={a.disabled} onClick={a.onClick}>
                         <Icon name={a.icon} size={17} />
                       </button>
                     ))}
                   </div>
                 </td>
               </tr>
-            ))}
-          </tbody>
+            )}
+          />
         </table>
       )}
     </div>

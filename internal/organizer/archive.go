@@ -92,6 +92,9 @@ type Extractor struct {
 	// Exposed so tests can simulate a full disk.
 	FreeSpace func(dir string) (free uint64, ok bool)
 
+	// Password opens encrypted RAR and 7z archives. Empty means none.
+	Password string
+
 	// SevenZipTimeout stops the external 7z tool if it runs longer than this
 	// for one archive. Zero means six hours.
 	SevenZipTimeout time.Duration
@@ -199,7 +202,11 @@ func (e *Extractor) extractRAR(archivePath, destDir string) error {
 		return fmt.Errorf("extract %s: %w", filepath.Base(archivePath), err)
 	}
 	name := filepath.Base(archivePath)
-	rc, err := rardecode.OpenReader(archivePath, rardecode.MaxDictionarySize(maxRARDictionary))
+	opts := []rardecode.Option{rardecode.MaxDictionarySize(maxRARDictionary)}
+	if e.Password != "" {
+		opts = append(opts, rardecode.Password(e.Password))
+	}
+	rc, err := rardecode.OpenReader(archivePath, opts...)
 	if err != nil {
 		return fmt.Errorf("extract %s: %w", name, classifyRARError(err))
 	}
@@ -429,9 +436,9 @@ func (e *Extractor) extract7z(archivePath, destDir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// No -p: with no password given 7z fails instead of prompting (stdin is
-	// the null device), which is what we want for encrypted archives.
-	listing, err := e.run7z(ctx, "l", "-slt", "--", archivePath)
+	// Without a password 7z fails instead of prompting (stdin is the null
+	// device), which is what we want for encrypted archives.
+	listing, err := e.run7z(ctx, append(e.sevenZipArgs("l", "-slt"), "--", archivePath)...)
 	if err != nil {
 		return e.sevenZipError(ctx, name, listing, err)
 	}
@@ -450,13 +457,22 @@ func (e *Extractor) extract7z(archivePath, destDir string) error {
 		return fmt.Errorf("extract %s: create a working folder: %w", name, err)
 	}
 	defer os.RemoveAll(stage)
-	if out, err := e.run7z(ctx, "x", "-y", "-o"+stage, "--", archivePath); err != nil {
+	if out, err := e.run7z(ctx, append(e.sevenZipArgs("x", "-y", "-o"+stage), "--", archivePath)...); err != nil {
 		return e.sevenZipError(ctx, name, out, err)
 	}
 	if err := moveUnpacked(stage, destDir, e.maxTotal()); err != nil {
 		return fmt.Errorf("extract %s: %w", name, err)
 	}
 	return nil
+}
+
+// sevenZipArgs builds a 7z command line: the given arguments, the password
+// (when there is one; an empty -p would make 7z prompt).
+func (e *Extractor) sevenZipArgs(args ...string) []string {
+	if e.Password != "" {
+		args = append(args, "-p"+e.Password)
+	}
+	return args
 }
 
 // run7z runs the 7z tool with the given arguments and returns what it printed

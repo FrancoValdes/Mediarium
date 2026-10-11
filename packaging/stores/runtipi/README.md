@@ -15,6 +15,8 @@ Runtipi's official app store no longer accepts new apps; its README asks develop
 | `metadata/logo.jpg` | Square logo. |
 | `metadata/description.md` | The text shown in the store. |
 
+See [PLAYBOOK.md](../PLAYBOOK.md) for where this fits in the order of things.
+
 ## Steps
 
 1. Create a store repo from Runtipi's template [runtipi/example-appstore](https://github.com/runtipi/example-appstore) (for example `rdborg/runtipi-appstore`) and copy `apps/mediarium/` into its `apps/` folder. The template contains the `app-info-schema.json` that `config.json` refers to; run the template's checks if it has any.
@@ -25,7 +27,7 @@ Runtipi's official app store no longer accepts new apps; its README asks develop
 
 ## Requirements
 
-- [ ] Image `ghcr.io/rdborg/mediarium:2.1.0` published and public (Runtipi discourages `latest`).
+- [ ] Image `ghcr.io/rdborg/mediarium:3.0.0` published and public (Runtipi discourages `latest`).
 - [ ] A Runtipi install to test on.
 
 ## What only the maintainer can do

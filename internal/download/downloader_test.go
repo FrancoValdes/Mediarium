@@ -53,7 +53,12 @@ func TestDownloadAssemblesMultiSegmentFile(t *testing.T) {
 	var lastDone, lastTotal int64
 	paths, err := Download(context.Background(), cfg, nzb, destDir, func(done, total int64) {
 		progressMu.Lock()
-		lastDone, lastTotal = done, total
+		// Reports come from several connections, so they can arrive out of
+		// order: what counts is the highest count seen, not the last call.
+		if done > lastDone {
+			lastDone = done
+		}
+		lastTotal = total
 		progressMu.Unlock()
 	})
 	if err != nil {

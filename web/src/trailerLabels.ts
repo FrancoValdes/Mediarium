@@ -1,24 +1,25 @@
 // Labels for the video buttons on a title page, from the kind of video the
 // movie database says each one is: "Trailer 1", "Trailer 2", "Teaser", "Clip".
 // A kind is only numbered when there is more than one of it.
+import { t } from './i18n.ts'
 
 export interface VideoLike {
   type?: string
 }
 
 const NAMES: Record<string, string> = {
-  trailer: 'Trailer',
-  teaser: 'Teaser',
-  clip: 'Clip',
-  featurette: 'Featurette',
-  'behind the scenes': 'Behind the scenes',
-  bloopers: 'Bloopers',
-  opening_credits: 'Opening credits',
+  trailer: t('Trailer'),
+  teaser: t('Teaser'),
+  clip: t('Clip'),
+  featurette: t('Featurette'),
+  'behind the scenes': t('Behind the scenes'),
+  bloopers: t('Bloopers'),
+  opening_credits: t('Opening credits'),
 }
 
 function kindName(type: string | undefined): string {
   const key = (type ?? '').trim().toLowerCase()
-  if (!key) return 'Video'
+  if (!key) return t('Video')
   return NAMES[key] ?? key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')
 }
 

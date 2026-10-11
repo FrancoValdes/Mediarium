@@ -24,6 +24,16 @@ func TestParseMovies(t *testing.T) {
 			want: parser.Release{Title: "Dune Part Two", Year: 2024, Resolution: "2160p", Source: "Remux", HDR: "HDR10", AudioCodec: "DTS-HD", Group: "GROUP"},
 		},
 		{
+			name: "hdrip is its own source",
+			in:   "The.Matrix.1999.1080p.HDRip.x264-GROUP",
+			want: parser.Release{Title: "The Matrix", Year: 1999, Resolution: "1080p", Source: "HDRip", Codec: "x264", Group: "GROUP"},
+		},
+		{
+			name: "web-dl wins over hdrip",
+			in:   "The.Matrix.1999.1080p.HDRip.WEB-DL.x264-GROUP",
+			want: parser.Release{Title: "The Matrix", Year: 1999, Resolution: "1080p", Source: "WEB-DL", Codec: "x264", Group: "GROUP"},
+		},
+		{
 			name: "proper repack",
 			in:   "Oppenheimer.2023.PROPER.REPACK.1080p.WEBRip.x265-GROUP",
 			want: parser.Release{Title: "Oppenheimer", Year: 2023, Resolution: "1080p", Source: "WEBRip", Codec: "x265", Proper: true, Repack: true, Group: "GROUP"},

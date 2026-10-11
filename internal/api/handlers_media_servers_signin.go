@@ -33,11 +33,14 @@ type mediaSignIn struct {
 	once sync.Once
 	idMu sync.Mutex // making the install's client id
 
-	plexTVURL  string                   // plex.tv; tests point it at a fake
-	discoverer *mediaservers.Discoverer // tests may replace it
+	plexTVURL       string                   // plex.tv; tests point it at a fake
+	plexDiscoverURL string                   // Plex's catalogue service (watchlists); tests point it at a fake
+	discoverer      *mediaservers.Discoverer // tests may replace it
 
 	plexPins *mediaservers.Pending[*plexPinSession]
 	quick    *mediaservers.Pending[*quickConnectSession]
+	// watchPins are Plex sign-ins for connecting a watchlist, one per account.
+	watchPins *mediaservers.Pending[*plexWatchPin]
 }
 
 type plexPinSession struct {
@@ -67,6 +70,7 @@ func (s *Server) signIns() *mediaSignIn {
 		}
 		m.plexPins = &mediaservers.Pending[*plexPinSession]{TTL: plexPinTTL}
 		m.quick = &mediaservers.Pending[*quickConnectSession]{TTL: quickConnectTTL}
+		m.watchPins = &mediaservers.Pending[*plexWatchPin]{TTL: plexPinTTL}
 	})
 	return m
 }
@@ -96,7 +100,7 @@ func (s *Server) mediaClientID() (string, error) {
 }
 
 func (s *Server) plexTV(clientID string) *mediaservers.PlexTV {
-	return &mediaservers.PlexTV{BaseURL: s.signIns().plexTVURL, ClientID: clientID, Version: s.version}
+	return &mediaservers.PlexTV{BaseURL: s.signIns().plexTVURL, DiscoverURL: s.signIns().plexDiscoverURL, ClientID: clientID, Version: s.version}
 }
 
 // writeSignInError answers a problem worth showing as it is with 400, and

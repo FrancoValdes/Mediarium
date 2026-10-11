@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, type ModuleKey, type Modules } from './api'
+import { api, takeEarlyModules, type ModuleKey, type Modules } from './api'
 import { useAuth } from './AuthContext'
 import { useLive } from './useLive'
+import { t } from './i18n'
 
 // Until the answer arrives (or when it cannot be read) the app behaves as it
 // always did: movies and TV on, music off. That way nothing flickers away on
@@ -19,6 +20,10 @@ interface ModulesState {
   loaded: boolean
   // Whether the subtitles switch in Settings is on. Off until the server says so.
   subtitlesOn: boolean
+  // Whether an administrator switched the trailer behind title pages on for everyone.
+  trailerOn: boolean
+  // Whether it starts with its sound on.
+  trailerSoundOn: boolean
   // Whether a kind of media is switched on.
   on: (key: ModuleKey) => boolean
   refresh: () => Promise<void>
@@ -36,14 +41,19 @@ export function ModulesProvider({ children }: { children: ReactNode }) {
   const signedIn = !!user
   const [modules, setModules] = useState<Modules>(FALLBACK)
   const [subtitlesOn, setSubtitlesOn] = useState(false)
+  const [trailerOn, setTrailerOn] = useState(false)
+  const [trailerSoundOn, setTrailerSoundOn] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
   const refresh = useCallback(async () => {
     if (!signedIn) return
     try {
-      const { subtitlesEnabled, ...kinds } = await api.modules()
+      const early = takeEarlyModules()
+      const { subtitlesEnabled, trailerBackground, trailerSound, ...kinds } = await (early ? early.catch(() => api.modules()) : api.modules())
       setModules({ ...FALLBACK, ...kinds })
       setSubtitlesOn(subtitlesEnabled === true)
+      setTrailerOn(trailerBackground === true)
+      setTrailerSoundOn(trailerSound === true)
     } catch {
       // Keep whatever we had: an older server has no switchboard.
     } finally {
@@ -55,6 +65,8 @@ export function ModulesProvider({ children }: { children: ReactNode }) {
     if (!signedIn) {
       setModules(FALLBACK)
       setSubtitlesOn(false)
+      setTrailerOn(false)
+      setTrailerSoundOn(false)
       setLoaded(false)
       return
     }
@@ -67,6 +79,8 @@ export function ModulesProvider({ children }: { children: ReactNode }) {
       modules,
       loaded,
       subtitlesOn,
+      trailerOn,
+      trailerSoundOn,
       on: (key) => modules[key]?.enabled === true,
       refresh,
       set: (next) => {
@@ -74,7 +88,7 @@ export function ModulesProvider({ children }: { children: ReactNode }) {
         setLoaded(true)
       },
     }),
-    [modules, loaded, subtitlesOn, refresh],
+    [modules, loaded, subtitlesOn, trailerOn, trailerSoundOn, refresh],
   )
   return <ModulesContext.Provider value={value}>{children}</ModulesContext.Provider>
 }
@@ -97,4 +111,4 @@ export function useKinds(): MediaKind[] {
   return kinds.length > 0 ? kinds : ['movie']
 }
 
-export const KIND_LABEL: Record<MediaKind, string> = { movie: 'Movies', tv: 'TV shows', music: 'Music' }
+export const KIND_LABEL: Record<MediaKind, string> = { movie: t('Movies'), tv: t('TV shows'), music: t('Music') }

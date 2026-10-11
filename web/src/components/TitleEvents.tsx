@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, type TitleEvent } from '../api'
 import { timeAgo } from '../format'
+import { locale, t } from '../i18n'
 import { useLive } from '../useLive'
 import Icon from './Icon'
 
@@ -27,7 +28,7 @@ export default function TitleEvents({ kind, id }: { kind: 'movie' | 'series' | '
 
   if (missing) return null
   if (events === null) return <div className="skeleton" style={{ height: 90 }} />
-  if (events.length === 0) return <p style={{ margin: 0, color: 'var(--text-dim)' }}>Nothing yet. Searches, downloads and imports for this title show up here.</p>
+  if (events.length === 0) return <p style={{ margin: 0, color: 'var(--text-dim)' }}>{t('Nothing yet. Searches, downloads and imports for this title show up here.')}</p>
 
   const shown = all ? events : events.slice(0, 8)
   return (
@@ -39,7 +40,7 @@ export default function TitleEvents({ kind, id }: { kind: 'movie' | 'series' | '
               <Icon name={LEVEL_ICON[e.level] ?? 'info'} size={14} />
             </span>
             <span className="ev-msg">{e.message}</span>
-            <time dateTime={e.at} title={new Date(e.at).toLocaleString()}>
+            <time dateTime={e.at} title={new Date(e.at).toLocaleString(locale())}>
               {timeAgo(e.at)}
             </time>
           </li>
@@ -47,7 +48,7 @@ export default function TitleEvents({ kind, id }: { kind: 'movie' | 'series' | '
       </ol>
       {events.length > 8 && (
         <button className="btn-sm" style={{ marginTop: 8 }} onClick={() => setAll((v) => !v)}>
-          {all ? 'Show less' : `Show all ${events.length}`}
+          {all ? t('Show less') : t('Show all {n}', { n: events.length })}
         </button>
       )}
     </>

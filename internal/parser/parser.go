@@ -49,6 +49,17 @@ type Release struct {
 	// AirDate is the date a daily show's episode aired ("2024-03-15"), when
 	// the name carries one and no season marker.
 	AirDate string
+	// DailyTitle is what comes between the air date and the quality tags,
+	// usually the guest or the episode's title ("Show.2024.03.15.Tom.Hanks.
+	// 1080p" gives "Tom Hanks"). It tells apart two episodes on one day.
+	DailyTitle string
+	// DailyPart is N for "Part N" or "PtN" after the air date, 0 otherwise.
+	DailyPart int
+	// Special is set when the name says season 0 outright (S00E05, 0x05,
+	// "Season 0"): a special, not a name without a season.
+	Special bool
+	// Name is the name that was parsed, without its file extension.
+	Name string
 }
 
 type token struct {
@@ -78,6 +89,10 @@ var (
 			r.Resolution = res
 		}},
 
+		// An HDRip is a re-encode of something that is not a clean web or disc
+		// copy, usually a TV capture. It comes first so a name that also says
+		// WEB-DL or BluRay is read by those, which follow.
+		{regexp.MustCompile(`(?i)\b(HD-?Rip)\b`), func(r *Release, m []string) { r.Source = normalizeSource(m[1]) }},
 		{regexp.MustCompile(`(?i)\b(WEB-?DL|WEBRip|WEB)\b`), func(r *Release, m []string) { r.Source = normalizeSource(m[1]) }},
 		{regexp.MustCompile(`(?i)\b(BluRay|BDRip|BRRip)\b`), func(r *Release, m []string) { r.Source = normalizeSource(m[1]) }},
 		{regexp.MustCompile(`(?i)\b(HDTV|PDTV|SDTV)\b`), func(r *Release, m []string) { r.Source = normalizeSource(m[1]) }},
@@ -108,6 +123,7 @@ var (
 		// last one in a multi-episode release.
 		{regexp.MustCompile(`(?i)[Ss](\d{1,2})((?:[Ee]\d{1,3})+(?:-[Ee]?\d{1,3}\b)?)`), func(r *Release, m []string) {
 			r.Season = atoi(m[1])
+			r.Special = r.Season == 0
 			r.Episodes = parseEpisodeRun(m[2])
 			if len(r.Episodes) > 0 {
 				r.Episode = r.Episodes[0]
@@ -116,19 +132,23 @@ var (
 		// "1x05" style season/episode, common in older TV libraries.
 		{regexp.MustCompile(`(?i)\b(\d{1,2})x(\d{2,3})\b`), func(r *Release, m []string) {
 			r.Season = atoi(m[1])
+			r.Special = r.Season == 0
 			r.Episode = atoi(m[2])
 			r.Episodes = []int{r.Episode}
 		}},
 		// Season pack: S01, Season 1 (spaces are already dots by now).
-		{regexp.MustCompile(`(?i)\bSeason[. ]?(\d{1,2})\b`), func(r *Release, m []string) { r.Season = atoi(m[1]) }},
-		{regexp.MustCompile(`(?i)\bS(\d{1,2})\b`), func(r *Release, m []string) { r.Season = atoi(m[1]) }},
+		{regexp.MustCompile(`(?i)\bSeason[. ]?(\d{1,2})\b`), func(r *Release, m []string) { r.Season = atoi(m[1]); r.Special = r.Special || r.Season == 0 }},
+		{regexp.MustCompile(`(?i)\bS(\d{1,2})\b`), func(r *Release, m []string) { r.Season = atoi(m[1]); r.Special = r.Special || r.Season == 0 }},
 		// Airdate style: 2021.05.14 or 2021-05-14
-		{regexp.MustCompile(`\b((?:19|20)\d{2})[.-](\d{2})[.-](\d{2})\b`), func(r *Release, m []string) {
-			if r.Season == 0 {
+		{airDateRe, func(r *Release, m []string) {
+			if r.Season == 0 && !r.Special {
 				r.AirDate = m[1] + "-" + m[2] + "-" + m[3]
 			}
 		}},
 	}
+
+	airDateRe   = regexp.MustCompile(`\b((?:19|20)\d{2})[.-](\d{2})[.-](\d{2})\b`)
+	dailyPartRe = regexp.MustCompile(`(?i)\b(?:part|pt)\.?(\d{1,2})\b`)
 
 	// groupRe is the release group: a trailing "-GROUPNAME" at the very end
 	// of the name. notGroupRe lists what such an ending is not a group: the
@@ -196,7 +216,7 @@ func Parse(name string) Release {
 	// otherwise flow into the title as they are.
 	name = strings.ToValidUTF8(name, "")
 	name = stripExtension(name)
-	var r Release
+	r := Release{Name: name}
 	// "[SubsPlease] Show - 01 (1080p) [ABCD1234]": the group comes first.
 	// A group at the end ("-ETHEL") still wins: a leading bracket can also
 	// be a site's tag ("[ www.example.org ] - Show.S01E01...-ETHEL").
@@ -209,12 +229,14 @@ func Parse(name string) Release {
 	working = strings.ReplaceAll(working, " ", ".")
 
 	titleEnd := len(working)
+	var tagStarts []int
 
 	for _, t := range tokens {
 		loc := t.re.FindStringSubmatchIndex(working)
 		if loc == nil {
 			continue
 		}
+		tagStarts = append(tagStarts, loc[0])
 		// A plain word right at the start with more after it ("Cam.2018",
 		// "Proper.Manners.2019") is the start of the title, not a tag.
 		if loc[0] == 0 && loc[1] < len(working) && plainWordRe.MatchString(working[:loc[1]]) {
@@ -231,6 +253,10 @@ func Parse(name string) Release {
 		if loc[0] < titleEnd {
 			titleEnd = loc[0]
 		}
+	}
+
+	if r.AirDate != "" && !r.Special {
+		r.DailyTitle, r.DailyPart = dailyTitle(working, tagStarts)
 	}
 
 	// Year is handled separately from the generic token loop: a title can
@@ -266,7 +292,7 @@ func Parse(name string) Release {
 	}
 
 	// Anime numbering, only when the name has no season marker.
-	if r.Season == 0 && r.AirDate == "" {
+	if r.Season == 0 && r.AirDate == "" && !r.Special {
 		if loc := absoluteDashRe.FindStringSubmatchIndex(working); loc != nil && halfEpisode(working, loc[1]) {
 			// A recap ("- 12.5"): no episode number, but the title still ends here.
 			if loc[0] < titleEnd {
@@ -399,6 +425,8 @@ func normalizeSource(s string) string {
 		return "Remux"
 	case "hdtv":
 		return "HDTV"
+	case "hdrip":
+		return "HDRip"
 	case "pdtv":
 		return "PDTV"
 	case "sdtv":
@@ -452,4 +480,30 @@ func atoi(s string) int {
 // decimal part: "- 12.5" is a recap between episodes 12 and 13, not 12.
 func halfEpisode(working string, end int) bool {
 	return end > 0 && end < len(working) && working[end-1] == '.' && working[end] >= '0' && working[end] <= '9'
+}
+
+// dailyTitle is the text between the air date and the first tag after it
+// (or the release group at the end), with any "Part N" read out of it.
+func dailyTitle(working string, tagStarts []int) (string, int) {
+	loc := airDateRe.FindStringIndex(working)
+	if loc == nil {
+		return "", 0
+	}
+	end := len(working)
+	for _, st := range tagStarts {
+		if st >= loc[1] && st < end {
+			end = st
+		}
+	}
+	rest := working[loc[1]:end]
+	if end == len(working) {
+		if m := groupRe.FindStringIndex(rest); m != nil {
+			rest = rest[:m[0]]
+		}
+	}
+	part := 0
+	if m := dailyPartRe.FindStringSubmatch(rest); m != nil {
+		part = atoi(m[1])
+	}
+	return normalizeSpace(strings.Trim(strings.ReplaceAll(rest, ".", " "), " -")), part
 }

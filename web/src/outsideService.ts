@@ -4,16 +4,18 @@
 // banner, and a timeout names the service instead.
 //
 // No React here, so it can be tested on its own.
+import { t } from './i18n.ts'
 
 const RULES: [RegExp, string][] = [
   [/^\/discover\/import-list/, 'Trakt'],
-  [/^\/(discover|tmdb|tv\/search)(\/|$|\?)/, 'The movie database (TMDB)'],
-  [/^\/movies\/\d+\/similar/, 'The movie database (TMDB)'],
+  [/^\/(discover|tmdb|tv\/search)(\/|$|\?)/, t('The movie database (TMDB)')],
+  [/^\/movies\/\d+\/similar/, t('The movie database (TMDB)')],
   [/^\/music\/(discover|search|covers)/, 'MusicBrainz'],
   [/^\/music\/(albums|artists)\/\d+\/cover/, 'The Cover Art Archive'],
+  [/^\/music\/tracks\/\d+\/lyrics/, 'LRCLIB'],
   [/^\/(books\/(discover|search)|book-authors)(\/|$|\?)/, 'Open Library'],
-  [/^\/(search|movies\/\d+\/search|series\/\d+\/search|books\/\d+\/releases)(\/|$|\?)/, 'Your indexers'],
-  [/^\/(media-servers\/links|books\/\d+\/links)/, 'Your media server'],
+  [/^\/(search|movies\/\d+\/search|series\/\d+\/search|books\/\d+\/releases)(\/|$|\?)/, t('Your indexers')],
+  [/^\/(media-servers\/links|books\/\d+\/links)/, t('Your media server')],
   [/^\/(movies|episodes)\/\d+\/subtitles(\/|$|\?)/, 'OpenSubtitles'],
 ]
 
@@ -25,5 +27,5 @@ export function outsideService(path: string): string {
 }
 
 export function slowServiceMessage(service: string): string {
-  return `${service} is slow to answer right now. This is on their side, not Mediarium's. Try again in a moment.`
+  return t("{service} is slow to answer right now. This is on their side, not Mediarium's. Try again in a moment.", { service })
 }

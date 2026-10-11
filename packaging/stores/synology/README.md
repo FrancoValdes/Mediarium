@@ -6,7 +6,7 @@
 
 DSM's **Package Center only installs `.spk` packages**: Synology's own, packages from a third-party package source such as [SynoCommunity](https://synocommunity.com), or an `.spk` file installed by hand. Docker images cannot be listed there.
 
-A native `.spk` is possible in principle (Mediarium is a single program), but it means cross-compiling for every Synology CPU family with the SynoCommunity [spksrc](https://github.com/SynoCommunity/spksrc) framework, submitting it there for review, and maintaining it. That is a "coming soon" item at best. Whether SynoCommunity would accept a package that merely wraps a Docker container was not verified.
+The playbook ([PLAYBOOK.md](../PLAYBOOK.md)) says what a native package or a package source of our own would take. A native `.spk` is possible in principle (Mediarium is a single program), but it means cross-compiling for every Synology CPU family with the SynoCommunity [spksrc](https://github.com/SynoCommunity/spksrc) framework, submitting it there for review, and maintaining it. That is a "coming soon" item at best. Whether SynoCommunity would accept a package that merely wraps a Docker container was not verified.
 
 ## The practical one-click path: a Container Manager project
 

@@ -142,9 +142,6 @@ func TestImportAcrossFilesystems(t *testing.T) {
 
 // Opening a pipe waits for a writer forever, so a pipe is refused up front.
 func TestImportRefusesAPipe(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no pipes on disk")
-	}
 	dir := t.TempDir()
 	fifo := filepath.Join(dir, "movie.mkv")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {

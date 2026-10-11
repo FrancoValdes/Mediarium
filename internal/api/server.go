@@ -6,17 +6,22 @@ package api
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/rdborg/mediarium/internal/announce"
 	"github.com/rdborg/mediarium/internal/auth"
 	"github.com/rdborg/mediarium/internal/blocklist"
 	"github.com/rdborg/mediarium/internal/books"
 	"github.com/rdborg/mediarium/internal/config"
 	"github.com/rdborg/mediarium/internal/crypto"
+	"github.com/rdborg/mediarium/internal/delay"
 	"github.com/rdborg/mediarium/internal/download"
+	"github.com/rdborg/mediarium/internal/ereader"
 	"github.com/rdborg/mediarium/internal/indexers"
 	"github.com/rdborg/mediarium/internal/library"
 	"github.com/rdborg/mediarium/internal/mediaservers"
@@ -32,6 +37,7 @@ import (
 	"github.com/rdborg/mediarium/internal/requests"
 	"github.com/rdborg/mediarium/internal/settings"
 	"github.com/rdborg/mediarium/internal/subtitles"
+	"github.com/rdborg/mediarium/internal/torrentopts"
 	"github.com/rdborg/mediarium/internal/trakt"
 	"github.com/rdborg/mediarium/internal/usage"
 	"github.com/rdborg/mediarium/internal/vpn"
@@ -49,20 +55,28 @@ type Server struct {
 	ClientRepo        *download.Repo
 	MovieRepo         *library.Repo
 	QueueRepo         *queue.Repo
+	TorrentOpts       *torrentopts.Repo // per-torrent choices, categories and seeding rules of the built-in torrent client (torrent_options.go)
 	VPNRepo           *vpn.Repo
 	VPNManager        *vpn.Manager
 	NotifyRepo        *notify.Repo
 	QualityRepo       *quality.Repo
+	FormatRepo        *quality.FormatRepo
 	Blocklist         *blocklist.Repo
 	SubtitleAttempts  *subtitles.AttemptRepo
 	SubtitleFiles     *subtitles.FileRepo
 	SubtitleDismissed *subtitles.DismissRepo
 	SubtitleQuota     *subtitles.QuotaRepo
 	Usage             *usage.Tracker // requests and limit hits per third-party service
+	delays            *delay.Store   // releases the delay profile is holding back (search_limits.go)
+	debridCache       cachedMemo     // what the debrid service said about info hashes (debrid_cache.go)
 	Problems          *problems.Log  // the log of real problems shown under Settings > System > Logs and errors (handlers_problems.go)
 	MediaServers      *mediaservers.Repo
-	MusicRepo         *music.Repo // artists, albums, tracks (the music module, music*.go)
-	BookRepo          *books.Repo // ebooks and audiobooks (books_api.go)
+	AnnounceRepo      *announce.Repo    // IRC announce connections (irc_announce.go)
+	Announce          *announce.Manager // runs them
+	MusicRepo         *music.Repo       // artists, albums, tracks (the music module, music*.go)
+	BookRepo          *books.Repo       // ebooks and audiobooks (books_api.go)
+	EReader           *ereader.Repo     // e-reader password and Kobo sync address (ereader_*.go)
+	ereader           ereaderRuntime    // limits and store address for the e-reader routes (ereader_auth.go)
 	OpenLibrary       *books.Client
 	Requests          *requests.Repo
 	Audnexus          *books.Audnexus
@@ -85,16 +99,26 @@ type Server struct {
 
 	subsMu sync.RWMutex
 	subs   *subtitles.Client
+	subdl  *subtitles.SubDL
+
+	addons *subtitles.AddonClient // asks subtitle add-ons for subtitles
+	wizdom *subtitles.Wizdom      // Hebrew subtitles from wizdom.xyz (subtitles_wizdom.go)
 
 	traktMu sync.RWMutex
 	trakt   *trakt.Client
+
+	proxyTestAddr string // where a proxy test connects to (tests point it elsewhere)
+
+	trashMu sync.Mutex
+	trash   *trashSource // the TRaSH Guides import, made when first used
 
 	mbMu  sync.RWMutex
 	mb    *musicbrainz.Client // one client, so its one-request-per-second limit is shared
 	music musicState          // music hunt position and library scan jobs (music*.go)
 
-	statsCache statsCache
-	builtin    BuiltinKeys // app-wide keys baked into official releases (see keys.go)
+	statsCache   statsCache
+	metricsCache metricsCache // slow-to-count numbers the metrics page reuses between scrapes (handlers_metrics.go)
+	builtin      BuiltinKeys  // app-wide keys baked into official releases (see keys.go)
 
 	importMu         sync.Mutex
 	importJobs       map[string]*importJob
@@ -103,25 +127,39 @@ type Server struct {
 
 	migrator *migrate.Importer // moving over from Radarr/Sonarr/Prowlarr/SABnzbd (handlers_migrate.go)
 	held     heldNotices       // messages waiting for the quiet hours to end
+	box      *crypto.Box       // the server key, for secrets kept outside the settings (two-step sign-in)
+	twoStep  twoStepChallenges // sign-ins waiting for their app code (two_step.go)
+	ssoS     ssoState          // single sign-on, directory sign-in and passkeys (signin_methods.go)
 
 	torrents torrentRegistry // live torrent clients, so the on/off switch can stop them
+	irc      ircLibrary      // the titles IRC announcements are matched against (irc_announce_decide.go)
 
 	grabMu sync.Mutex     // makes "is this already being downloaded?" and "queue it" one step (see grab_claim.go)
 	bg     sync.WaitGroup // download pipelines and automatic retries still running (see grab_claim.go)
 
-	pipelines pipelineRegistry  // running download pipelines, so removing a title can cancel its downloads
-	dispatch  *queue.Dispatcher // the download line: starts the next waiting download when a place is free (dispatch.go)
-	bulk      bulkState         // whether a batch search from the Library page is running (handlers_bulk.go)
+	pipelines    pipelineRegistry  // running download pipelines, so removing a title can cancel its downloads
+	dispatch     *queue.Dispatcher // the download line: starts the next waiting download when a place is free (dispatch.go)
+	bulk         bulkState         // whether a batch search from the Library page is running (handlers_bulk.go)
+	lists        importListState   // the import lists being read (import_lists.go)
+	portal       portalState       // messages to the people who asked (request_portal.go)
+	arrFillState                   // reading missing TVDB ids for the Sonarr-style API (arr_series.go)
+	anime        animeState        // scene and anime numbering of shows (anime_numbering.go)
 
-	offered    offeredURLs       // download URLs recently handed out in search results (see grab_urls.go)
-	flareProbe flareSolverrProbe // last answer from the Cloudflare helper (see flaresolverr.go)
-	stats      sysinfoSampler    // CPU and memory readings for the server card (see handlers_stats.go)
+	offered       offeredURLs       // download URLs recently handed out in search results (see grab_urls.go)
+	flareProbe    flareSolverrProbe // last answer from the Cloudflare helper (see flaresolverr.go)
+	statsEndpoint string            // where the anonymous usage numbers go; empty means usagestats.URL (tests set it)
+	stats         sysinfoSampler    // CPU and memory readings for the server card (see handlers_stats.go)
 
 	Monitor *monitor.Monitor // connectivity monitor (Usenet servers, indexers)
 
-	restoreMu    sync.Mutex    // one restore upload at a time
-	exitFn       func()        // what to do once a restore is staged (see SetExitFunc)
-	restartDelay time.Duration // zero means defaultRestartDelay
+	restoreMu sync.Mutex // one restore upload at a time
+	exitFn    func()     // what to do once a restore is staged (see SetExitFunc)
+	// restartInPlace is set when the app exits to start again (RestartWanted).
+	restartInPlace atomic.Bool
+	restartDelay   time.Duration // zero means defaultRestartDelay
+
+	moveJob moveJob      // moving the files of titles to another library folder (move_files.go)
+	metaJob metaFilesJob // writing NFO and artwork files for the whole library (metadata_files.go)
 
 	upd updateRuntime // the new-version notice, pushed and downloaded updates, and the self-restart marker (update_*.go, watchdog.go)
 }
@@ -134,6 +172,9 @@ type Server struct {
 // in Settings — see cmd/app/main.go's buildDefaultTMDBAPIKey doc comment
 // for why this exists (matching Radarr/Sonarr's "just works" experience
 // without committing a real key to source control).
+// discoverCacheSeconds is how long a browser keeps a Discover list without asking again.
+const discoverCacheSeconds = 300
+
 func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, version string) (*Server, error) {
 	settingsStore := settings.New(db, box)
 	tmdbKey, err := settingsStore.Get(settings.KeyTMDBAPIKey)
@@ -158,6 +199,7 @@ func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, vers
 	}
 
 	s := &Server{
+		box:               box,
 		cfg:               cfg,
 		db:                db,
 		Auth:              auth.New(db),
@@ -166,10 +208,12 @@ func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, vers
 		ClientRepo:        download.NewRepo(db, box),
 		MovieRepo:         library.NewRepo(db),
 		QueueRepo:         queue.NewRepo(db),
+		TorrentOpts:       torrentopts.NewRepo(db),
 		VPNRepo:           vpn.NewRepo(db, box),
 		VPNManager:        vpn.NewManager(),
 		NotifyRepo:        notify.NewRepo(db, box),
 		QualityRepo:       quality.NewRepo(db),
+		FormatRepo:        quality.NewFormatRepo(db),
 		Blocklist:         blocklist.NewRepo(db),
 		SubtitleAttempts:  subtitles.NewAttemptRepo(db),
 		SubtitleFiles:     subtitles.NewFileRepo(db),
@@ -177,6 +221,8 @@ func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, vers
 		SubtitleQuota:     subtitles.NewQuotaRepo(db),
 		tmdb:              metadata.New(tmdbKey),
 		subs:              subtitles.New(subsKey),
+		addons:            subtitles.NewAddonClient(),
+		wizdom:            subtitles.NewWizdom(),
 		trakt:             trakt.New(traktClientID),
 		// "A handful of attempts per IP/window" — 5 tries per 15
 		// minutes blunts brute-force without punishing a genuine typo.
@@ -187,13 +233,27 @@ func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, vers
 	s.QueueRepo.SetBox(box) // download addresses carry indexer keys: kept encrypted
 	s.startProblems()
 	s.Definitions = indexers.NewDefinitionStore(filepath.Join(cfg.ConfigDir, "indexer-definitions"))
+	s.Definitions.CustomDir = filepath.Join(cfg.ConfigDir, "indexer-definitions-custom")
 	s.Cardigann = indexers.NewCardigannManager(s.Definitions, s.flareSolverrURL)
 	s.IndexerRepo.SetCardigann(s.Cardigann)
+	s.setupSearchExtras()
 	s.instrumentTMDB(s.tmdb)
+	s.applyProxy()
+	s.setupPush()
 	s.instrumentTrakt(s.trakt)
 	s.Monitor = s.newMonitor()
 	s.MediaServers = mediaservers.NewRepo(db, box)
 	s.mediaClient = mediaservers.NewClient(version)
+	s.mediaClient.SeriesIDs = func(tmdbID int) (int, string) {
+		if s.MovieRepo == nil {
+			return 0, ""
+		}
+		sr, ok, err := s.MovieRepo.GetSeriesByTMDBID(tmdbID)
+		if err != nil || !ok {
+			return 0, ""
+		}
+		return sr.TVDBID, sr.IMDBID
+	}
 	s.mediaFinder = mediaservers.NewFinder(s.mediaClient)
 	s.mediaRefresher = mediaservers.NewRefresher(s.MediaServers, s.mediaClient)
 	s.mediaRefresher.OnDone = s.mediaFinder.Invalidate
@@ -204,6 +264,11 @@ func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, vers
 	}
 	s.MusicRepo = music.NewRepo(db)
 	s.BookRepo = books.NewRepo(db)
+	if box != nil {
+		s.EReader = ereader.NewRepo(db, box)
+	} else {
+		s.EReader = ereader.NewRepo(db, nil)
+	}
 	s.OpenLibrary = books.NewClient("Mediarium/" + version + " (https://mediarium.app)")
 	s.Audnexus = books.NewAudnexus(s.OpenLibrary.UserAgent)
 	s.Requests = requests.NewRepo(db)
@@ -211,7 +276,12 @@ func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, vers
 	if err := s.MusicRepo.SeedPresets(); err != nil {
 		return nil, fmt.Errorf("init music profiles: %w", err)
 	}
+	s.AnnounceRepo = announce.NewRepo(db, box)
+	s.Announce = announce.NewManager(s.AnnounceRepo, ircDecider{s}, slog.Default())
+	s.torrents.noPortMapping = !s.torrentPortMapping()
+	s.torrents.allowLocal = s.torrentAllowLocal()
 	s.dispatch = s.newDispatcher()
+	s.applyFilePerms()   // the saved file and folder modes for new library files
 	s.recoverAtStartup() // downloads that were running come back paused; stuck titles are put right
 	return s, nil
 }
@@ -242,6 +312,25 @@ func (s *Server) Subtitles() *subtitles.Client {
 	s.subsMu.RLock()
 	defer s.subsMu.RUnlock()
 	return s.subs
+}
+
+// SubDL returns the current SubDL client (it may have no key).
+func (s *Server) SubDL() *subtitles.SubDL {
+	s.subsMu.RLock()
+	defer s.subsMu.RUnlock()
+	if s.subdl == nil {
+		return subtitles.NewSubDL("")
+	}
+	return s.subdl
+}
+
+// SetSubDLAPIKey saves the SubDL key ("" removes it) and applies it.
+func (s *Server) SetSubDLAPIKey(key string) error {
+	if err := s.Settings.Set(settings.KeySubDLAPIKey, key, true); err != nil {
+		return err
+	}
+	s.rebuildSubtitles()
+	return nil
 }
 
 // SetOpenSubtitlesAPIKey updates both the persisted setting and the live client.
@@ -286,17 +375,31 @@ func (s *Server) Routes() http.Handler {
 	public.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
 	public.HandleFunc("POST /api/onboarding/admin", s.handleCreateAdmin)
 	public.HandleFunc("POST /api/auth/login", s.handleLogin)
+	public.HandleFunc("POST /api/auth/login/code", s.handleLoginCode)
 	public.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	// Other ways to sign in (signin_methods.go): what the sign-in page offers, single sign-on and passkeys.
+	public.HandleFunc("GET /api/auth/methods", s.handleSignInMethods)
+	public.HandleFunc("GET /api/auth/oidc/start", s.handleOIDCStart)
+	public.HandleFunc("GET /api/auth/oidc/callback", s.handleOIDCCallback)
+	public.HandleFunc("POST /api/auth/passkey/login/begin", s.handlePasskeyLoginBegin)
+	public.HandleFunc("POST /api/auth/passkey/login/finish", s.handlePasskeyLoginFinish)
 	// Calendar apps read the feed without signing in; the secret address is the key.
 	public.HandleFunc("GET /api/calendar/feed/{file}", s.handleCalendarFeed)
 
 	public.Handle("/api/", s.signedIn(s.protectedRoutes()))
 
 	root := http.NewServeMux()
-	root.Handle("/api/", s.busyGuard(noStore(public)))
+	root.Handle("/api/", s.busyGuard(noStore(metricsBearerOnly(public))))
+	// Prometheus' default path. It is the same protected page as /api/metrics.
+	root.Handle("GET /metrics", s.busyGuard(noStore(metricsAlias(public))))
+	// Radarr, Sonarr and Lidarr-style endpoints for other apps (arr.go).
+	s.arrRoutes(root)
+	// E-readers: the OPDS catalogue and Kobo sync sign in their own way (ereader_auth.go).
+	s.opdsRoutes(root)
+	s.koboRoutes(root)
 	root.HandleFunc("GET /robots.txt", robotsTxt)
-	root.Handle("/", frontendHandler())
-	return s.harden(root)
+	root.Handle("/", frontendHandlerBase(s.cfg.URLBase))
+	return s.harden(withURLBase(s.cfg.URLBase, root))
 }
 
 // protectedRoutes is the one table of every signed-in route and who may call
@@ -326,36 +429,58 @@ func (s *Server) protectedRoutes() *routeTable {
 	member.HandleFunc("GET /api/auth/api-keys", s.handleListAPIKeys)
 	member.HandleFunc("POST /api/auth/api-keys", s.handleCreateAPIKey)
 	member.HandleFunc("DELETE /api/auth/api-keys/{id}", s.handleRevokeAPIKey)
+	member.HandleFunc("GET /api/auth/ereader", s.handleGetEReader)
+	member.HandleFunc("POST /api/auth/ereader/opds", s.handleNewOPDSPassword)
+	member.HandleFunc("DELETE /api/auth/ereader/opds", s.handleRemoveOPDSPassword)
+	member.HandleFunc("POST /api/auth/ereader/kobo", s.handleNewKoboToken)
+	member.HandleFunc("DELETE /api/auth/ereader/kobo", s.handleRemoveKoboToken)
+	member.HandleFunc("POST /api/auth/ereader/kobo/resync", s.handleKoboResync)
+	member.HandleFunc("GET /api/auth/passkeys", s.handleListPasskeys)
+	member.HandleFunc("POST /api/auth/passkeys/register/begin", s.handlePasskeyRegisterBegin)
+	member.HandleFunc("POST /api/auth/passkeys/register/finish", s.handlePasskeyRegisterFinish)
+	member.HandleFunc("PUT /api/auth/passkeys/{id}", s.handleRenamePasskey)
+	member.HandleFunc("DELETE /api/auth/passkeys/{id}", s.handleDeletePasskey)
+	member.HandleFunc("POST /api/auth/oidc/link", s.handleOIDCLinkStart)
+	member.HandleFunc("DELETE /api/auth/oidc/link", s.handleOIDCUnlink)
 
 	// Overview (members get a trimmed view: no setup problems, no folder paths).
 	member.HandleFunc("GET /api/health", s.handleHealth)
-	member.HandleFunc("GET /api/dashboard", s.handleDashboard)
-	member.HandleFunc("GET /api/calendar", s.handleCalendar)
+	member.HandleFunc("GET /api/dashboard", revalidated(s.handleDashboard))
+	member.HandleFunc("GET /api/calendar", revalidated(s.handleCalendar))
 	member.HandleFunc("GET /api/stats/library", s.handleLibraryStats)
+	member.HandleFunc("GET /api/stats/history", revalidated(s.handleStatsHistory))
 	member.HandleFunc("GET /api/exclusions", s.handleListExclusions)
 	member.HandleFunc("POST /api/exclusions", s.handleAddExclusion)
 	member.HandleFunc("DELETE /api/exclusions/{kind}/{tmdbId}", s.handleRemoveExclusion)
 	member.HandleFunc("GET /api/calendar/feed", s.handleGetCalendarFeed)
 	member.HandleFunc("POST /api/calendar/feed", s.handleNewCalendarFeed)
+	member.HandleFunc("POST /api/feedback", s.handleSendFeedback)
 	member.HandleFunc("DELETE /api/calendar/feed", s.handleRemoveCalendarFeed)
-	member.HandleFunc("GET /api/wanted", s.handleWanted)
-	member.HandleFunc("GET /api/activity", s.handleListActivity)
+	member.HandleFunc("GET /api/wanted", revalidated(s.handleWanted))
+	member.HandleFunc("GET /api/activity", revalidated(s.handleListActivity))
 	member.HandleFunc("GET /api/modules", s.handleModules)
 	member.HandleFunc("GET /api/watched", s.handleWatched)
 	member.HandleFunc("GET /api/requests", s.handleListRequests)
 	member.HandleFunc("DELETE /api/requests/{id}", s.handleDeleteRequest)
+	member.HandleFunc("GET /api/requests/status", s.handleRequestStatus)
+	member.HandleFunc("GET /api/issues", s.handleListIssues)
+	member.HandleFunc("POST /api/issues", s.handleCreateIssue)
+	member.HandleFunc("GET /api/auth/request-notices", s.handleGetRequestNotices)
+	member.HandleFunc("PUT /api/auth/request-notices", s.handlePutRequestNotices)
+	member.HandleFunc("POST /api/auth/request-notices/devices", s.handleAddNoticeDevice)
+	member.HandleFunc("DELETE /api/auth/request-notices/devices/{id}", s.handleRemoveNoticeDevice)
 
 	// Finding things.
-	member.HandleFunc("GET /api/discover/trending", s.handleTrending)
-	member.HandleFunc("GET /api/discover/popular", s.handlePopular)
-	member.HandleFunc("GET /api/discover/tv/trending", s.handleTrendingTV)
-	member.HandleFunc("GET /api/discover/tv/popular", s.handlePopularTV)
+	member.HandleFunc("GET /api/discover/trending", revalidatedFor(discoverCacheSeconds, s.handleTrending))
+	member.HandleFunc("GET /api/discover/popular", revalidatedFor(discoverCacheSeconds, s.handlePopular))
+	member.HandleFunc("GET /api/discover/tv/trending", revalidatedFor(discoverCacheSeconds, s.handleTrendingTV))
+	member.HandleFunc("GET /api/discover/tv/popular", revalidatedFor(discoverCacheSeconds, s.handlePopularTV))
 	member.HandleFunc("GET /api/discover/search", s.handleTitleSearch)
 	member.HandleFunc("GET /api/discover/genres", s.handleDiscoverGenres)
-	member.HandleFunc("GET /api/discover/browse", s.handleDiscoverBrowse)
-	member.HandleFunc("GET /api/discover/list", s.handleDiscoverList)
+	member.HandleFunc("GET /api/discover/browse", revalidatedFor(discoverCacheSeconds, s.handleDiscoverBrowse))
+	member.HandleFunc("GET /api/discover/list", revalidatedFor(discoverCacheSeconds, s.handleDiscoverList))
 	member.HandleFunc("GET /api/discover/import-list", s.handleImportList)
-	member.HandleFunc("GET /api/discover/for-you", s.handleForYou)
+	member.HandleFunc("GET /api/discover/for-you", revalidated(s.handleForYou))
 	member.HandleFunc("GET /api/tv/search", s.handleSearchTV)
 	member.HandleFunc("GET /api/tmdb/search", s.handleTMDBSearch)
 	member.HandleFunc("GET /api/tmdb/movies/{tmdbId}", s.handleTMDBMovieDetail)
@@ -378,6 +503,9 @@ func (s *Server) protectedRoutes() *routeTable {
 	manage.HandleFunc("PUT /api/movies/{id}/tags", s.handleSetMovieTags)
 	manage.HandleFunc("PUT /api/series/{id}/tags", s.handleSetSeriesTags)
 	manage.HandleFunc("PUT /api/movies/{id}/monitored", s.handleSetMovieMonitored)
+	manage.HandleFunc("PUT /api/movies/{id}/folder", s.handleSetMovieFolder)
+	manage.HandleFunc("PUT /api/series/{id}/folder", s.handleSetSeriesFolder)
+	member.HandleFunc("GET /api/library/folders", s.handleLibraryFolders)
 
 	// Shows: the same.
 	member.HandleFunc("GET /api/series", revalidated(s.handleListSeries))
@@ -389,13 +517,16 @@ func (s *Server) protectedRoutes() *routeTable {
 	releases.HandleFunc("POST /api/series/{id}/grab", s.handleGrabSeries)
 	manage.HandleFunc("PUT /api/series/{id}/monitored", s.handleSetSeriesMonitored)
 	manage.HandleFunc("PUT /api/series/{id}/type", s.handleSetSeriesType)
+	member.HandleFunc("GET /api/series/{id}/numbering", s.handleSeriesNumbering)
+	manage.HandleFunc("POST /api/series/{id}/numbering/refresh", s.handleRefreshSeriesNumbering)
 	manage.HandleFunc("PUT /api/series/{id}/seasons/{season}/monitored", s.handleSetSeasonMonitored)
 	manage.HandleFunc("PUT /api/episodes/{id}/monitored", s.handleSetEpisodeMonitored)
 
 	// Books: ebooks and audiobooks (404 while both are off).
-	member.HandleFunc("GET /api/books", s.handleListBooks)
+	member.HandleFunc("GET /api/books", revalidated(s.handleListBooks))
 	member.Need(auth.PermBooks).HandleFunc("POST /api/books", s.handleAddBook)
 	member.HandleFunc("GET /api/books/search", s.handleBookSearch)
+	member.HandleFunc("GET /api/book-covers/{file}", s.handleBookCover)
 	member.HandleFunc("GET /api/books/discover", s.handleBookDiscover)
 	member.HandleFunc("GET /api/books/subjects", s.handleBookSubjects)
 	member.HandleFunc("GET /api/books/{id}/links", s.handleBookLinks)
@@ -428,25 +559,30 @@ func (s *Server) protectedRoutes() *routeTable {
 	member.HandleFunc("GET /api/music/profiles", s.handleMusicProfiles)
 	member.HandleFunc("GET /api/music/tiers", s.handleMusicTiers)
 	member.HandleFunc("GET /api/music/search", s.handleMusicSearchArtists)
-	member.HandleFunc("GET /api/music/discover", s.handleMusicDiscover)
-	member.HandleFunc("GET /api/music/discover/artists", s.handleMusicDiscoverArtists)
+	member.HandleFunc("GET /api/music/discover", revalidated(s.handleMusicDiscover))
+	member.HandleFunc("GET /api/music/discover/artists", revalidated(s.handleMusicDiscoverArtists))
+	member.HandleFunc("GET /api/music/preview/{mbid}", s.handleMusicPreview)
 	member.HandleFunc("GET /api/music/covers/release-group/{mbid}", s.handleReleaseGroupCover)
-	member.HandleFunc("GET /api/music/artists", s.handleListArtists)
+	member.HandleFunc("GET /api/music/artists", revalidated(s.handleListArtists))
 	member.Need(auth.PermMusic).HandleFunc("POST /api/music/artists", s.handleAddArtist)
 	member.HandleFunc("GET /api/music/artists/{id}", s.handleGetArtist)
 	member.HandleFunc("GET /api/music/albums/{id}", s.handleGetAlbum)
 	member.HandleFunc("GET /api/music/albums/{id}/files", s.handleAlbumFiles)
 	member.HandleFunc("GET /api/music/albums/{id}/cover", s.handleAlbumCover)
+	play.HandleFunc("GET /api/music/tracks/{id}/play", s.handlePlayTrack)
 	member.HandleFunc("GET /api/music/artists/{id}/cover", s.handleArtistCover)
 	manage.HandleFunc("PUT /api/music/albums/{id}/monitored", s.handleSetAlbumMonitored)
 	releases.HandleFunc("POST /api/music/albums/{id}/search", s.handleAlbumSearch)
 	manage.HandleFunc("POST /api/music/albums/{id}/search-now", s.handleAlbumSearchNow)
 	releases.HandleFunc("POST /api/music/albums/{id}/grab", s.handleAlbumGrab)
 	member.HandleFunc("GET /api/music/albums/{id}/events", s.handleAlbumEvents)
-	member.HandleFunc("GET /api/music/wanted", s.handleMusicWanted)
+	member.HandleFunc("GET /api/music/wanted", revalidated(s.handleMusicWanted))
+	s.musicPlayerRoutes(member, play, admin) // playlists, lyrics, ReplayGain, scrobbling (music_player_routes.go)
 
 	// Files on disk, and playing them in the browser.
 	member.HandleFunc("GET /api/movies/{id}/files", s.handleMovieFiles)
+	member.HandleFunc("GET /api/movies/{id}/copies", s.handleListMovieCopies)
+	member.HandleFunc("GET /api/series/{id}/copies", s.handleListSeriesCopies)
 	member.HandleFunc("GET /api/series/{id}/files", s.handleSeriesFiles)
 	member.HandleFunc("GET /api/movies/{id}/events", s.handleMovieEvents)
 	member.HandleFunc("GET /api/series/{id}/events", s.handleSeriesEvents)
@@ -456,11 +592,19 @@ func (s *Server) protectedRoutes() *routeTable {
 	member.HandleFunc("GET /api/media-servers/links", s.handleMediaServerLinks)
 
 	// Downloads: watch and retry.
-	member.HandleFunc("GET /api/queue", s.handleListQueue)
+	member.HandleFunc("GET /api/queue", revalidated(s.handleListQueue))
+	member.HandleFunc("GET /api/plex-watchlist", s.handleWatchlistStatus)
+	member.HandleFunc("PUT /api/plex-watchlist", s.handleUpdateWatchlist)
+	member.HandleFunc("DELETE /api/plex-watchlist", s.handleDisconnectWatchlist)
+	member.HandleFunc("POST /api/plex-watchlist/pin", s.handleStartWatchlistPin)
+	member.HandleFunc("GET /api/plex-watchlist/pin/{pinId}", s.handlePollWatchlistPin)
+	member.HandleFunc("POST /api/plex-watchlist/check", s.handleCheckWatchlist)
+	member.HandleFunc("GET /api/plex-watchlist/items", s.handleWatchlistItems)
 	member.Need(auth.PermRetry).HandleFunc("POST /api/queue/{id}/retry", s.handleRetryQueueItem)
 
 	// Subtitles for titles in the library.
 	member.HandleFunc("GET /api/subtitles/wanted", s.handleSubtitlesWanted)
+	admin.HandleFunc("GET /api/subtitles/addons", s.handleListSubtitleAddons)
 	subs.HandleFunc("POST /api/subtitles/get", s.handleSubtitlesGet)
 	subs.HandleFunc("POST /api/subtitles/timing", s.handleSubtitleTiming)
 	subs.HandleFunc("GET /api/movies/{id}/subtitles", s.handleSearchMovieSubtitles)
@@ -483,6 +627,9 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	admin.HandleFunc("GET /api/settings/filesystem-check", s.handleFilesystemCheck)
 	admin.HandleFunc("POST /api/settings/test-service", s.handleTestService)
+	admin.HandleFunc("POST /api/subtitles/addons", s.handleAddSubtitleAddon)
+	admin.HandleFunc("DELETE /api/subtitles/addons/{id}", s.handleDeleteSubtitleAddon)
+	admin.HandleFunc("POST /api/subtitles/addons/{id}/test", s.handleTestSubtitleAddon)
 	admin.HandleFunc("GET /api/settings/folder-check", s.handleFolderCheck)
 	admin.HandleFunc("POST /api/settings/folder-create", s.handleCreateFolder)
 	admin.HandleFunc("GET /api/settings/naming-preview", s.handleNamingPreview)
@@ -494,6 +641,18 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("PUT /api/indexers/{id}", s.handleUpdateIndexer)
 	admin.HandleFunc("DELETE /api/indexers/{id}", s.handleDeleteIndexer)
 	admin.HandleFunc("GET /api/indexer-definitions", s.handleListIndexerDefinitions)
+	admin.HandleFunc("GET /api/debrid", s.handleGetDebrid)
+	admin.HandleFunc("GET /api/debrid/torrents", s.handleDebridTorrents)
+	admin.HandleFunc("POST /api/debrid/torrents/{id}/remove", s.handleDebridRemove)
+	admin.HandleFunc("PUT /api/debrid", s.handlePutDebrid)
+	admin.HandleFunc("POST /api/debrid/test", s.handleTestDebrid)
+	admin.HandleFunc("GET /api/download-client", s.handleGetDownloadClient)
+	admin.HandleFunc("GET /api/download-client/torrents", s.handleClientTorrents)
+	admin.HandleFunc("POST /api/download-client/torrents/{hash}/{action}", s.handleClientTorrentAction)
+	admin.HandleFunc("PUT /api/download-client", s.handlePutDownloadClient)
+	admin.HandleFunc("POST /api/download-client/test", s.handleTestDownloadClient)
+	admin.HandleFunc("POST /api/indexer-definitions/custom", s.handleAddCustomDefinition)
+	admin.HandleFunc("DELETE /api/indexer-definitions/custom/{id}", s.handleRemoveCustomDefinition)
 	admin.HandleFunc("POST /api/indexers/test", s.handleTestIndexerConfig)
 	admin.HandleFunc("POST /api/indexers/{id}/test", s.handleTestIndexer)
 	admin.HandleFunc("PUT /api/indexers/{id}/enabled", s.handleSetIndexerEnabled)
@@ -504,10 +663,22 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("DELETE /api/usenet-servers/{id}", s.handleDeleteUsenetServer)
 	admin.HandleFunc("POST /api/usenet-servers/test", s.handleTestUsenetServerConfig)
 	admin.HandleFunc("POST /api/usenet-servers/{id}/test", s.handleTestUsenetServer)
+	admin.HandleFunc("POST /api/usenet-servers/{id}/probe", s.handleProbeUsenetServer)
 	admin.HandleFunc("GET /api/downloads/status", s.handleDownloadsStatus)
+
+	// IRC announce: grab releases the moment a tracker announces them.
+	admin.HandleFunc("GET /api/irc-announce", s.handleListIRC)
+	admin.HandleFunc("POST /api/irc-announce", s.handleCreateIRC)
+	admin.HandleFunc("POST /api/irc-announce/test", s.handleTestIRC)
+	admin.HandleFunc("PUT /api/irc-announce/{id}", s.handleUpdateIRC)
+	admin.HandleFunc("DELETE /api/irc-announce/{id}", s.handleDeleteIRC)
+	admin.HandleFunc("PUT /api/irc-announce/{id}/enabled", s.handleSetIRCEnabled)
+	admin.HandleFunc("GET /api/irc-announce/{id}/log", s.handleIRCLog)
 
 	// Library management: removing titles, per-title profile and downloaders, imports.
 	admin.HandleFunc("DELETE /api/movies/{id}", s.handleDeleteMovie)
+	admin.HandleFunc("POST /api/movies/{id}/copies", s.handleAddMovieCopy)
+	admin.HandleFunc("POST /api/series/{id}/copies", s.handleAddSeriesCopy)
 	admin.HandleFunc("GET /api/movies/{id}/disk-usage", s.handleMovieDiskUsage)
 	admin.HandleFunc("PUT /api/movies/{id}/sources", s.handleSetMovieSources)
 	admin.HandleFunc("PUT /api/movies/{id}/profile", s.handleSetMovieProfile)
@@ -548,8 +719,14 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("GET /api/system/backups", s.handleListSavedBackups)
 	admin.HandleFunc("POST /api/system/backups", s.handleSaveBackupNow)
 	admin.HandleFunc("GET /api/system/backups/{name}", s.handleDownloadSavedBackup)
+	admin.HandleFunc("GET /api/system/backups/cloud", s.handleGetCloudBackup)
+	admin.HandleFunc("PUT /api/system/backups/cloud", s.handlePutCloudBackup)
+	admin.HandleFunc("POST /api/system/backups/cloud/test", s.handleTestCloudBackup)
+	admin.HandleFunc("POST /api/system/backups/cloud/upload", s.handleUploadCloudBackup)
+	admin.HandleFunc("GET /api/system/backups/cloud/list", s.handleListCloudBackups)
 	admin.HandleFunc("GET /api/rename", s.handleRenamePreview)
 	admin.HandleFunc("POST /api/rename", s.handleRename)
+	admin.HandleFunc("POST /api/downloads/manual", s.handleManualDownload)
 	admin.HandleFunc("GET /api/manual-import", s.handleManualImportList)
 	admin.HandleFunc("POST /api/manual-import", s.handleManualImport)
 	admin.HandleFunc("GET /api/trash", s.handleListTrash)
@@ -565,6 +742,16 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("PUT /api/quality-profiles/{id}", s.handleUpdateProfile)
 	admin.HandleFunc("DELETE /api/quality-profiles/{id}", s.handleDeleteProfile)
 
+	// Custom formats and the TRaSH Guides import.
+	member.HandleFunc("GET /api/custom-formats", s.handleListCustomFormats)
+	member.HandleFunc("POST /api/custom-formats/test", s.handleTestCustomFormats)
+	admin.HandleFunc("POST /api/custom-formats", s.handleImportCustomFormats)
+	admin.HandleFunc("PUT /api/custom-formats/{id}", s.handleRenameCustomFormat)
+	admin.HandleFunc("DELETE /api/custom-formats/{id}", s.handleDeleteCustomFormat)
+	admin.HandleFunc("GET /api/trash-guides/{app}", s.handleTrashList)
+	admin.HandleFunc("POST /api/trash-guides/{app}/formats", s.handleTrashImportFormats)
+	admin.HandleFunc("POST /api/trash-guides/{app}/profiles", s.handleTrashImportProfile)
+
 	// Queue housekeeping and the blocklist.
 	admin.HandleFunc("DELETE /api/queue/{id}", s.handleDeleteQueueItem)
 	admin.HandleFunc("DELETE /api/queue", s.handleClearFinishedQueue)
@@ -573,6 +760,13 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("POST /api/queue/{id}/pause", s.handlePauseQueueItem)
 	admin.HandleFunc("POST /api/queue/{id}/resume", s.handleResumeQueueItem)
 	admin.HandleFunc("POST /api/queue/{id}/stop", s.handleStopQueueItem)
+	admin.HandleFunc("GET /api/queue/{id}/torrent", s.handleGetTorrentDetail)
+	admin.HandleFunc("PUT /api/queue/{id}/torrent", s.handlePutTorrentDetail)
+	admin.HandleFunc("PUT /api/queue/{id}/torrent/files", s.handlePutTorrentFiles)
+	admin.HandleFunc("GET /api/downloads/torrent-options", s.handleGetTorrentOptions)
+	admin.HandleFunc("PUT /api/downloads/torrent-options", s.handlePutTorrentOptions)
+	admin.HandleFunc("GET /api/indexers/seed-rules", s.handleListSeedRules)
+	admin.HandleFunc("PUT /api/indexers/{id}/seed-rules", s.handlePutSeedRule)
 	admin.HandleFunc("POST /api/queue/pause-all", s.handlePauseAllQueue)
 	admin.HandleFunc("POST /api/queue/resume-all", s.handleResumeAllQueue)
 	admin.HandleFunc("GET /api/blocklist", s.handleListBlocklist)
@@ -593,6 +787,9 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("POST /api/vpn/configs/{id}/activate", s.handleActivateVPNConfig)
 	admin.HandleFunc("POST /api/vpn/deactivate", s.handleDeactivateVPN)
 	admin.HandleFunc("GET /api/vpn/status", s.handleVPNStatus)
+	admin.HandleFunc("GET /api/proxy", s.handleGetProxy)
+	admin.HandleFunc("PUT /api/proxy", s.handlePutProxy)
+	admin.HandleFunc("POST /api/proxy/test", s.handleTestProxy)
 	admin.HandleFunc("GET /api/vpn/egress-ip", s.handleVPNEgressIP)
 
 	// Notifications.
@@ -603,6 +800,7 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("GET /api/notifications/types", s.handleNotifyTypes)
 	admin.HandleFunc("GET /api/notifications/events", s.handleNotifyEvents)
 	admin.HandleFunc("POST /api/notifications/test", s.handleTestNotifyTarget)
+	admin.HandleFunc("GET /api/notifications/push-key", s.handlePushKey)
 
 	// Media servers (Plex, Jellyfin, Emby).
 	admin.HandleFunc("GET /api/media-servers", s.handleListMediaServers)
@@ -629,6 +827,9 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("POST /api/system/restore", s.handleRestore)
 	admin.HandleFunc("GET /api/system/stats", s.handleSystemStats)
 	admin.HandleFunc("GET /api/system/diagnostics", s.handleDiagnostics)
+	admin.HandleFunc("GET /api/usage-stats", s.handleGetStats)
+	admin.HandleFunc("PUT /api/usage-stats", s.handlePutStats)
+	admin.HandleFunc("POST /api/usage-stats/reset-id", s.handleResetStatsID)
 	admin.HandleFunc("GET /api/system/problems", s.handleProblems)
 	admin.HandleFunc("POST /api/system/problems/read", s.handleProblemsRead)
 	admin.HandleFunc("GET /api/system/problems/export", s.handleProblemsExport)
@@ -642,13 +843,41 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("POST /api/system/update/install", s.handleInstallUpdate)
 	admin.HandleFunc("GET /api/system/options", s.handleGetOptions)
 	admin.HandleFunc("PUT /api/system/options", s.handlePutOptions)
+	admin.HandleFunc("GET /api/auth/sign-in", s.handleGetSignIn)
+	admin.HandleFunc("PUT /api/auth/sign-in", s.handlePutSignIn)
+	admin.HandleFunc("GET /api/auth/oidc", s.handleGetOIDC)
+	admin.HandleFunc("PUT /api/auth/oidc", s.handlePutOIDC)
+	admin.HandleFunc("POST /api/auth/oidc/test", s.handleTestOIDC)
+	admin.HandleFunc("GET /api/auth/ldap", s.handleGetLDAP)
+	admin.HandleFunc("PUT /api/auth/ldap", s.handlePutLDAP)
+	admin.HandleFunc("POST /api/auth/ldap/test", s.handleTestLDAP)
 	admin.HandleFunc("GET /api/auth/proxy-signin", s.handleGetProxySignIn)
 	admin.HandleFunc("PUT /api/auth/proxy-signin", s.handlePutProxySignIn)
+	admin.HandleFunc("DELETE /api/users/{id}/two-step", s.handleUserTwoStepOff)
+	member.HandleFunc("GET /api/auth/two-step", s.handleTwoStepStatus)
+	member.HandleFunc("POST /api/auth/two-step/setup", s.handleTwoStepSetup)
+	member.HandleFunc("POST /api/auth/two-step/enable", s.handleTwoStepEnable)
+	member.HandleFunc("POST /api/auth/two-step/disable", s.handleTwoStepDisable)
+	member.HandleFunc("POST /api/auth/two-step/recovery", s.handleTwoStepRecovery)
 	admin.HandleFunc("GET /api/scripts", s.handleGetScripts)
 	admin.HandleFunc("PUT /api/scripts", s.handlePutScripts)
 	admin.HandleFunc("POST /api/scripts/test", s.handleTestScript)
 	admin.HandleFunc("POST /api/requests/{id}/approve", s.handleApproveRequest)
 	admin.HandleFunc("POST /api/requests/{id}/decline", s.handleDeclineRequest)
+	admin.HandleFunc("GET /api/requests/settings", s.handleGetRequestSettings)
+	admin.HandleFunc("PUT /api/requests/settings", s.handlePutRequestSettings)
+	admin.HandleFunc("POST /api/issues/{id}/resolve", s.handleResolveIssue)
+	admin.HandleFunc("POST /api/issues/{id}/reopen", s.handleReopenIssue)
+	admin.HandleFunc("DELETE /api/issues/{id}", s.handleDeleteIssue)
+	admin.HandleFunc("GET /api/import-lists", s.handleListImportLists)
+	admin.HandleFunc("POST /api/import-lists", s.handleCreateImportList)
+	admin.HandleFunc("POST /api/import-lists/preview", s.handlePreviewImportList)
+	admin.HandleFunc("PUT /api/import-lists/{id}", s.handleUpdateImportList)
+	admin.HandleFunc("DELETE /api/import-lists/{id}", s.handleDeleteImportList)
+	admin.HandleFunc("PUT /api/import-lists/{id}/enabled", s.handleSetImportListEnabled)
+	admin.HandleFunc("POST /api/import-lists/{id}/run", s.handleRunImportList)
+	admin.HandleFunc("POST /api/import-lists/{id}/forget", s.handleForgetImportList)
+	admin.HandleFunc("POST /api/import-lists/plex/{userId}/run", s.handleRunPlexWatchlist)
 	admin.HandleFunc("GET /api/watched/settings", s.handleGetWatchedSettings)
 	admin.HandleFunc("PUT /api/watched/settings", s.handlePutWatchedSettings)
 	admin.HandleFunc("POST /api/watched/sync", s.handleSyncWatched)
@@ -661,6 +890,9 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("GET /api/flaresolverr/status", s.handleFlareSolverrStatus)
 	admin.HandleFunc("GET /api/system/cleanup", s.handleCleanupStatus)
 	admin.HandleFunc("POST /api/system/cleanup", s.handleCleanupRun)
+
+	s.searchRoutes(admin, member)
+	s.fileRoutes(member, manage, admin) // permissions, folder moves, collections, NFO and artwork (files_*.go)
 
 	return t
 }

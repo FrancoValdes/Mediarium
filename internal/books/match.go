@@ -2,10 +2,15 @@ package books
 
 import (
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Matching releases to books, and finding the book's files in a finished
@@ -13,10 +18,23 @@ import (
 
 var nonWord = regexp.MustCompile(`[^a-z0-9]+`)
 
-// words splits a title into lower-case words.
+// words splits a title into lower-case words. Accented letters are folded to
+// their plain form first, so a release named "Le Pere Goriot" still matches
+// the book "Le Père Goriot" (and the other way round).
 func words(s string) []string {
-	s = strings.ToLower(strings.ReplaceAll(s, "'", ""))
+	s = foldAccents(strings.ToLower(strings.ReplaceAll(s, "'", "")))
 	return strings.Fields(nonWord.ReplaceAllString(s, " "))
+}
+
+// foldAccents strips diacritics (é becomes e, ö becomes o, and so on) so
+// release names written without them still match.
+func foldAccents(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Mn, r) { // combining diacritical mark
+			return -1
+		}
+		return r
+	}, norm.NFD.String(s))
 }
 
 var small = map[string]bool{"the": true, "a": true, "an": true, "of": true, "and": true, "to": true, "in": true, "on": true, "for": true}
@@ -161,20 +179,51 @@ func ReleaseRank(release string, f Format) int {
 	return 5 // nothing said about the format: acceptable, after the ones that say
 }
 
+// FindOption changes what EbookFile and AudioFiles count.
+type FindOption int
+
+// FollowLinks counts a symbolic link as the file it leads to. Only for a
+// download Mediarium laid out itself as links to an external download
+// client's files; the import decides about each link.
+const FollowLinks FindOption = 1
+
+// fileInfo returns what a walked entry is as a file, or nil when it isn't a
+// plain file (or a link to one, when links are followed).
+func fileInfo(p string, d fs.DirEntry, opts []FindOption) fs.FileInfo {
+	if d.IsDir() || strings.HasPrefix(d.Name(), ".") {
+		return nil
+	}
+	if d.Type().IsRegular() {
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		return info
+	}
+	if d.Type()&fs.ModeSymlink == 0 || !slices.Contains(opts, FollowLinks) {
+		return nil
+	}
+	info, err := os.Stat(p)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil
+	}
+	return info
+}
+
 // EbookFile finds the best ebook file in dir: the best format, then the
 // largest. It returns "" when there is none.
-func EbookFile(dir string) (path, format string) {
+func EbookFile(dir string, opts ...FindOption) (path, format string) {
 	best, bestRank, bestSize := "", 0, int64(-1)
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !d.Type().IsRegular() || strings.HasPrefix(d.Name(), ".") {
+		if err != nil {
+			return nil
+		}
+		info := fileInfo(p, d, opts)
+		if info == nil {
 			return nil
 		}
 		r := EbookRank(filepath.Ext(p))
 		if r == 0 {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
 			return nil
 		}
 		if r > bestRank || (r == bestRank && info.Size() > bestSize) {
@@ -191,10 +240,10 @@ func EbookFile(dir string) (path, format string) {
 // AudioFiles lists the audiobook's files in dir: every file of the best audio
 // format found, in name order (chapters stay in order). It returns nil when
 // there are none.
-func AudioFiles(dir string) (files []string, format string) {
+func AudioFiles(dir string, opts ...FindOption) (files []string, format string) {
 	byFormat := map[string][]string{}
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !d.Type().IsRegular() || strings.HasPrefix(d.Name(), ".") {
+		if err != nil || fileInfo(p, d, opts) == nil {
 			return nil
 		}
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(p)), ".")

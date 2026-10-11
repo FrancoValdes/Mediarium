@@ -1,0 +1,52 @@
+/* Controls for the built-in torrent client: one torrent under Details, and the
+   options on the Download clients tab. */
+
+.torrent-controls { margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid var(--border); }
+.torrent-controls h4 { margin: 0 0 6px; font-size: 0.82rem; font-weight: 600; color: var(--text-dim); text-transform: none; }
+.torrent-controls .hint { margin: 0 0 8px; }
+.tc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 24px; align-items: start; }
+.tc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tc-field > span { color: var(--text); }
+.tc-field small { color: var(--text-dim); line-height: 1.35; }
+.tc-field select, .tc-limits input { max-width: 100%; }
+.tc-limits { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.tc-limits label { display: flex; flex-direction: column; gap: 2px; }
+.tc-limits input { width: 8.5rem; }
+.tc-files { margin: 12px 0 0; padding: 0; border: 0; min-width: 0; }
+.tc-files legend { padding: 0; margin-bottom: 4px; color: var(--text-dim); }
+.tc-files ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.tc-files li { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem 4.5rem; gap: 10px; align-items: center; padding: 3px 0; border-top: 1px solid var(--border); }
+.tc-files li:first-child { border-top: 0; }
+.tc-files li label { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+.tc-files input[type="checkbox"] { flex: none; }
+.tc-name { overflow-wrap: anywhere; min-width: 0; }
+.tc-size, .tc-done { text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tc-files li.skipped .tc-name { color: var(--text-dim); text-decoration: line-through; }
+.qcat { font-size: 0.72rem; }
+
+/* The options panel in the torrent client card. */
+.torrent-options { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+.torrent-options h3 { margin: 0; font-size: 0.95rem; }
+.torrent-options .hint { margin: 0; }
+.to-map { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.to-map b { font-weight: 600; }
+.to-limit { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.to-limit label { display: flex; flex-direction: column; gap: 2px; }
+.to-limit input { width: 9rem; }
+.to-cats { display: flex; flex-direction: column; gap: 8px; }
+.to-cat-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.to-cat-row label, .to-kinds label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.to-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px 12px; }
+.to-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seed-rule { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-top: 8px; }
+.seed-rule label { display: flex; flex-direction: column; gap: 2px; }
+.seed-rule input { width: 7.5rem; }
+.seed-rule small { color: var(--text-dim); }
+@media (max-width: 560px) {
+  .to-cat-row { grid-template-columns: 1fr; }
+  .tc-files li { grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; }
+  .tc-files li label { grid-column: 1 / -1; }
+  .tc-files li .tc-size, .tc-files li .tc-done { text-align: left; padding-left: 26px; font-size: 0.8rem; }
+  .tc-files li .tc-done { text-align: right; padding-right: 0; }
+  .tc-files input[type="checkbox"] { flex: none; width: 16px; height: 16px; }
+}

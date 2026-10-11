@@ -47,13 +47,9 @@ func (s *Server) downloadsArea() cleanup.Area {
 	return cleanup.Area{
 		Base:      s.downloadsRoot(),
 		Work:      s.downloadsIncompleteDir(),
-		Protected: append([]string{s.moviesRoot(), s.tvRoot()}, s.musicRoot()),
+		Protected: append(s.videoRoots(), s.musicRoot()),
+		Groups:    s.categoryFolders(),
 	}
-}
-
-// workDirFor is the working folder of queue item id.
-func (s *Server) workDirFor(id int64) string {
-	return filepath.Join(s.downloadsIncompleteDir(), fmt.Sprintf("queue-%d", id))
 }
 
 // queueDirID parses a working folder name ("queue-12") into its queue item
@@ -70,9 +66,16 @@ func queueDirID(name string) (int64, bool) {
 // cleanupWorkDir removes a download's working folder once its files are in
 // the library. A torrent that is still seeding keeps its folder until its
 // seeding goal is met (seedingGoalMet removes it then).
+//
+// For a download from an external client the folder only holds links to the
+// client's files (and what was unpacked from them): removing it removes the
+// links, never the client's files.
 func (s *Server) cleanupWorkDir(dir string, protocol indexers.Protocol) {
 	if protocol == indexers.ProtocolTorrent && s.torrents.activeDir(dir) {
 		return
+	}
+	if isClientView(dir) {
+		s.afterClientImport(dir)
 	}
 	s.removeWorkDir(dir)
 }
@@ -82,7 +85,7 @@ func (s *Server) cleanupWorkDir(dir string, protocol indexers.Protocol) {
 func (s *Server) removeWorkDir(dir string) int64 {
 	area := s.downloadsArea()
 	dir = filepath.Clean(dir)
-	if _, ok := queueDirID(filepath.Base(dir)); !ok || filepath.Dir(dir) != filepath.Clean(area.Work) {
+	if !s.isWorkDirPath(dir, area.Work) {
 		log.Printf("cleanup: refused to remove path=%s: not a download's working folder", dir)
 		return 0
 	}
@@ -231,6 +234,7 @@ func (s *Server) runCleanup(now time.Time) cleanupResult {
 
 	s.pruneProblems(now)
 	_, _ = s.QueueRepo.ClearSettledFailures()
+	s.pruneUploads(now)
 
 	if n, freed, errs := s.purgeTrash(now); n > 0 || len(errs) > 0 {
 		res.Errors = append(res.Errors, errs...)

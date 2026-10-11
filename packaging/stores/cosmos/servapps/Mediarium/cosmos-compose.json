@@ -21,7 +21,8 @@
         "TZ=auto",
         "DOWNLOADS_DIR=/data/downloads/mediarium",
         "MOVIES_DIR=/data/movies",
-        "TV_DIR=/data/tv"
+        "TV_DIR=/data/tv",
+        "UMASK="
       ],
       "labels": {
         "cosmos-force-network-secured": "true",

@@ -1,11 +1,11 @@
-# Media servers (Plex, Jellyfin, Emby, Audiobookshelf, Kavita)
+# Media servers (Plex, Jellyfin, Emby, Silo, Audiobookshelf, Kavita, any other by webhook)
 
-Mediarium downloads and organises your movies and shows; you watch them in Plex, Jellyfin or Emby. Connecting your media server lets the two work together:
+Mediarium downloads and organises your movies and shows; you watch them in Plex, Jellyfin, Emby or Silo. Connecting your media server lets the two work together:
 
 - **New downloads show up straight away.** After each import, Mediarium asks the media server to scan the folder the new file went into, so you don't wait for its next scheduled scan.
 - **Refresh now.** A button that asks the server to scan all of its libraries.
-- **Watch in Plex / Jellyfin / Emby.** A title's page links straight to the same title on your media server (found by its TMDB id).
-- **Open Plex / Jellyfin / Emby.** A small link at the top right of every page, named after the kind of server (Plex, Jellyfin, Emby, Audiobookshelf, Kavita), opens its own web app.
+- **Watch in Plex / Jellyfin / Emby / Silo.** A title's page links straight to the same title on your media server (found by its TMDB id).
+- **Open Plex / Jellyfin / Emby.** The play button (at the bottom of the sidebar, or in the header on a phone) opens one menu with everything that plays: the **Ebook reader** and **Audiobook player** (Mediarium Books, in its own window), the **Music player** (it takes you to your music library, and shows what is playing), and your media servers; pick a server to open its own web app in a new tab. Only what you have switched on is listed. Each server has its own logo (Plex, Jellyfin, Emby, Audiobookshelf; Kavita, Silo and webhooks have a simple one of ours).
 
 Mediarium doesn't convert video, and its only player is the simple in-browser one on a title's Files card. Your media server is still the place to watch.
 
@@ -111,6 +111,22 @@ Treat the token like a password: it gives full access to your Plex server.
 2. Choose **New API Key**, name it `Mediarium` and save.
 3. Copy the key.
 
+## Silo
+
+[Silo](https://siloserver.org) is a self-hosted media server. To connect it, pick **Silo**, type its address and paste an API key:
+
+- **Address:** the one you open Silo at in your browser, usually `http://<server>:8090`. Silo also has a Jellyfin-compatible port (`8096`) for Jellyfin apps; Mediarium doesn't use that one, and **Test** says so if you type it.
+- **API key:** in Silo open **Admin > API keys**, create one named `Mediarium` and copy it. It starts with `sa_` and must belong to an administrator, because only they can start a scan.
+
+Press **Test** (it lists Silo's libraries), then **Add**. What you get:
+
+- **New downloads show up straight away.** After each import Mediarium asks Silo to scan just the new folder. A folder outside all of Silo's libraries gets a scan of every library instead, as with Jellyfin; add a folder mapping so that doesn't happen. A book is only sent when one of Silo's libraries holds its folder.
+- **Watch in Silo** on movie and show pages. Silo files a movie under its TMDB id and a show under its TheTVDB id (or TMDB id, or IMDb id, when it has no TheTVDB one), so Mediarium looks it up by the same ids.
+- **Refresh now** scans all of Silo's libraries.
+- Tags as collections and **What's been watched** aren't available for Silo.
+
+Silo also watches its folders for changes by itself (real-time monitoring), so new files usually appear even without Mediarium telling it. Connecting it adds the links and a scan you can count on when monitoring is off or your folders are on a network share.
+
 ## Audiobookshelf and Kavita (books)
 
 While ebooks or audiobooks are switched on, the list of servers also offers **Audiobookshelf** (for listening to audiobooks, with phone apps) and **Kavita** (for reading ebooks and comics in the browser). Both are free and run in their own container next to Mediarium. Mediarium doesn't play or show books itself: these apps do that, and Mediarium keeps them filled.
@@ -130,6 +146,27 @@ Press **Test**, then **Add**. What you get:
 If the server sees your books under another path (for example Mediarium's `/audiobooks` is `/data/audiobooks` there), add a folder mapping, the same as below.
 
 Plex, Jellyfin and Emby are told about a new book only when one of their libraries holds its folder. They don't get a whole-library scan for it.
+
+## Any other server: Webhook
+
+For a media server or tool Mediarium has no support of its own for, pick **Webhook**. After each download Mediarium sends its address a small JSON message naming the folders that changed. It's batched and path-mapped like the scans of Plex, Jellyfin and Emby, so a season pack sends one message, not one per episode.
+
+```json
+{
+  "event": "refresh",
+  "kind": "movie",
+  "folders": ["/data/movies/Night Harbour (2021)"],
+  "source": "mediarium",
+  "at": "2026-10-06T14:05:01Z"
+}
+```
+
+- `event` is `refresh` after downloads, or `test` when you press **Test**. A `refresh` with an empty `folders` list (from **Refresh** on the server's card) means "scan everything".
+- `kind` is `movie`, `tv`, `music` or `book`.
+- `folders` are the folders as the other server sees them, after the folder mapping below.
+- The **Token (optional)** is sent with every message as `Authorization: Bearer <token>`. Put a key in the token, not in the address: the address is shown on the page, while the token is stored encrypted.
+
+Any answer from 200 to 299 counts as success; 401, 403 and 404 get their own message. A webhook has no titles to look up, so it adds no "Watch in" buttons and isn't used for tags or for what's been watched. For a message about the downloads themselves (title, quality, size), use a **Webhook** notification instead ([notifications.md](./notifications.md)), or [run a script](./scripts.md).
 
 ## Path mapping
 
@@ -156,6 +193,39 @@ If Plex can't match the folder to any library, Mediarium scans all of Plex's mov
 - Servers that are switched off, or have **Refresh after every download** off, are left alone.
 - **Music** works the same way once the music module is on ([music.md](./music.md)): after an album is imported, its folder (`<Artist>/<Album (Year)>`) is scanned. Plex scans it in the library that contains it, which must be a Plex *music* library (type "Music"); if none contains the folder, all music libraries are scanned, never your movie or TV ones. Jellyfin and Emby are told the album folder like any other. Add a path-mapping row for the music folder too (for example `/data/music` to `/music`).
 
+## NFO and artwork files
+
+Kodi, Jellyfin and Emby read small files that sit next to your videos: an **NFO file** with the title, plot, cast and the ids of the title on TMDB, IMDb and TheTVDB, and pictures for the poster and the background. Mediarium can write them. It is **off by default**, and you choose it separately for movies and for TV shows under **Settings > Library > Folders > NFO and artwork files**: one switch for the NFO files and one for the artwork, for each kind. Nothing changes for an install until you switch something on.
+
+What is written:
+
+| For | Files |
+|---|---|
+| A movie in a folder of its own | `movie.nfo`, `poster.jpg`, `fanart.jpg`, and `clearlogo.png` when TMDB has a logo for it |
+| A movie that shares its folder with other videos, or lies straight in the library folder | the same, named after the video: `Film (2020).nfo`, `Film (2020)-poster.jpg`, `Film (2020)-fanart.jpg`, `Film (2020)-clearlogo.png` |
+| A show, in its folder | `tvshow.nfo`, `poster.jpg`, `fanart.jpg`, `clearlogo.png` when there is one, and a poster for each season: `season01-poster.jpg`, `season02-poster.jpg`, and `season-specials-poster.jpg` for the specials |
+| An episode | `<video name>.nfo` next to the video. A file that holds two episodes gets one NFO with both. |
+
+The layout follows what Kodi writes itself. A movie's NFO (`<movie>`) has the title and original title, the plot and tagline, runtime, release date and year, TMDB's rating, the age rating, genres, countries, studios, directors, writers, the cast with their roles, a link to the trailer and, for a film in a collection, the collection's name. A show's NFO (`<tvshow>`) has the same kind of details with the status and networks; an episode's (`<episodedetails>`) has its title, season and episode number, air date and plot. The ids are written as `<uniqueid type="tmdb">`, `imdb` and `tvdb`, which is how Kodi, Jellyfin and Emby match the title to the right one, and also as `<tmdbid>`, `<imdbid>` and `<tvdbid>` for Jellyfin and Emby. A movie's `<id>` is its IMDb id and a show's is its TVDB id. Titles and plots come in the language chosen under Settings > Info, lists and subtitles.
+
+**An existing file is never overwritten.** Mediarium looks for your own files first, whatever they are called and in whatever picture format: a `folder.jpg` or `cover.png` counts as the poster, `backdrop.jpg` or `background.jpg` as the background, `logo.png` as the logo, and an NFO named after the video or `movie.nfo` counts as the NFO. If one of them is there, nothing is written for that job. Under **If a file is already there** you can pick **Replace the ones Mediarium wrote**, which swaps only the files with the exact names above and never touches anything you named differently.
+
+When they are written:
+
+- **After each import**, before your media servers are told about it, so they find the files on their first scan. A problem (TMDB not answering, a folder that can't be written) is written to the log and never stops the import.
+- **For what is already in your library**: **Write the files** under the switches goes through every title with a file on disk. **Count what would be written** first tells you how many files it would make, and writes nothing. The run shows its progress, can be stopped, and can be run again later; it only makes what is missing. It needs a TMDB key. TMDB is asked at a gentle pace, so a big library takes a while.
+- A title whose file is missing on disk, or that lies outside its library folder, is skipped.
+- The files get the permissions set under [File permissions](./library.md#file-permissions), else the usual ones. Pictures are downloaded at TMDB's full size; the picture server is `image.tmdb.org`, and only that address is ever asked.
+- When a title is moved to another folder ([library.md](./library.md#moving-titles-to-another-folder)), these files move with it if it has a folder of its own.
+
+What each program does with them:
+
+- **Kodi** reads the NFO files and the pictures.
+- **Jellyfin and Emby** read the NFO files and the pictures too. Their local files take priority over what they download themselves, so with the NFO switched on a title shows the title and plot Mediarium wrote. Make sure the NFO reader is ticked in the library's settings (Metadata readers).
+- **Plex** does not read NFO files; it matches titles from the folder and file names (title and year). The NFO files change nothing there. Plex can use pictures next to your files only if the library is set to use local media assets, and which names it accepts is described on Plex's own page about local media assets; Mediarium does not write pictures named specially for Plex.
+
+Scripts (administrators): `GET`/`PUT /api/settings/metadata-files` with `{"movies": {"nfo": false, "artwork": false}, "tv": {"nfo": false, "artwork": false}, "replace": false}`; `POST /api/library/metadata-files/run` with `{"dryRun": true}` counts and answers at once, without `dryRun` it starts the run (`202`) with `kind` set to `all`, `movies` or `tv`; `GET /api/library/metadata-files/status` follows it and `POST /api/library/metadata-files/cancel` stops it. The setting is `library.metadata_files`.
+
 ## Tags as collections
 
 Tags you put on movies and shows in Mediarium (see [library.md](./library.md#tags)) are passed on to every enabled Plex, Jellyfin and Emby server:
@@ -173,6 +243,7 @@ Matching needs the TMDB id on the media server's side:
 
 - **Plex:** the current Plex Movie and Plex TV Series agents record TMDB ids, and so does the older "The Movie Database" agent. Titles matched only by the old IMDb or TheTVDB agents can't be found; refreshing their metadata with a current agent fixes that.
 - **Jellyfin and Emby:** the TMDB metadata provider is on by default. A title without a TMDB id gets no link.
+- **Silo:** movies by their TMDB id, shows by their TheTVDB id first (Mediarium knows it from TMDB), then TMDB and IMDb ids.
 
 A server that can't be reached is simply left out of the links.
 

@@ -129,6 +129,9 @@ func (s *Server) handleTestIndexer(w http.ResponseWriter, r *http.Request) {
 	if err := s.IndexerRepo.SetTestResult(inst.ID, msg, time.Now()); err != nil {
 		log.Printf("api: record indexer test result: %v", err)
 	}
+	if res.OK {
+		s.IndexerRepo.Tracker().Resume(inst.ID) // it answered: searches may use it again
+	}
 	writeJSON(w, http.StatusOK, res)
 }
 

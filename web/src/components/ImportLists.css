@@ -1,0 +1,22 @@
+/* Settings > Import lists. Built on the shared settings panels. */
+.il-intro { margin: 0 0 12px; color: var(--text-dim); }
+.il-sub { margin: 0 0 10px; color: var(--text-dim); font-size: 0.92rem; }
+.il-sub strong { color: var(--text); font-weight: 600; }
+.il-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.il-empty { color: var(--text-dim); margin: 4px 2px; }
+.il-pick { margin-top: 14px; display: grid; gap: 10px; }
+.il-sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.il-source { display: grid; gap: 4px; text-align: left; padding: 12px 14px; height: auto; align-content: start; }
+.il-source small { color: var(--text-dim); font-size: 0.8rem; line-height: 1.35; white-space: normal; }
+.il-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.il-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.il-result { margin: 10px 0 4px; color: var(--text); font-size: 0.92rem; }
+.il-result.bad { color: var(--bad, #e57373); }
+.il-meta { margin: 0; color: var(--text-dim); font-size: 0.84rem; }
+.il-forget { margin-top: 6px; font-size: 0.84rem; }
+.il-plex { margin: 0; color: var(--text-dim); font-size: 0.9rem; flex: 1 1 320px; }
+.il-h3 { margin: 18px 0 2px; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.il-form .il-wide { grid-column: 1 / -1; }
+.il-form .il-check { align-self: end; }
+.il-file { display: grid; gap: 6px; margin-top: 4px; }
+.il-form .add-tags { display: grid; gap: 6px; }

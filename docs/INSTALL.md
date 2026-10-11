@@ -1,6 +1,6 @@
 # Installing Mediarium
 
-Mediarium runs in **Docker**, the one supported way to install it today. It works on any 64-bit Linux computer or NAS (Intel/AMD `amd64` or ARM `arm64`, including a Raspberry Pi 3, 4 or 5 with a 64-bit system). Windows and macOS installers, Linux packages and one-click app-store entries are coming soon: see [What runs where](./PLATFORMS.md).
+Mediarium runs in **Docker**, and it is one image for every platform. It works on any 64-bit Linux computer or NAS (Intel/AMD `amd64` or ARM `arm64`, including a Raspberry Pi 3, 4 or 5 with a 64-bit system), and on a Windows PC or a Mac through Docker Desktop. There are no separate installers or app-store entries: see [What runs where](./PLATFORMS.md).
 
 It takes about ten minutes. You don't need to know Docker well: you copy one file, change a few lines, and run one command.
 
@@ -19,17 +19,20 @@ Mediarium does not host or provide any content. See [LEGAL.md](./LEGAL.md).
 5. [PUID, PGID and TZ](#puid-pgid-and-tz)
 6. [Ports](#ports)
 7. [Other environment variables](#other-environment-variables)
-8. [The setup wizard](#the-setup-wizard)
-9. [Optional: getting past Cloudflare checks](#optional-getting-past-cloudflare-checks)
-10. [Everyday commands](#everyday-commands)
-11. [Updating](#updating)
-12. [Updating without rebuilding the container](#updating-without-rebuilding-the-container)
-13. [Backup and restore](#backup-and-restore)
-14. [Uninstalling](#uninstalling)
-15. [One command instead: docker run](#one-command-instead-docker-run)
-16. [Using a Docker app (Portainer, Container Manager, Container Station...)](#using-a-docker-app)
-17. [Troubleshooting](#troubleshooting)
-18. [Building from source](#building-from-source)
+8. [Running under a sub-path (URL base)](#running-under-a-sub-path-url-base)
+9. [Secrets from files (Docker secrets)](#secrets-from-files-docker-secrets)
+10. [The setup wizard](#the-setup-wizard)
+11. [Optional: getting past Cloudflare checks](#optional-getting-past-cloudflare-checks)
+12. [Everyday commands](#everyday-commands)
+13. [Updating](#updating)
+14. [Updating without rebuilding the container](#updating-without-rebuilding-the-container)
+15. [Backup and restore](#backup-and-restore)
+16. [Monitoring with Prometheus](#monitoring-with-prometheus)
+17. [Uninstalling](#uninstalling)
+18. [One command instead: docker run](#one-command-instead-docker-run)
+19. [Using a Docker app (Portainer, Container Manager, Container Station...)](#using-a-docker-app)
+20. [Troubleshooting](#troubleshooting)
+21. [Building from source](#building-from-source)
 
 ---
 
@@ -103,9 +106,8 @@ services:
       - DOWNLOADS_DIR=/data/downloads
       - MOVIES_DIR=/data/movies
       - TV_DIR=/data/tv
-      # OPTIONAL folders. Take off the # to use one. Music works today, ebooks
-      # and audiobooks are on the way. Keep them inside /data and there is
-      # nothing more to map:
+      # OPTIONAL folders for music, ebooks and audiobooks. Take off the # to
+      # use one. Keep them inside /data and there is nothing more to map:
       # - MUSIC_DIR=/data/music
       # - EBOOKS_DIR=/data/ebooks
       # - AUDIOBOOKS_DIR=/data/audiobooks
@@ -222,7 +224,7 @@ The compose file above has these as commented lines you can switch on. After cha
 
 1. Create the folder on your server (on a NAS, before the next step).
 2. Add the `environment` line or the `volumes` line as described above, then run `docker compose up -d`. In a NAS app, stop the project, rebuild it and start it again.
-3. In Mediarium, switch the type on under **Settings > Media types** (music today) and check the folder under **Settings > Library > Folders and file names**. The page shows the folder Mediarium really uses and whether it is **Mapped to your device**.
+3. In Mediarium, switch the type on under **Settings > Media types** (music today) and check the folder under **Settings > Library > Folders**. The page shows the folder Mediarium really uses and whether it is **Mapped to your device**.
 
 ## Why one /data folder? (hardlinks)
 
@@ -238,9 +240,9 @@ To check after your first download: on the server run `stat -c '%h %n' /your/sto
 
 ### What Mediarium never does to your folders
 
-- **Folders inside your library made by another app** may belong to a different user (an older Sonarr or Radarr with another PUID, for example). Mediarium checks the folders inside Movies and TV, each title and its season folders, and warns in setup, in Settings > Library > Folders and file names and on the dashboard when some can't be written to, with an example path. Give the user Mediarium runs as write access to them, or run Mediarium with the same `PUID`/`PGID` as that app.
+- **Folders inside your library made by another app** may belong to a different user (an older Sonarr or Radarr with another PUID, for example). Mediarium checks the folders inside Movies and TV, each title and its season folders, and warns in setup, in Settings > Library > Folders and on the dashboard when some can't be written to, with an example path. Give the user Mediarium runs as write access to them, or run Mediarium with the same `PUID`/`PGID` as that app.
 - It never changes the owner or permissions of your existing media folders (only of its own `/config`). The one exception is a brand-new, empty folder that Docker made for you because the folder you mapped did not exist: that one folder is handed to your `PUID`/`PGID` user so Mediarium can write to it.
-- It never replaces a file that is already in your library unless you say so. **If a file already exists** (Settings > Library > Folders and file names) can skip the new file (the default), ask you each time, always overwrite, or overwrite only if the new file is better. A replacement is written next to the original first and then swapped in, so a failure can't destroy the original. If the new file has a different name (another quality tag or file type), the old one is removed too, but only when you chose to overwrite (or overwrite if better) and only inside your library folder. A file copied to another drive is written under a temporary name (`.mediarium-tmp`) until the copy is complete, so Plex, Jellyfin or Emby never see half a movie.
+- It never replaces a file that is already in your library unless you say so. **If a file already exists** (Settings > Library > File names and importing) can skip the new file (the default), ask you each time, always overwrite, or overwrite only if the new file is better. A replacement is written next to the original first and then swapped in, so a failure can't destroy the original. If the new file has a different name (another quality tag or file type), the old one is removed too, but only when you chose to overwrite (or overwrite if better) and only inside your library folder. A file copied to another drive is written under a temporary name (`.mediarium-tmp`) until the copy is complete, so Plex, Jellyfin or Emby never see half a movie.
 - It only deletes library files when you remove a title with its delete-files box ticked, or when a new version replaces a file and **If a file already exists** is set to overwrite. **Also delete everything on disk** starts unticked and shows how many files and how much space would go. The same goes for **Also delete the files of all ... from the disk** when you remove several titles at once. Through the API, files are only deleted when the request says `deleteFiles=true`. Even then they wait in the recycle bin (`.mediarium-trash` in the library folder) for 7 days before they are deleted for good.
 - It only tidies up its own working folder (`incomplete` inside its downloads folder). Torrent data is kept while it seeds.
 
@@ -253,6 +255,7 @@ Mediarium writes files as the user and group you give it, so that you (and Plex,
   - Synology and QNAP: whatever `id` prints for the user that owns your shared folders (see the [Synology guide](./synology.md#2-find-your-user-numbers)).
   - Already running Radarr, Sonarr or SABnzbd in Docker? Use the same `PUID` and `PGID` as those containers.
   - Advanced: you can instead start the container as a user directly (`user: "1000:1000"` in the compose file). `PUID` and `PGID` are then ignored, and the folders must already be writable by that user.
+- **UMASK** (optional): the permissions new files and folders get, the same variable the linuxserver.io images use. `022` gives files `644` and folders `755` (only you can write); `002` gives `664` and `775` (your group can write too). It works by taking permissions away from `666` for files and `777` for folders, so it is not the same as `chmod`. Left out, the container keeps its own `022`. A value that is not one to four octal digits is ignored, with a note in the container log. To give the files Mediarium puts in your library exact permissions whatever the umask, use [Settings > Library > Folders](./library.md#file-permissions).
 - **TZ:** your timezone, from the [list of tz names](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones), for example `Europe/London`, `Europe/Berlin` or `America/New_York`. It sets the time in logs and schedules.
 
 Mediarium changes the owner of its own `/config` folder, and of a media folder only when that folder is brand new, empty and made by Docker (see above). It never changes the owner or permissions of your existing media folders. If it cannot write to one, the container log says `WARNING: /data/... is not writable by uid ...` and the dashboard shows it; fix the folder on the server, or change `PUID`/`PGID`.
@@ -262,7 +265,7 @@ Mediarium changes the owner of its own `/config` folder, and of a media folder o
 | Port | What it is for | Notes |
 |---|---|---|
 | `8264` | The web page | Change the **left** number to use another port, for example `"8300:8264"`. |
-| `58264` TCP and UDP | Torrent peers connecting to you | Optional. Without it torrents still download, but with it you find more peers and can seed. Keep both numbers the same, and the same as the **Listen port** under Settings > Downloading > Usenet and torrents. Forward it on your router for peers from the internet. It isn't used while the built-in VPN is connected. |
+| `58264` TCP and UDP | Torrent peers connecting to you | Optional. Without it torrents still download, but with it you find more peers and can seed. Keep both numbers the same, and the same as the **Listen port** under Settings > Downloading > Usenet. Forward it on your router for peers from the internet. It isn't used while the built-in VPN is connected. |
 
 Mediarium serves plain HTTP. **Do not open port 8264 to the internet.** To reach it from outside your home, use a VPN into your network (Tailscale, WireGuard) or a reverse proxy with HTTPS; [security.md](./security.md) has the checklist and examples for Nginx Proxy Manager, Traefik, Caddy, Cloudflare Tunnel and Synology.
 
@@ -272,14 +275,83 @@ Most settings live under **Settings**. Besides the folders, `PUID`, `PGID` and `
 
 | Variable | What it does |
 |---|---|
+| `UMASK` | The permissions new files and folders get, for example `002` (see [PUID, PGID and TZ](#puid-pgid-and-tz)). Left out, the container keeps `022`. |
 | `APP_PORT` | The port the web page listens on inside the container (default `8264`). To use another port on your server, change the left number of the `ports` line instead. |
 | `CONFIG_DIR` | Where `app.db` and `secret.key` live (default `/config`). Leave it alone in Docker. |
 | `TRUSTED_PROXIES`, `ALLOWED_ORIGINS` | For a reverse proxy: see [security.md](./security.md#trusted_proxies). |
+| `URL_BASE` | Set it when your reverse proxy serves Mediarium under a sub-path, for example `/mediarium`. Empty (the default) means the root. See [Running under a sub-path](#running-under-a-sub-path-url-base). |
+| `NAME_FILE` | Any variable above can be given as a file instead, like `URL_BASE_FILE=/run/secrets/x`. See [Secrets from files](#secrets-from-files-docker-secrets). |
 | `MEDIARIUM_PAUSE_AUTOMATION` | Set to `1` to start in **safe mode**: nothing searches, downloads, refreshes, checks connections or looks for new versions by itself. Downloads waiting in line come back paused. You can still search and download by hand, and the dashboard says "Safe mode is on". Remove it to go back to normal. See [Troubleshooting](#troubleshooting). |
+| `MEDIARIUM_DISABLE_SSO` | Set to `1` as a way back in if single sign-on or directory sign-in locked people out: both are switched off and password sign-in is on, whatever is saved in Settings. Remove it to use the saved settings again. See [accounts.md](./accounts.md#if-you-are-locked-out). |
 | `MEDIARIUM_SUPERVISED` | Set to `1` only for a program you run yourself when a service manager other than Docker, systemd or launchd starts it again after it exits. It lets the Restart buttons work. |
 | `MEDIARIUM_SKIP_INSTALLED_UPDATE` | Set to any value to make the Docker entrypoint ignore an [installed update](#update-now-docker-image) and start the program inside the image. |
 
 The Docker images set `BUNDLED_FLARESOLVERR` (the `-full` image only) and `MEDIARIUM_IMAGE_VERSION` themselves. Don't set those two.
+
+## Running under a sub-path (URL base)
+
+Most people give Mediarium its own address, like `https://media.example.com`. If you would rather put it under a path of a domain you already use, like `https://home.example.com/mediarium`, set `URL_BASE`:
+
+```yaml
+environment:
+  - URL_BASE=/mediarium
+```
+
+Restart the container and Mediarium answers under that path: the pages, the API, the Radarr, Sonarr and Lidarr addresses for [other apps](./other-apps.md) (`https://home.example.com/mediarium/radarr`), the metrics, the "Add to home screen" files, push notifications, and the addresses for e-readers (the OPDS catalogue and the Kobo address on your profile page both include the path). You don't rebuild anything; the same program works under any path. Leave `URL_BASE` empty (or don't set it) and nothing changes.
+
+Rules for the value: a path with letters, numbers, dashes, underscores and dots, like `/mediarium` or `/apps/media`. A slash at the start and end doesn't matter. It can't start with a name Mediarium already uses (`api`, `radarr`, `sonarr`, `lidarr`, `settings`, `library` and the other page names); the container then stops with a message saying so.
+
+Your proxy has to send the path on to Mediarium. Both of these work, so use whichever your proxy does by default: pass the path along unchanged, or remove it before passing the request on. Examples:
+
+```
+# Nginx: no path after the address, so /mediarium stays on the request
+location /mediarium/ {
+    proxy_pass http://127.0.0.1:8264;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 1g;
+}
+
+# Caddy
+handle /mediarium/* {
+    reverse_proxy mediarium:8264
+}
+```
+
+In Traefik, route `PathPrefix(`/mediarium`)` to the service and don't add a strip-prefix middleware. In Nginx Proxy Manager, use a custom location `/mediarium` pointing at Mediarium; no rewrite is needed.
+
+Things that follow the path:
+
+- The sign-in cookie is limited to it, so other apps on the same domain never get it.
+- Open `https://home.example.com/mediarium` (with or without the last slash). The bare domain `https://home.example.com/` is for your proxy or another app.
+- Put the full address, path included, in **Link in messages** under [Notifications](./notifications.md#the-link) so the buttons in messages open the right page.
+- Calendar feed addresses and the address shown on the Other apps page include the path.
+- Anything that talked to Mediarium before (a bookmark, an app with the old address) needs the new one. An address without the path still reaches the program directly (for example `http://server:8264`), but the page it shows points everything at the path.
+- The container health check keeps working; it uses the plain address inside the container.
+
+If pages come up blank or "not found", the proxy is usually dropping or doubling the path. Open `https://home.example.com/mediarium/api/version`: it should answer with the version number.
+
+## Secrets from files (Docker secrets)
+
+Instead of putting a value in the compose file, you can keep it in a file and give Mediarium the file's path. Add `_FILE` to the variable's name:
+
+```yaml
+services:
+  mediarium:
+    environment:
+      - URL_BASE_FILE=/run/secrets/mediarium_base
+    secrets:
+      - mediarium_base
+
+secrets:
+  mediarium_base:
+    file: ./mediarium_base.txt
+```
+
+Mediarium reads the file when it starts and uses what is in it, without the spaces and line breaks around it. This works for every variable on the [environment reference](./reference/environment.md) that the app reads (not `PUID`, `PGID` and `TZ`, which the container script reads). If the plain variable is also set, it wins. A file that can't be read is mentioned in the container log (`docker logs mediarium`) and the variable is treated as not set. The log shows the file's path, never what is in it.
+
+Today none of those variables is a password or a key: indexers, Usenet logins, API keys, notification tokens and the like are set inside the app and stored encrypted in `/config`, which is why there is nothing secret to put in the compose file. `_FILE` is there so that, if you do keep any value out of the compose file, it works the way Docker expects.
 
 ## The setup wizard
 
@@ -369,23 +441,27 @@ That downloads the newest image and restarts Mediarium with it. Your settings an
 
   | Tag | Moves when |
   |---|---|
-  | `ghcr.io/rdborg/mediarium:2.1.0` (`:2.1.0-full`) | never |
-  | `ghcr.io/rdborg/mediarium:2.1` (`:2.1-full`) | a bug-fix release of 2.1 comes out (2.1.1, 2.1.2...) |
+  | `ghcr.io/rdborg/mediarium:3.0.0` (`:3.0.0-full`) | never |
+  | `ghcr.io/rdborg/mediarium:3.0` (`:3.0-full`) | a bug-fix release of 3.0 comes out (3.0.1, 3.0.2...) |
   | `ghcr.io/rdborg/mediarium:latest` (`:latest-full`) | any new release |
 
-  A pre-release (for example `2.1.0-beta.1`) only gets its exact tag. What the numbers mean: [RELEASING.md](./RELEASING.md#what-the-version-numbers-mean).
+  A pre-release (for example `3.1.0-beta.1`) only gets its exact tag. What the numbers mean: [RELEASING.md](./RELEASING.md#what-the-version-numbers-mean).
 
 ### Knowing when there is a new version
 
-Once a day Mediarium asks GitHub for the newest release (the first time about two minutes after it starts, and again in an hour after a failed try). If yours is older, administrators see a card on the dashboard and in the **Updates** box under **Settings > System > Server and backup**. It shows what is new and the steps for your kind of install (Synology Container Manager, Unraid or Docker Compose, plus a note for the `-full` image; a program you run yourself gets its own steps). The card has **Hide until the next version**. If a [notification](./notifications.md) target has **New version** ticked, you also get one message per new version. A pre-release is only offered to someone already running one.
+Once a day Mediarium asks GitHub for the newest release (the first time about two minutes after it starts, and again in an hour after a failed try). If yours is older, administrators see a card on the dashboard and in the **Updates** box under **Settings > General**. It shows what is new and the steps for your kind of install (Synology Container Manager, Unraid or Docker Compose, plus a note for the `-full` image; a program you run yourself gets its own steps). The card has **Hide until the next version**. If a [notification](./notifications.md) target has **New version** ticked, you also get one message per new version. A pre-release is only offered to someone already running one.
 
-- **What it sends:** one plain web request to `api.github.com` with the program name and version (`Mediarium/2.1.0`) and nothing else: no account, no library, no settings. GitHub sees your address, as any website does.
+- **What it sends:** one plain web request to `api.github.com` with the program name and version (`Mediarium/3.0.0`) and nothing else: no account, no library, no settings. GitHub sees your address, as any website does.
 - **Turning it off:** untick **Look for new versions once a day** in the Updates box (stored as `updates.check`). Then Mediarium never contacts GitHub by itself. **Check now** still works when you press it.
 - If GitHub cannot be reached or is limiting requests, the card says "Couldn't check just now." with the reason (for example that GitHub is limiting requests, or that the address could not be found), and Mediarium tries again later. A failed check (other than one held back by GitHub's limit) is also listed under Settings > System > Logs and errors. Nothing else is affected.
 
-![The Updates, Restart and Updates pushed through the API boxes on Settings > System > Server and backup](images/system-updates.png)
+![The Updates, Restart and Updates pushed through the API boxes on Settings > General and Settings > System > Server](images/system-updates.png)
 
-*Updates, Restart and the pushed-updates switch on Server and backup. This one shows an up-to-date install.*
+*Updates and the pushed-updates switch on General, and Restart on Server. This one shows an up-to-date install.*
+
+### What's new after an update
+
+The first time you open Mediarium after it moves to a newer version, a short note lists the highlights, with a link to every change. It shows once in each browser and not at all on a fresh install.
 
 ### Update now (Docker image)
 
@@ -400,7 +476,7 @@ If the release is signed by the Mediarium project, the card and the Updates box 
 
 ### Restarting Mediarium
 
-The **Restart** box under **Settings > System > Server and backup** has **Restart Mediarium** and **Restart with automation paused**. The second one starts Mediarium once in [safe mode](#other-environment-variables) (no automatic searching, downloading or refreshing) so the pages load and you can fix a setting. The next restart is normal. Both ask you to confirm and pause running downloads (press **Resume** in Activity afterwards). Both need something that starts Mediarium again after it exits. Docker, systemd and launchd are found automatically (in Docker that means a restart policy such as the `restart: unless-stopped` line in the supplied compose file), and `MEDIARIUM_SUPERVISED=1` covers any other service manager. Where nothing would start it again, the box says "Restart is not available here. Start Mediarium again yourself." and, on a program you run yourself, offers **Shut down** instead. To stop a container, use your container manager.
+The **Restart** box under **Settings > System > Server** has **Restart Mediarium** and **Restart with automation paused**. The second one starts Mediarium once in [safe mode](#other-environment-variables) (no automatic searching, downloading or refreshing) so the pages load and you can fix a setting. The next restart is normal. Both ask you to confirm and pause running downloads (press **Resume** in Activity afterwards). Both need something that starts Mediarium again after it exits. Docker, systemd and launchd are found automatically (in Docker that means a restart policy such as the `restart: unless-stopped` line in the supplied compose file), and `MEDIARIUM_SUPERVISED=1` covers any other service manager. Where nothing would start it again, the box says "Restart is not available here. Start Mediarium again yourself." and, on a program you run yourself, offers **Shut down** instead. To stop a container, use your container manager.
 
 Mediarium also watches itself. Every 30 seconds it checks that its database and web server answer. If either fails for three minutes in a row it restarts itself (never during a restore, an update or a move from another app). The next start says so in the Updates box, under Logs and errors and in the support report. Switch this off with **Restart by itself if it stops answering**. The Docker images also have a health check on `/api/version`, so Docker, Synology and other tools show healthy or unhealthy.
 
@@ -408,8 +484,8 @@ Mediarium also watches itself. Every 30 seconds it checks that its database and 
 
 This is for testing, and for people who can't rebuild their container. An administrator sends a new program file to the running Mediarium, which restarts into it. It needs no Docker socket and no extra privileges. Leave it off unless you use it: [security.md](./security.md#updating-the-program) explains what it allows.
 
-1. As an administrator, switch on **Allow updates pushed through the API** in the **Updates pushed through the API** box under **Settings > System > Server and backup**. It asks you to confirm. This can only be switched on here, while you are signed in, never with an API key.
-2. Create an administrator API key under **Settings > Accounts > API keys**.
+1. As an administrator, switch on **Allow updates pushed through the API** in **Advanced: updates pushed through the API** under **Settings > General**. It asks you to confirm. This can only be switched on here, while you are signed in, never with an API key.
+2. Create an administrator API key under **Settings > Account & Access > Security > API keys**.
 3. Send the file:
 
    ```bash
@@ -430,9 +506,26 @@ Maintainers can use `tools/push-update.sh`, which builds the program from the co
 
 Everything that is not a media file lives in `/config`. The two files that matter are `app.db` (settings, library, history, accounts) and `secret.key`. **Keep the two together:** `secret.key` unlocks the passwords and keys saved in `app.db`. The folder also holds caches (for example music covers and the list of torrent sites) and, if you use one, the `update` folder.
 
-**From the app (easiest):** administrators can download a backup zip with **Download a backup** in the **Backup** box under **Settings > System > Server and backup**. It is safe to make while downloads are running. The zip holds `app.db`, `secret.key` and a small note about the version, and no media files. It contains your encryption key, so keep it as private as a password. To restore, choose the zip in the **Restore** box on the same page and press **Restore this backup**: Mediarium checks it (a backup made by a newer version of Mediarium than yours is refused; a backup can be up to 1 GB), restarts, and keeps your previous files in a `before-restore-<date>` folder inside `/config`. Restoring needs something that starts Mediarium again, like `restart: unless-stopped`; otherwise start it yourself and the restore is applied then.
+**From the app (easiest):** administrators can download a backup zip with **Download a backup** on **Settings > System > Backup and restore**. It is safe to make while downloads are running. The zip holds `app.db`, `secret.key` and a small note about the version, and no media files. It contains your encryption key, so keep it as private as a password. To restore, choose the zip in the **Restore** box on the same page and press **Restore this backup**: Mediarium checks it (a backup made by a newer version of Mediarium than yours is refused; a backup can be up to 1 GB), restarts, and keeps your previous files in a `before-restore-<date>` folder inside `/config`. Restoring needs something that starts Mediarium again, like `restart: unless-stopped`; otherwise start it yourself and the restore is applied then.
 
-**Automatic backups:** every night, and just before every update, Mediarium saves the same zip in `/config/backups` and keeps the newest 7 (change it to 3, 5, 14 or 30 in the **Backup** box). The box lists them with the time and size, each with **Download**, and has **Back up now**. To restore one, download it and choose it under **Restore**. Switch the nightly backup off with **Save a backup every night** (stored as `backup.auto`; how many are kept is `backup.keep`). The files sit next to your database, so also copy one somewhere else now and then: a backup on the same disk does not help if that disk fails. If a nightly backup can't be saved, it is listed in Logs and errors. Scripts: `GET /api/system/backups`, `POST /api/system/backups` and `GET /api/system/backups/{name}` (the last two need a signed-in administrator, not an API key, because a backup holds every stored secret).
+**Automatic backups:** every night, and just before every update, Mediarium saves the same zip in `/config/backups` and keeps the newest 7 (change it to 3, 5, 14 or 30 in the **Backup** box). The box lists them with the time and size, each with **Download**, and has **Back up now**. To restore one, download it and choose it under **Restore**. Switch the nightly backup off with **Save a backup every night** (stored as `backup.auto`; how many are kept is `backup.keep`). The files sit next to your database, so also keep a copy somewhere else: switch on [cloud backups](#cloud-backups), or copy one by hand now and then. A backup on the same disk does not help if that disk fails. If a nightly backup can't be saved, it is listed in Logs and errors. Scripts: `GET /api/system/backups`, `POST /api/system/backups` and `GET /api/system/backups/{name}` (the last two need a signed-in administrator, not an API key, because a backup holds every stored secret).
+
+### Cloud backups
+
+A backup on the same disk doesn't help if the disk dies or the NAS is stolen. **Cloud backups** in **Settings > System > Backup and restore** copy each nightly backup somewhere else. It is off until you set it up.
+
+- **What's copied:** the same zip as the nightly backup: settings, library, accounts and history (`app.db`) and `secret.key`. Never media files, so a copy is usually a few megabytes.
+- **Locked before it leaves.** Each copy is locked with a passphrase you choose (scrypt and AES-256-GCM) on your server, so the storage company only holds data it can't read. **Write the passphrase down somewhere away from the server.** Without it a cloud copy can't be opened by anyone, you included. Changing the passphrase only affects copies made from then on.
+- **Where it can go:**
+  - **S3-style storage:** Backblaze B2, Wasabi, Cloudflare R2, Amazon S3, MinIO, Synology C2 Object Storage and others. You need the endpoint address (for example `https://s3.eu-central-003.backblazeb2.com`), the region (empty means `us-east-1`; R2 uses `auto`), the bucket, and an access key and secret key that can write to it. Keep **Bucket name in the path** on for everything except Amazon S3 itself. Copies go in a folder inside the bucket, `mediarium/` unless you change it.
+  - **A WebDAV folder:** Nextcloud, ownCloud, Synology WebDAV Server, QNAP, or anything served with `rclone serve webdav`. Enter the folder's full address (Nextcloud: `https://cloud.example.com/remote.php/dav/files/<you>/Mediarium/`), a user name and a password (an app password if your server has them). The last folder in the address is created if it doesn't exist.
+- **Test** saves a tiny file there, lists the folder and deletes it again, without saving your settings. **Copy a backup now** copies the newest backup straight away (it makes one first if the newest is more than an hour old).
+- **How many are kept:** the newest 14 by default (7, 14, 30, 60 or 90). Only files named like `mediarium-backup-<date>.zip.enc` are ever deleted, whatever else is in the folder.
+- If a copy fails, the box says why and it's listed in Logs and errors (`backup.cloud_failed`). The local backup is saved either way.
+
+**To restore a cloud copy**, download the `.zip.enc` file from your storage, choose it under **Restore**, and type the passphrase in the box that appears. On a new server, finish the first-run setup, then restore the same way.
+
+The storage keys, password and passphrase are saved encrypted with the rest of your settings (stored as `backup.cloud`) and are never sent back to the page. Like downloading a backup, everything here needs a signed-in administrator, not an API key. Scripts: `GET` and `PUT /api/system/backups/cloud`, `POST /api/system/backups/cloud/test`, `POST /api/system/backups/cloud/upload` and `GET /api/system/backups/cloud/list`.
 
 **By hand:**
 
@@ -445,6 +538,52 @@ docker compose start
 While Mediarium runs, its newest changes sit in two small files next to the database, `app.db-wal` and `app.db-shm`. They belong to `app.db`, so only copy `app.db` on its own with Mediarium stopped. Copying the whole `config` folder as above, or using the in-app backup, always gets everything.
 
 To restore by hand: stop Mediarium, put the backup folder back in place of `config`, start it again.
+
+## Monitoring with Prometheus
+
+Mediarium has a page of numbers for [Prometheus](https://prometheus.io) and Grafana, at `/metrics` (also `/api/metrics`; with a [URL base](#running-under-a-sub-path-url-base) it is `/mediarium/metrics`). It is for administrators only, so it is never open: a request needs an administrator's API key, sent as `Authorization: Bearer <key>` (what Prometheus sends) or as the `X-API-Key` header. Make the key with **Make a key for other apps** on Settings > Connections > Other apps, or under **Settings > Account & Access > Security > API keys**. A basic account's key is refused.
+
+Put the key in a file and tell Prometheus where it is. This is a complete scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: mediarium
+    metrics_path: /metrics          # /mediarium/metrics with a URL base
+    scrape_interval: 60s
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/mediarium.key   # a file holding only the key
+    static_configs:
+      - targets: ['mediarium:8264']
+    # scheme: https                 # if you scrape through your reverse proxy
+```
+
+Check it by hand with `curl -H "Authorization: Bearer <key>" http://mediarium:8264/metrics`. Without a key the answer is `401`.
+
+What you get (all gauges, names start with `mediarium_`):
+
+| Metric | Labels | What it counts |
+|---|---|---|
+| `up` | | 1 while the program answers |
+| `build_info` | `version` | Always 1; the label is the running version |
+| `start_time_seconds` | | When it started |
+| `library_movies_total` | `status` (missing, downloading, downloaded) | Movies |
+| `library_series` | | Shows |
+| `library_episodes` | `status` (downloaded, missing) | Episodes |
+| `library_music_artists`, `library_music_albums` | `status` on albums | Music |
+| `library_books` | `format` (ebook, audiobook), `status` | Books |
+| `library_size_bytes` | `kind` (movies, tv) | Size of the files |
+| `wanted_missing` | `kind` (movie, episode, album, ebook, audiobook) | What the Wanted page lists as missing |
+| `queue_items_total` | `status` (queued, downloading, importing, paused, stopped, completed, failed, conflict) | The download queue |
+| `downloads_active` | | Downloads running now |
+| `health_warnings` | `level` (error, warn, info) | Problems on the dashboard |
+| `disk_free_bytes`, `disk_total_bytes` | `kind`, `path` | Space on the drive of each library and download folder |
+| `indexer_up` | `indexer` | 1 if the last check of the indexer worked, 0 if it failed |
+| `usenet_server_up` | `server` | The same for Usenet logins |
+| `indexers` | `state` (enabled, disabled) | Indexers set up |
+| `service_limit_hits` | `service` (tmdb, trakt, opensubtitles) | Times a service said "too many requests" in the last 24 hours |
+
+`indexer_up` and `usenet_server_up` come from the [connection watch](./notifications.md#connection-watch), so they appear after its first check and stay missing while that is switched off. The wanted counts and the health numbers are worked out at most every 30 seconds, so a faster scrape does not make Mediarium work harder. The older names `library_movies_total` and `queue_items_total` are unchanged.
 
 ## Uninstalling
 
@@ -490,7 +629,7 @@ Many NAS systems and servers have an app for Docker. The same compose file works
 | CasaOS / ZimaOS | App Store → the **+** menu → Install a customized app → Import, then paste |
 | OpenMediaVault (with omv-extras) | Services → Compose → Files → Add |
 
-One-click entries in these app stores are on the way: see [What runs where](./PLATFORMS.md). Until then, pasting the compose file is the way to go.
+Mediarium is one image for all of them, so there is nothing to wait for: pasting the compose file (or filling in the same fields) is the install. See [What runs where](./PLATFORMS.md).
 
 **Docker Desktop on Windows or Mac** can run Mediarium too, which is fine for trying it out. For a machine that runs day and night, a NAS or Linux server is the better home: sharing Windows or macOS folders with Docker is slower, and hardlinks may not work there.
 
@@ -515,7 +654,7 @@ The `DOWNLOADS_DIR`, `MOVIES_DIR` and `TV_DIR` lines are missing, or you changed
 That folder only exists inside the container, so it is lost when the container is recreated. Check the `volumes` lines, and that `DOWNLOADS_DIR`, `MOVIES_DIR` and `TV_DIR` point inside `/data`.
 
 **Search finds nothing, or downloads never start.**
-Add at least one indexer under Settings > Indexers & Search and press its **Test** button. For Usenet, add your provider under Settings > Downloading > Usenet and torrents and press **Test connection**. More in [indexers.md](./indexers.md) and [downloads.md](./downloads.md).
+Add at least one indexer under Settings > Indexers & Search and press its **Test** button. For Usenet, add your provider under Settings > Downloading > Usenet and press **Test connection**. More in [indexers.md](./indexers.md) and [downloads.md](./downloads.md).
 
 **A download finished but was not imported.**
 Open the title and look at its activity log: it says what happened in plain words ([activity.md](./activity.md)). Password-protected or damaged releases are blocklisted and the next one is tried.
@@ -526,7 +665,7 @@ Update to the newest version first. Then check that the settings folder (`/confi
 **The time in the log is wrong.**
 Set `TZ` and run `docker compose up -d`.
 
-**Still stuck?** First look at **Settings > System > Logs and errors**: it lists what went wrong, in plain words, with what to try ([Logs and errors](./logs-and-errors.md)). If the pages open, go to **Settings > System > Server and backup**, find the **Help and support** box and press **Copy for support**. It copies your version, how the database is doing, the setup warnings, the latest problems from Logs and errors and the last 500 lines of the log, with passwords, keys and tokens left out. Paste it into an [issue](https://github.com/rdborg/Mediarium/issues/new/choose) together with how you installed Mediarium. If the pages do not open, use the log instead (`docker compose logs mediarium`) and remove API keys, passwords and VPN keys before pasting anything.
+**Still stuck?** First look at **Settings > System > Logs and errors**: it lists what went wrong, in plain words, with what to try ([Logs and errors](./logs-and-errors.md)). If the pages open, press **Copy for support** on the same page. It copies your version, how the database is doing, the setup warnings, the latest problems from Logs and errors and the last 500 lines of the log, with passwords, keys and tokens left out. Paste it into an [issue](https://github.com/rdborg/Mediarium/issues/new/choose) together with how you installed Mediarium. If the pages do not open, use the log instead (`docker compose logs mediarium`) and remove API keys, passwords and VPN keys before pasting anything.
 
 ## Building from source
 

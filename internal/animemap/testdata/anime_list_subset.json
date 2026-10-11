@@ -1,0 +1,1747 @@
+[
+ {
+  "type": "TV",
+  "anidb_id": 69,
+  "anilist_id": 21,
+  "animecountdown_id": 38636,
+  "animenewsnetwork_id": 836,
+  "anime-planet_id": "one-piece",
+  "anisearch_id": 2227,
+  "imdb_id": [
+   "tt0388629"
+  ],
+  "kitsu_id": 12,
+  "livechart_id": 321,
+  "mal_id": 21,
+  "simkl_id": 38636,
+  "themoviedb_id": {
+   "tv": 37854
+  },
+  "tvdb_id": 81797
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 411,
+  "anilist_id": 459,
+  "animecountdown_id": 36580,
+  "animenewsnetwork_id": 3708,
+  "anime-planet_id": "one-piece-movie-1",
+  "anisearch_id": 302,
+  "imdb_id": [
+   "tt0814243"
+  ],
+  "kitsu_id": 421,
+  "livechart_id": 4028,
+  "mal_id": 459,
+  "simkl_id": 36580,
+  "themoviedb_id": {
+   "movie": [
+    19576
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 1
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 893,
+  "anilist_id": 460,
+  "animecountdown_id": 37672,
+  "animenewsnetwork_id": 3206,
+  "anime-planet_id": "one-piece-movie-2-clockwork-island-adventure",
+  "anisearch_id": 1815,
+  "imdb_id": [
+   "tt0832449"
+  ],
+  "kitsu_id": 422,
+  "livechart_id": 4166,
+  "mal_id": 460,
+  "simkl_id": 37672,
+  "themoviedb_id": {
+   "movie": [
+    23446
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 1253,
+  "anilist_id": 461,
+  "animecountdown_id": 38103,
+  "animenewsnetwork_id": 3448,
+  "anime-planet_id": "one-piece-movie-3-chopper-kingdom-of-strange-animal-island",
+  "anisearch_id": 1854,
+  "imdb_id": [
+   "tt0997084"
+  ],
+  "kitsu_id": 423,
+  "livechart_id": 4199,
+  "mal_id": 461,
+  "simkl_id": 38103,
+  "themoviedb_id": {
+   "movie": [
+    44725
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 1254,
+  "anilist_id": 462,
+  "animecountdown_id": 38942,
+  "animenewsnetwork_id": 2326,
+  "anime-planet_id": "one-piece-movie-4-dead-end-adventure",
+  "anisearch_id": 3260,
+  "imdb_id": [
+   "tt1006926"
+  ],
+  "kitsu_id": 424,
+  "livechart_id": 4187,
+  "mal_id": 462,
+  "simkl_id": 38942,
+  "themoviedb_id": {
+   "movie": [
+    44727
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 2036,
+  "anilist_id": 463,
+  "animecountdown_id": 40614,
+  "animenewsnetwork_id": 2851,
+  "anime-planet_id": "one-piece-movie-5-the-curse-of-the-sacred-sword",
+  "anisearch_id": 2376,
+  "imdb_id": [
+   "tt1010435"
+  ],
+  "kitsu_id": 425,
+  "livechart_id": 4208,
+  "mal_id": 463,
+  "simkl_id": 40614,
+  "themoviedb_id": {
+   "movie": [
+    44728
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 2369,
+  "anilist_id": 269,
+  "animecountdown_id": 41066,
+  "animenewsnetwork_id": 4240,
+  "anime-planet_id": "bleach",
+  "anisearch_id": 1078,
+  "imdb_id": [
+   "tt0434665"
+  ],
+  "kitsu_id": 244,
+  "livechart_id": 3340,
+  "mal_id": 269,
+  "simkl_id": 41066,
+  "themoviedb_id": {
+   "tv": 30984
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tmdb": 1
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 2644,
+  "anilist_id": 464,
+  "animecountdown_id": 39472,
+  "animenewsnetwork_id": 4790,
+  "anime-planet_id": "one-piece-movie-6-baron-omatsuri-and-the-secret-island",
+  "anisearch_id": 2553,
+  "imdb_id": [
+   "tt1018764"
+  ],
+  "kitsu_id": 426,
+  "livechart_id": 4104,
+  "mal_id": 464,
+  "simkl_id": 39472,
+  "themoviedb_id": {
+   "movie": [
+    44729
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 12
+  }
+ },
+ {
+  "type": "OVA",
+  "anidb_id": 2736,
+  "anilist_id": 466,
+  "animecountdown_id": 41370,
+  "animenewsnetwork_id": 6358,
+  "anime-planet_id": "one-piece-defeat-the-pirate-ganzak",
+  "anisearch_id": 1369,
+  "imdb_id": [
+   "tt1012788"
+  ],
+  "kitsu_id": 428,
+  "livechart_id": 4938,
+  "mal_id": 466,
+  "simkl_id": 41370,
+  "themoviedb_id": {
+   "movie": [
+    116315
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 4097,
+  "anilist_id": 465,
+  "animecountdown_id": 40842,
+  "animenewsnetwork_id": 6058,
+  "anime-planet_id": "one-piece-movie-7-karakuri-castles-mecha-giant-soldier",
+  "anisearch_id": 3359,
+  "imdb_id": [
+   "tt1059950"
+  ],
+  "kitsu_id": 427,
+  "livechart_id": 4175,
+  "mal_id": 465,
+  "simkl_id": 40842,
+  "themoviedb_id": {
+   "movie": [
+    44730
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 14
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 4515,
+  "anilist_id": 1686,
+  "animecountdown_id": 37112,
+  "animenewsnetwork_id": 6600,
+  "anime-planet_id": "bleach-movie-1-memories-of-nobody",
+  "anisearch_id": 3680,
+  "imdb_id": [
+   "tt1105263"
+  ],
+  "kitsu_id": 1515,
+  "livechart_id": 3786,
+  "mal_id": 1686,
+  "simkl_id": 37112,
+  "themoviedb_id": {
+   "movie": [
+    15575
+   ]
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 2
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 4851,
+  "anilist_id": 2107,
+  "animecountdown_id": 38133,
+  "animenewsnetwork_id": 7109,
+  "anime-planet_id": "one-piece-the-desert-princess-and-the-pirates-adventures-in-alabasta",
+  "anisearch_id": 3965,
+  "imdb_id": [
+   "tt1037116"
+  ],
+  "kitsu_id": 1906,
+  "livechart_id": 4156,
+  "mal_id": 2107,
+  "simkl_id": 38133,
+  "themoviedb_id": {
+   "movie": [
+    25278
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 15
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 5352,
+  "anilist_id": 2889,
+  "animecountdown_id": 41292,
+  "animenewsnetwork_id": 8369,
+  "anime-planet_id": "bleach-movie-2-the-diamonddust-rebellion",
+  "anisearch_id": 4332,
+  "imdb_id": [
+   "tt1148261"
+  ],
+  "kitsu_id": 2623,
+  "livechart_id": 3825,
+  "mal_id": 2889,
+  "simkl_id": 41292,
+  "themoviedb_id": {
+   "movie": [
+    17101
+   ]
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 5691,
+  "anilist_id": 3848,
+  "animecountdown_id": 41361,
+  "animenewsnetwork_id": 9047,
+  "anime-planet_id": "one-piece-movie-9-episode-of-chopper-the-miracle-winter-cherry-blossom",
+  "anisearch_id": 4495,
+  "imdb_id": [
+   "tt1206326"
+  ],
+  "kitsu_id": 3300,
+  "livechart_id": 4212,
+  "mal_id": 3848,
+  "simkl_id": 41361,
+  "themoviedb_id": {
+   "movie": [
+    44731
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 16
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 6041,
+  "anilist_id": 4835,
+  "animecountdown_id": 37796,
+  "animenewsnetwork_id": 10055,
+  "anime-planet_id": "bleach-movie-3-fade-to-black",
+  "anisearch_id": 4941,
+  "imdb_id": [
+   "tt1339302"
+  ],
+  "kitsu_id": 3817,
+  "livechart_id": 3873,
+  "mal_id": 4835,
+  "simkl_id": 37796,
+  "themoviedb_id": {
+   "movie": [
+    17165
+   ]
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "OVA",
+  "anidb_id": 6199,
+  "anilist_id": 5252,
+  "animecountdown_id": 38586,
+  "animenewsnetwork_id": 14938,
+  "anime-planet_id": "one-piece-romance-dawn-story",
+  "anisearch_id": 5131,
+  "imdb_id": [
+   "tt1345529"
+  ],
+  "kitsu_id": 4014,
+  "livechart_id": 4610,
+  "mal_id": 5252,
+  "simkl_id": 38586,
+  "themoviedb_id": {
+   "movie": [
+    422807
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 17
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 6537,
+  "anilist_id": 4155,
+  "animecountdown_id": 40664,
+  "animenewsnetwork_id": 10855,
+  "anime-planet_id": "one-piece-movie-10-strong-world",
+  "anisearch_id": 5400,
+  "imdb_id": [
+   "tt1485763"
+  ],
+  "kitsu_id": 3492,
+  "livechart_id": 3837,
+  "mal_id": 4155,
+  "simkl_id": 40664,
+  "themoviedb_id": {
+   "movie": [
+    41498
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 18
+  }
+ },
+ {
+  "type": "OVA",
+  "anidb_id": 7538,
+  "anilist_id": 8740,
+  "animecountdown_id": 39905,
+  "animenewsnetwork_id": 15224,
+  "anime-planet_id": "one-piece-strong-world-episode-0",
+  "anisearch_id": 6498,
+  "imdb_id": [
+   "tt7947592"
+  ],
+  "kitsu_id": 5469,
+  "livechart_id": 4240,
+  "mal_id": 8740,
+  "simkl_id": 39905,
+  "themoviedb_id": {
+   "movie": [
+    270413
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 19
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 7666,
+  "anilist_id": 8247,
+  "animecountdown_id": 38134,
+  "animenewsnetwork_id": 11723,
+  "anime-planet_id": "bleach-movie-4-hell-verse",
+  "anisearch_id": 6350,
+  "imdb_id": [
+   "tt1785394"
+  ],
+  "kitsu_id": 5267,
+  "livechart_id": 3959,
+  "mal_id": 8247,
+  "simkl_id": 38134,
+  "themoviedb_id": {
+   "movie": [
+    73245
+   ]
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 8010,
+  "anilist_id": 9999,
+  "animecountdown_id": 39471,
+  "animenewsnetwork_id": 12043,
+  "anime-planet_id": "one-piece-3d-mugiwara-chase",
+  "anisearch_id": 6545,
+  "imdb_id": [
+   "tt1865467"
+  ],
+  "kitsu_id": 5987,
+  "livechart_id": 4803,
+  "mal_id": 9999,
+  "simkl_id": 39471,
+  "themoviedb_id": {
+   "movie": [
+    79082
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 20
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 8762,
+  "anilist_id": 12001,
+  "animecountdown_id": 41714,
+  "animenewsnetwork_id": 15229,
+  "anime-planet_id": "one-piece-3d-gekisou-trap-coaster",
+  "anisearch_id": 7388,
+  "imdb_id": [
+   "tt27639430"
+  ],
+  "kitsu_id": 6641,
+  "livechart_id": 5544,
+  "mal_id": 12001,
+  "simkl_id": 41714,
+  "themoviedb_id": {
+   "movie": [
+    462387
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 21
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 8940,
+  "anilist_id": 12859,
+  "animecountdown_id": 47902,
+  "animenewsnetwork_id": 14258,
+  "anime-planet_id": "one-piece-film-z",
+  "anisearch_id": 7573,
+  "imdb_id": [
+   "tt2375379"
+  ],
+  "kitsu_id": 6827,
+  "livechart_id": 3830,
+  "mal_id": 12859,
+  "simkl_id": 47902,
+  "themoviedb_id": {
+   "movie": [
+    176983
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 9541,
+  "anilist_id": 16498,
+  "animecountdown_id": 39687,
+  "animenewsnetwork_id": 14950,
+  "anime-planet_id": "attack-on-titan",
+  "anisearch_id": 8219,
+  "imdb_id": [
+   "tt2560140"
+  ],
+  "kitsu_id": 7442,
+  "livechart_id": 38,
+  "mal_id": 16498,
+  "simkl_id": 39687,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 1,
+   "tmdb": 1
+  }
+ },
+ {
+  "type": "OVA",
+  "anidb_id": 9826,
+  "anilist_id": 18397,
+  "animecountdown_id": 38688,
+  "animenewsnetwork_id": 17609,
+  "anime-planet_id": "attack-on-titan-ova",
+  "anisearch_id": 8677,
+  "imdb_id": [
+   "tt2560140"
+  ],
+  "kitsu_id": 7694,
+  "livechart_id": 139,
+  "mal_id": 18397,
+  "simkl_id": 38688,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 10583,
+  "animecountdown_id": 49394,
+  "anisearch_id": 9587,
+  "imdb_id": [
+   "tt3646944",
+   "tt3646946"
+  ],
+  "simkl_id": 49394,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 10944,
+  "anilist_id": 20958,
+  "animecountdown_id": 439744,
+  "animenewsnetwork_id": 16681,
+  "anime-planet_id": "attack-on-titan-2nd-season",
+  "anisearch_id": 10082,
+  "imdb_id": [
+   "tt2560140"
+  ],
+  "kitsu_id": 8671,
+  "livechart_id": 754,
+  "mal_id": 25777,
+  "simkl_id": 439744,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 2,
+   "tmdb": 2
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 11529,
+  "anilist_id": 21335,
+  "animecountdown_id": 519396,
+  "animenewsnetwork_id": 18113,
+  "anime-planet_id": "one-piece-film-gold",
+  "anisearch_id": 10975,
+  "imdb_id": [
+   "tt5251328"
+  ],
+  "kitsu_id": 11351,
+  "livechart_id": 1788,
+  "mal_id": 31490,
+  "simkl_id": 519396,
+  "themoviedb_id": {
+   "movie": [
+    374205
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 11739,
+  "anilist_id": 21459,
+  "animecountdown_id": 532942,
+  "animenewsnetwork_id": 17786,
+  "anime-planet_id": "my-hero-academia",
+  "anisearch_id": 10978,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 11469,
+  "livechart_id": 1895,
+  "mal_id": 31964,
+  "simkl_id": 532942,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 1,
+   "tmdb": 1
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 12233,
+  "anilist_id": 21856,
+  "animecountdown_id": 595017,
+  "animenewsnetwork_id": 18485,
+  "anime-planet_id": "my-hero-academia-2",
+  "anisearch_id": 11549,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 12268,
+  "livechart_id": 2225,
+  "mal_id": 33486,
+  "simkl_id": 595017,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 2,
+   "tmdb": 2
+  }
+ },
+ {
+  "type": "OVA",
+  "anidb_id": 12344,
+  "animecountdown_id": 610915,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "livechart_id": 2292,
+  "simkl_id": 610915,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 13241,
+  "anilist_id": 99147,
+  "animecountdown_id": 694485,
+  "animenewsnetwork_id": 19819,
+  "anime-planet_id": "attack-on-titan-3rd-season",
+  "anisearch_id": 12550,
+  "imdb_id": [
+   "tt2560140"
+  ],
+  "kitsu_id": 13569,
+  "livechart_id": 2737,
+  "mal_id": 35760,
+  "simkl_id": 694485,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 3,
+   "tmdb": 3
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 13485,
+  "anilist_id": 100166,
+  "animecountdown_id": 723427,
+  "animenewsnetwork_id": 20356,
+  "anime-planet_id": "my-hero-academia-3",
+  "anisearch_id": 12846,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 13881,
+  "livechart_id": 2899,
+  "mal_id": 36456,
+  "simkl_id": 723427,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 3,
+   "tmdb": 3
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 13546,
+  "anilist_id": 100465,
+  "animecountdown_id": 732309,
+  "animenewsnetwork_id": 20508,
+  "anime-planet_id": "attack-on-titan-movie-3-the-roar-of-awakening",
+  "anisearch_id": 12951,
+  "imdb_id": [
+   "tt7941892"
+  ],
+  "kitsu_id": 41487,
+  "livechart_id": 2959,
+  "mal_id": 36702,
+  "simkl_id": 732309,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 13633,
+  "anilist_id": 100723,
+  "animecountdown_id": 744353,
+  "animenewsnetwork_id": 20443,
+  "anime-planet_id": "my-hero-academia-movie-two-heroes",
+  "anisearch_id": 13088,
+  "imdb_id": [
+   "tt7745068"
+  ],
+  "kitsu_id": 14084,
+  "livechart_id": 3004,
+  "mal_id": 36896,
+  "simkl_id": 744353,
+  "themoviedb_id": {
+   "movie": [
+    505262
+   ]
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 3
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 14107,
+  "anilist_id": 101922,
+  "animecountdown_id": 831411,
+  "animenewsnetwork_id": 21101,
+  "anime-planet_id": "demon-slayer-kimetsu-no-yaiba",
+  "anisearch_id": 13658,
+  "imdb_id": [
+   "tt9335498"
+  ],
+  "kitsu_id": 41370,
+  "livechart_id": 3311,
+  "mal_id": 38000,
+  "simkl_id": 831411,
+  "themoviedb_id": {
+   "tv": 85937
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 1,
+   "tmdb": 1
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 14318,
+  "anilist_id": 105143,
+  "animecountdown_id": 892935,
+  "animenewsnetwork_id": 21732,
+  "anime-planet_id": "one-piece-movie-14-stampede",
+  "anisearch_id": 13833,
+  "imdb_id": [
+   "tt9430698"
+  ],
+  "kitsu_id": 42061,
+  "livechart_id": 3482,
+  "mal_id": 38234,
+  "simkl_id": 892935,
+  "themoviedb_id": {
+   "movie": [
+    568012
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 37
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 14416,
+  "anilist_id": 104276,
+  "animecountdown_id": 920009,
+  "animenewsnetwork_id": 22265,
+  "anime-planet_id": "my-hero-academia-4",
+  "anisearch_id": 13910,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 41971,
+  "livechart_id": 3539,
+  "mal_id": 38408,
+  "simkl_id": 920009,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 4,
+   "tmdb": 4
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 14444,
+  "anilist_id": 104578,
+  "animecountdown_id": 931899,
+  "animenewsnetwork_id": 21812,
+  "anime-planet_id": "attack-on-titan-3rd-season-part-ii",
+  "anisearch_id": 13942,
+  "imdb_id": [
+   "tt2560140"
+  ],
+  "kitsu_id": 41982,
+  "livechart_id": 3558,
+  "mal_id": 38524,
+  "simkl_id": 931899,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 3,
+   "tmdb": 3
+  },
+  "episode_offset": {
+   "tvdb": 12,
+   "tmdb": 12
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 14689,
+  "animecountdown_id": 1043309,
+  "animenewsnetwork_id": 21817,
+  "anisearch_id": 14215,
+  "imdb_id": [
+   "tt9335498"
+  ],
+  "kitsu_id": 44388,
+  "livechart_id": 9232,
+  "simkl_id": 1043309,
+  "themoviedb_id": {
+   "tv": 85937
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 14776,
+  "anilist_id": 108553,
+  "animecountdown_id": 1061945,
+  "animenewsnetwork_id": 22537,
+  "anime-planet_id": "my-hero-academia-movie-2-heroes-rising",
+  "anisearch_id": 14407,
+  "imdb_id": [
+   "tt11107074"
+  ],
+  "kitsu_id": 42205,
+  "livechart_id": 9371,
+  "mal_id": 39565,
+  "simkl_id": 1061945,
+  "themoviedb_id": {
+   "movie": [
+    592350
+   ]
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 6
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 14977,
+  "anilist_id": 110277,
+  "animecountdown_id": 1120029,
+  "animenewsnetwork_id": 22277,
+  "anime-planet_id": "attack-on-titan-the-final-season",
+  "anisearch_id": 14484,
+  "imdb_id": [
+   "tt2560140"
+  ],
+  "kitsu_id": 42422,
+  "livechart_id": 9491,
+  "mal_id": 40028,
+  "simkl_id": 1120029,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 4,
+   "tmdb": 4
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 15113,
+  "anilist_id": 112151,
+  "animecountdown_id": 1176707,
+  "animenewsnetwork_id": 23040,
+  "anime-planet_id": "demon-slayer-kimetsu-no-yaiba-movie-mugen-train",
+  "anisearch_id": 14653,
+  "imdb_id": [
+   "tt11032374"
+  ],
+  "kitsu_id": 42586,
+  "livechart_id": 9614,
+  "mal_id": 40456,
+  "simkl_id": 1176707,
+  "themoviedb_id": {
+   "movie": [
+    635302
+   ]
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 1
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 15449,
+  "anilist_id": 116674,
+  "animecountdown_id": 1300367,
+  "animenewsnetwork_id": 25066,
+  "anime-planet_id": "bleach-thousand-year-blood-war",
+  "anisearch_id": 15085,
+  "imdb_id": [
+   "tt0434665"
+  ],
+  "kitsu_id": 43078,
+  "livechart_id": 9844,
+  "mal_id": 41467,
+  "simkl_id": 1300367,
+  "themoviedb_id": {
+   "tv": 30984
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tvdb": 17,
+   "tmdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 15484,
+  "anilist_id": 117193,
+  "animecountdown_id": 1310995,
+  "animenewsnetwork_id": 23862,
+  "anime-planet_id": "my-hero-academia-5",
+  "anisearch_id": 15141,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 43108,
+  "livechart_id": 9877,
+  "mal_id": 41587,
+  "simkl_id": 1310995,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 5,
+   "tmdb": 5
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 15582,
+  "anilist_id": 119113,
+  "animecountdown_id": 1358719,
+  "animenewsnetwork_id": 23718,
+  "anime-planet_id": "attack-on-titan-movie-4-chronicle",
+  "anisearch_id": 15289,
+  "imdb_id": [
+   "tt12415546"
+  ],
+  "kitsu_id": 43212,
+  "livechart_id": 9996,
+  "mal_id": 42091,
+  "simkl_id": 1358719,
+  "themoviedb_id": {
+   "movie": [
+    714194
+   ]
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 0
+  }
+ },
+ {
+  "type": "ONA",
+  "anidb_id": 15672,
+  "anilist_id": 122349,
+  "animecountdown_id": 1403255,
+  "animenewsnetwork_id": 23572,
+  "anime-planet_id": "my-hero-academia-make-it-do-or-die-survival-training",
+  "anisearch_id": 15480,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 43485,
+  "livechart_id": 10100,
+  "mal_id": 42603,
+  "simkl_id": 1403255,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 7,
+   "tmdb": 7
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 15873,
+  "anilist_id": 126659,
+  "animecountdown_id": 1486705,
+  "animenewsnetwork_id": 24199,
+  "anime-planet_id": "my-hero-academia-movie-3-world-heroes-mission",
+  "anisearch_id": 15890,
+  "imdb_id": [
+   "tt13544716"
+  ],
+  "kitsu_id": 44209,
+  "livechart_id": 10236,
+  "mal_id": 44200,
+  "simkl_id": 1486705,
+  "themoviedb_id": {
+   "movie": [
+    768744
+   ]
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 10
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 16054,
+  "anilist_id": 142329,
+  "animecountdown_id": 1546285,
+  "animenewsnetwork_id": 24043,
+  "anime-planet_id": "demon-slayer-kimetsu-no-yaiba-entertainment-district-arc",
+  "anisearch_id": 15986,
+  "imdb_id": [
+   "tt9335498"
+  ],
+  "kitsu_id": 44081,
+  "livechart_id": 10420,
+  "mal_id": 47778,
+  "simkl_id": 1546285,
+  "themoviedb_id": {
+   "tv": 85937
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 3,
+   "tmdb": 3
+  }
+ },
+ {
+  "type": "ONA",
+  "anidb_id": 16056,
+  "anilist_id": 129627,
+  "animecountdown_id": 1546999,
+  "animenewsnetwork_id": 24492,
+  "anime-planet_id": "kimetsu-gakuen-valentine-hen",
+  "anisearch_id": 15971,
+  "imdb_id": [
+   "tt9335498"
+  ],
+  "kitsu_id": 44063,
+  "livechart_id": 10399,
+  "mal_id": 47398,
+  "simkl_id": 1546999,
+  "themoviedb_id": {
+   "tv": 85937
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 2,
+   "tmdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 16177,
+  "anilist_id": 131681,
+  "animecountdown_id": 1579947,
+  "animenewsnetwork_id": 24648,
+  "anime-planet_id": "attack-on-titan-the-final-season-part-ii",
+  "anisearch_id": 16103,
+  "imdb_id": [
+   "tt2560140"
+  ],
+  "kitsu_id": 44240,
+  "livechart_id": 10487,
+  "mal_id": 48583,
+  "simkl_id": 1579947,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 4,
+   "tmdb": 4
+  },
+  "episode_offset": {
+   "tvdb": 16,
+   "tmdb": 16
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 16258,
+  "animecountdown_id": 1613929,
+  "anisearch_id": 16195,
+  "imdb_id": [
+   "tt31497548"
+  ],
+  "kitsu_id": 44390,
+  "simkl_id": 1613929,
+  "themoviedb_id": {
+   "movie": [
+    811948
+   ]
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 10
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 16259,
+  "animecountdown_id": 1613931,
+  "anisearch_id": 16194,
+  "imdb_id": [
+   "tt14888874"
+  ],
+  "kitsu_id": 44389,
+  "simkl_id": 1613931,
+  "themoviedb_id": {
+   "movie": [
+    802401
+   ]
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 9
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 16793,
+  "anilist_id": 139630,
+  "animecountdown_id": 1737071,
+  "animenewsnetwork_id": 24773,
+  "anime-planet_id": "my-hero-academia-6",
+  "anisearch_id": 16609,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 45240,
+  "livechart_id": 10814,
+  "mal_id": 49918,
+  "simkl_id": 1737071,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 6,
+   "tmdb": 6
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 16803,
+  "anilist_id": 129874,
+  "animecountdown_id": 1738291,
+  "animenewsnetwork_id": 24792,
+  "anime-planet_id": "demon-slayer-kimetsu-no-yaiba-mugen-train",
+  "anisearch_id": 16614,
+  "imdb_id": [
+   "tt9335498"
+  ],
+  "kitsu_id": 45249,
+  "livechart_id": 10816,
+  "mal_id": 49926,
+  "simkl_id": 1738291,
+  "themoviedb_id": {
+   "tv": 85937
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 2,
+   "tmdb": 2
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 16983,
+  "anilist_id": 141902,
+  "animecountdown_id": 1781534,
+  "animenewsnetwork_id": 24981,
+  "anime-planet_id": "one-piece-film-red",
+  "anisearch_id": 16819,
+  "imdb_id": [
+   "tt16183464"
+  ],
+  "kitsu_id": 45513,
+  "livechart_id": 10894,
+  "mal_id": 50410,
+  "simkl_id": 1781534,
+  "themoviedb_id": {
+   "movie": [
+    900667
+   ]
+  },
+  "tvdb_id": 81797,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 45
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 17198,
+  "anilist_id": 145139,
+  "animecountdown_id": 1848368,
+  "animenewsnetwork_id": 25353,
+  "anime-planet_id": "demon-slayer-kimetsu-no-yaiba-swordsmith-village-arc",
+  "anisearch_id": 17088,
+  "imdb_id": [
+   "tt9335498"
+  ],
+  "kitsu_id": 45866,
+  "livechart_id": 11084,
+  "mal_id": 51019,
+  "simkl_id": 1848368,
+  "themoviedb_id": {
+   "tv": 85937
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 4,
+   "tmdb": 4
+  }
+ },
+ {
+  "type": "SPECIAL",
+  "anidb_id": 17303,
+  "anilist_id": 146984,
+  "animecountdown_id": 1883416,
+  "animenewsnetwork_id": 25492,
+  "anime-planet_id": "attack-on-titan-the-final-season-the-final-chapters",
+  "anisearch_id": 17265,
+  "imdb_id": [
+   "tt2560140"
+  ],
+  "kitsu_id": 46038,
+  "livechart_id": 11174,
+  "mal_id": 51535,
+  "simkl_id": 1883416,
+  "themoviedb_id": {
+   "tv": 1429
+  },
+  "tvdb_id": 267440,
+  "season": {
+   "tvdb": 4,
+   "tmdb": 4
+  },
+  "episode_offset": {
+   "tvdb": 28,
+   "tmdb": 28
+  }
+ },
+ {
+  "type": "ONA",
+  "anidb_id": 17356,
+  "anilist_id": 149073,
+  "animecountdown_id": 1907328,
+  "animenewsnetwork_id": 25667,
+  "anime-planet_id": "my-hero-academia-web",
+  "anisearch_id": 17447,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 46117,
+  "livechart_id": 11210,
+  "mal_id": 51781,
+  "simkl_id": 1907328,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 12,
+   "tmdb": 12
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 17765,
+  "anilist_id": 159322,
+  "animecountdown_id": 2056522,
+  "animenewsnetwork_id": 26771,
+  "anime-planet_id": "bleach-thousand-year-blood-war-part-ii-the-separation",
+  "anisearch_id": 17934,
+  "imdb_id": [
+   "tt0434665"
+  ],
+  "kitsu_id": 46903,
+  "livechart_id": 11467,
+  "mal_id": 53998,
+  "simkl_id": 2056522,
+  "themoviedb_id": {
+   "tv": 30984
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tvdb": 17,
+   "tmdb": 2
+  },
+  "episode_offset": {
+   "tvdb": 13,
+   "tmdb": 13
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 17931,
+  "anilist_id": 163139,
+  "animecountdown_id": 2125452,
+  "animenewsnetwork_id": 27621,
+  "anime-planet_id": "my-hero-academia-7",
+  "anisearch_id": 18294,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 47232,
+  "livechart_id": 11909,
+  "mal_id": 54789,
+  "simkl_id": 2125452,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 7,
+   "tmdb": 7
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 18067,
+  "anilist_id": 166240,
+  "animecountdown_id": 2191900,
+  "animenewsnetwork_id": 28695,
+  "anime-planet_id": "demon-slayer-kimetsu-no-yaiba-hashira-training-arc",
+  "anisearch_id": 18460,
+  "imdb_id": [
+   "tt9335498"
+  ],
+  "kitsu_id": 47635,
+  "livechart_id": 12113,
+  "mal_id": 55701,
+  "simkl_id": 2191900,
+  "themoviedb_id": {
+   "tv": 85937
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 5,
+   "tmdb": 5
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 18150,
+  "anilist_id": 168013,
+  "animecountdown_id": 2226132,
+  "animenewsnetwork_id": 31891,
+  "anime-planet_id": "my-hero-academia-movie-4-youre-next",
+  "anisearch_id": 18598,
+  "imdb_id": [
+   "tt32176689"
+  ],
+  "kitsu_id": 47844,
+  "livechart_id": 12291,
+  "mal_id": 56196,
+  "simkl_id": 2226132,
+  "themoviedb_id": {
+   "movie": [
+    1159311
+   ]
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 19
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 18199,
+  "anilist_id": 169402,
+  "animecountdown_id": 2259030,
+  "animenewsnetwork_id": 29929,
+  "anime-planet_id": "my-hero-academia-ua-heroes-battle",
+  "anisearch_id": 18697,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 48276,
+  "livechart_id": 12333,
+  "mal_id": 56685,
+  "simkl_id": 2259030,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 14,
+   "tmdb": 14
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 18220,
+  "anilist_id": 169755,
+  "animecountdown_id": 2268810,
+  "animenewsnetwork_id": 30131,
+  "anime-planet_id": "bleach-thousand-year-blood-war-part-iii-the-conflict",
+  "anisearch_id": 18732,
+  "imdb_id": [
+   "tt0434665"
+  ],
+  "kitsu_id": 48015,
+  "livechart_id": 11468,
+  "mal_id": 56784,
+  "simkl_id": 2268810,
+  "themoviedb_id": {
+   "tv": 30984
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tvdb": 17,
+   "tmdb": 2
+  },
+  "episode_offset": {
+   "tvdb": 26,
+   "tmdb": 26
+  }
+ },
+ {
+  "type": "MOVIE",
+  "anidb_id": 18699,
+  "anilist_id": 178788,
+  "animecountdown_id": 2498112,
+  "animenewsnetwork_id": 32858,
+  "anime-planet_id": "demon-slayer-kimetsu-no-yaiba-movie-infinity-castle-part-1",
+  "anisearch_id": 19389,
+  "imdb_id": [
+   "tt32820897"
+  ],
+  "kitsu_id": 49001,
+  "livechart_id": 12734,
+  "mal_id": 59192,
+  "simkl_id": 2498112,
+  "themoviedb_id": {
+   "movie": [
+    1311031
+   ]
+  },
+  "tvdb_id": 348545,
+  "season": {
+   "tvdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 15
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 18921,
+  "anilist_id": 182896,
+  "animecountdown_id": 2607190,
+  "animenewsnetwork_id": 33714,
+  "anime-planet_id": "my-hero-academia-final-season",
+  "anisearch_id": 19698,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 49279,
+  "livechart_id": 12882,
+  "mal_id": 60098,
+  "simkl_id": 2607190,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 8,
+   "tmdb": 8
+  }
+ },
+ {
+  "type": "TV",
+  "anidb_id": 19079,
+  "anilist_id": 185874,
+  "animecountdown_id": 2671730,
+  "animenewsnetwork_id": 34242,
+  "anime-planet_id": "bleach-thousand-year-blood-war-part-iv-the-calamity",
+  "anisearch_id": 20029,
+  "imdb_id": [
+   "tt0434665"
+  ],
+  "kitsu_id": 49444,
+  "livechart_id": 11469,
+  "mal_id": 60636,
+  "simkl_id": 2671730,
+  "themoviedb_id": {
+   "tv": 30984
+  },
+  "tvdb_id": 74796,
+  "season": {
+   "tvdb": 17,
+   "tmdb": 2
+  },
+  "episode_offset": {
+   "tvdb": 40,
+   "tmdb": 40
+  }
+ },
+ {
+  "type": "SPECIAL",
+  "anidb_id": 20039,
+  "anilist_id": 204356,
+  "animecountdown_id": 3105338,
+  "animenewsnetwork_id": 38146,
+  "anime-planet_id": "my-hero-academia-1701-more",
+  "anisearch_id": 21118,
+  "imdb_id": [
+   "tt5626028"
+  ],
+  "kitsu_id": 50399,
+  "livechart_id": 13435,
+  "mal_id": 63130,
+  "simkl_id": 3105338,
+  "themoviedb_id": {
+   "tv": 65930
+  },
+  "tvdb_id": 305074,
+  "season": {
+   "tvdb": 0,
+   "tmdb": 0
+  },
+  "episode_offset": {
+   "tvdb": 22,
+   "tmdb": 17
+  }
+ }
+]

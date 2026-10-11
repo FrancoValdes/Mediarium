@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/rdborg/mediarium/internal/fsinfo"
+	"github.com/rdborg/mediarium/internal/download"
 	"github.com/rdborg/mediarium/internal/indexers"
 	"github.com/rdborg/mediarium/internal/organizer"
 	"github.com/rdborg/mediarium/internal/store"
@@ -64,7 +65,7 @@ func (s *Server) collectHealth() []healthItem {
 	}
 
 	instances, _ := s.IndexerRepo.List()
-	torrentsOn := s.torrentsEnabled()
+	torrentsOn := s.torrentReleasesOn()
 	var usenetIndexers, torrentIndexers int
 	for _, inst := range instances {
 		if !inst.Enabled {
@@ -92,6 +93,8 @@ func (s *Server) collectHealth() []healthItem {
 		}
 	}
 
+	s.pausedIndexerProblems(instances, add)
+
 	if s.cfg.BundledFlareSolverr && s.flareSolverrSetting() == "" {
 		if st := s.flareSolverrCheck(); !st.Running {
 			add("flaresolverr-down", "warn", "The built-in Cloudflare helper isn't answering",
@@ -104,7 +107,17 @@ func (s *Server) collectHealth() []healthItem {
 	if usenetIndexers > 0 && len(servers) == 0 {
 		add("no-usenet-server", "warn", "No Usenet provider added",
 			"Your Usenet indexer finds releases but there's nowhere to download them from. Add your provider's news server.",
-			"Add your provider", "/settings/downloads")
+			"Add your provider", "/settings/usenet")
+	}
+
+	// A provider that keeps saying "too many connections" holds Mediarium to
+	// fewer than were set: say so, and where to find the number that works.
+	for _, st := range download.ServerStates() {
+		if st.Limit < st.Configured && !st.LastRefusal.IsZero() && time.Since(st.LastRefusal) < 12*time.Hour {
+			add("usenet-connections-"+st.Host, "warn", fmt.Sprintf("%s allows fewer connections than you set", st.Host),
+				fmt.Sprintf("Mediarium is using %d of the %d connections you set, because the provider keeps saying this login has too many open, so downloads are slower than they could be. Another program may be using the same login. Use Find the right number on your provider to get the number that works.", st.Limit, st.Configured),
+				"Find the right number", "/settings/usenet")
+		}
 	}
 
 	vpnStatus := s.VPNManager.Status()
@@ -141,36 +154,35 @@ func (s *Server) collectHealth() []healthItem {
 
 	// While subtitles are switched off in Settings, nothing here mentions them.
 	if s.subtitlesEnabled() {
-		if !s.Subtitles().HasAPIKey() {
-			add("subtitles-off", "info", "Subtitles need an OpenSubtitles key",
-				"Subtitles are on but there's no OpenSubtitles key, so none are downloaded.",
+		src := s.subtitleSources()
+		switch {
+		case !src.AnySetUp():
+			add("subtitles-off", "info", "Subtitles need a source",
+				"Subtitles are on but no subtitle source is set up (an OpenSubtitles or SubDL key, or an add-on), so none are downloaded.",
 				"Add a key", "/settings/subtitles")
-		} else if s.autoSubtitlesEnabled() {
+		case !src.Any():
+			add("subtitles-no-source", "info", "No subtitle source is switched on",
+				"Every subtitle source is switched off, so no subtitles are downloaded.",
+				"Choose sources", "/settings/subtitles")
+		case s.autoSubtitlesEnabled():
 			// Only worth mentioning when Mediarium fetches on its own: then the
-			// small daily limit decides how fast a large library fills in.
-			if !s.Subtitles().HasCredentials() {
+			// small daily limit decides how fast a large library fills in. That
+			// limit is OpenSubtitles', so it matters only while OpenSubtitles is
+			// the one source doing the work.
+			if src.OpenSubtitles.On() && !src.OthersThanOpenSubtitles() && !s.Subtitles().HasCredentials() {
 				add("subtitles-anonymous", "info", "No OpenSubtitles account",
 					"Without a free OpenSubtitles.com account you get about 5 a day (about 20 with one), so a large library fills in slowly.",
 					"Add your account", "/settings/subtitles")
 			}
-		} else if titles, files, err := s.subtitleBacklog(); err == nil && titles > 0 {
-			// Automatic downloading is off, so nothing is fetched until asked.
-			st := s.subtitleQuota()
-			title := fmt.Sprintf("%d downloaded titles have no subtitles yet", titles)
-			if titles == 1 {
-				title = "1 downloaded title has no subtitles yet"
+		default:
+			if titles, files, err := s.subtitleBacklog(); err == nil && titles > 0 {
+				// Automatic downloading is off, so nothing is fetched until asked.
+				title := fmt.Sprintf("%d downloaded titles have no subtitles yet", titles)
+				if titles == 1 {
+					title = "1 downloaded title has no subtitles yet"
+				}
+				add("subtitles-offer", "info", title, subtitleOfferImpact(src, s.subtitleQuota(), files), "Get subtitles", "/wanted?tab=subtitles")
 			}
-			impact := "Subtitles download only when you ask. "
-			if st.Remaining > 0 {
-				impact += fmt.Sprintf("About %s left today", plural(st.Remaining, "download"))
-			} else {
-				impact += "Today's OpenSubtitles limit is used up"
-			}
-			if files > st.Remaining && st.Limit > 0 {
-				impact += fmt.Sprintf(", and %s are wanted, so the rest takes about %s", plural(files, "subtitle"), plural(daysToFinish(files, st.Limit), "day"))
-			}
-			impact += "."
-			add("subtitles-offer", "info", title, impact, "Get subtitles", "/wanted?tab=subtitles")
 		}
 	}
 
@@ -179,9 +191,9 @@ func (s *Server) collectHealth() []healthItem {
 	if s.usingSharedKey(serviceTrakt) && s.Usage.Stats(serviceTrakt).LimitHits >= 1 {
 		add("trakt-limit", "warn", "The shared Trakt key is at its limit",
 			"Trakt refused requests because the built-in key is shared and busy. Importing Trakt lists fails until it clears. A free personal Trakt key avoids this.",
-			"Use my own key", "/settings/metadata")
+			"Use my own key", "/settings/lists")
 	}
-	if s.subtitlesEnabled() && s.Subtitles().HasAPIKey() && s.usingSharedKey(serviceOpenSubtitles) {
+	if s.subtitlesEnabled() && s.useOpenSubtitles() && s.usingSharedKey(serviceOpenSubtitles) {
 		if s.Usage.Stats(serviceOpenSubtitles).LimitHits >= 1 {
 			add("opensubtitles-limit", "warn", "The shared OpenSubtitles key is at its limit",
 				"OpenSubtitles refused requests because the built-in key is shared and busy. Subtitle downloads fail until it clears. A free personal key avoids this.",
@@ -196,7 +208,7 @@ func (s *Server) collectHealth() []healthItem {
 	if !s.Trakt().HasClientID() {
 		add("trakt-off", "info", "Trakt isn't connected (optional)",
 			"Needed only for importing Trakt lists on Discover.",
-			"Set up Trakt", "/settings/metadata")
+			"Set up Trakt", "/settings/lists")
 	}
 
 	if !s.automationEnabled() {
@@ -206,16 +218,30 @@ func (s *Server) collectHealth() []healthItem {
 	}
 
 	movies, tv, dl := s.moviesRoot(), s.tvRoot(), s.downloadsRoot()
-	for _, f := range []struct {
+	type folderCheck struct {
 		id, label, path string
 		level           string // severity when the folder is unusable
 		impact          string
-	}{
+	}
+	folders := []folderCheck{
 		{"movies", "Movies", movies, "error", "Movies can't be imported into the library"},
 		{"tv", "TV", tv, "warn", "TV episodes can't be imported into the library"},
 		{"downloads", "Downloads", dl, "error", "Nothing can be downloaded"},
-	} {
-		info := fsinfo.Inspect(f.path)
+	}
+	for i, f := range s.movieFolders()[min(1, len(s.movieFolders())):] {
+		folders = append(folders, folderCheck{"movies-" + strconv.Itoa(i+2), "Movies folder " + strconv.Itoa(i+2), f, "warn", "Movies kept in that folder can't be imported"})
+	}
+	for i, f := range s.tvFolders()[min(1, len(s.tvFolders())):] {
+		folders = append(folders, folderCheck{"tv-" + strconv.Itoa(i+2), "TV folder " + strconv.Itoa(i+2), f, "warn", "Shows kept in that folder can't be imported"})
+	}
+	if c := s.movieCopiesRoot(); c != "" {
+		folders = append(folders, folderCheck{"movie-copies", "Movie copies", c, "warn", "Second copies of movies can't be imported"})
+	}
+	if c := s.tvCopiesRoot(); c != "" {
+		folders = append(folders, folderCheck{"tv-copies", "TV copies", c, "warn", "Second copies of shows can't be imported"})
+	}
+	for _, f := range folders {
+		info := inspectCached(f.path)
 		switch {
 		case !info.Exists || !info.IsDir:
 			add(f.id+"-folder-missing", f.level, f.label+" folder not found ("+f.path+")",

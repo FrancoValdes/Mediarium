@@ -3,11 +3,14 @@ import { api, type FlareSolverrStatus, type IndexerConfig } from '../../api'
 import Icon from '../../components/Icon'
 import IndexerCard from '../../components/IndexerCard'
 import IndexerForm from '../../components/IndexerForm'
+import IrcAnnounceCard from '../../components/IrcAnnounceCard'
 import { useToast } from '../../components/Toast'
 import { useLive } from '../../useLive'
 import { useConfirm } from '../../components/ConfirmProvider'
 import { FieldError, FormProblem, useValidation } from '../../useValidation'
 import { url as urlCheck } from '../../validate'
+import { t, tx } from '../../i18n'
+import TipLabel from '../../components/TipLabel'
 
 // Indexers: search services for releases. One form adds either kind (Usenet or
 // torrent); everything you have added is listed together on the right.
@@ -32,8 +35,8 @@ export default function IndexerSettings() {
     }
     setTestingAll(false)
     reload()
-    if (failed.length === 0) toast.success(on.length === 1 ? 'The indexer answered.' : `All ${on.length} indexers answered.`)
-    else toast.error(`${failed.length} of ${on.length} did not answer: ${failed.join(', ')}.`)
+    if (failed.length === 0) toast.success(on.length === 1 ? t('The indexer answered.') : t('All {n} indexers answered.', { n: on.length }))
+    else toast.error(t('{failed} of {total} did not answer: {names}.', { failed: failed.length, total: on.length, names: failed.join(', ') }))
   }
   const [list, setList] = useState<IndexerConfig[] | null>(null)
   const [torrentOn, setTorrentOn] = useState(true)
@@ -72,17 +75,17 @@ export default function IndexerSettings() {
     try {
       const s = await api.putSettings({ flareSolverrUrl: flare.trim() })
       setFlareSaved(s.flareSolverrUrl ?? '')
-      toast.success(flare.trim() ? 'FlareSolverr address saved.' : 'FlareSolverr turned off.')
+      toast.success(flare.trim() ? t('FlareSolverr address saved.') : t('FlareSolverr turned off.'))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     }
   }
 
   async function remove(i: IndexerConfig) {
-    if (!(await confirm({ title: `Remove ${i.name}?`, body: <p>Searches stop using it. You can add it again later.</p>, confirmLabel: 'Remove indexer', danger: true }))) return
+    if (!(await confirm({ title: t('Remove {name}?', { name: i.name }), body: <p>{t('Searches stop using it. You can add it again later.')}</p>, confirmLabel: t('Remove indexer'), danger: true }))) return
     try {
       await api.deleteIndexer(i.id)
-      toast.success(`${i.name} removed.`)
+      toast.success(t('{name} removed.', { name: i.name }))
       reload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -92,7 +95,7 @@ export default function IndexerSettings() {
   async function toggle(i: IndexerConfig) {
     try {
       await api.setIndexerEnabled(i.id, !i.enabled)
-      toast.success(i.enabled ? `${i.name} disabled.` : `${i.name} enabled.`)
+      toast.success(i.enabled ? t('{name} disabled.', { name: i.name }) : t('{name} enabled.', { name: i.name }))
       reload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -102,24 +105,24 @@ export default function IndexerSettings() {
   return (
     <div className="settings-stack">
       <p className="span-all" style={{ color: 'var(--text-dim)', margin: 0 }}>
-        <strong>Indexers</strong> are the sites Mediarium searches for downloads. Sign up on one, then add its address and API key here.
+        {tx('{indexers} are the sites Mediarium searches for downloads. Sign up on one, then add its address and API key here.', { indexers: <strong>{t('Indexers')}</strong> })}
       </p>
       <div className="indexer-cols span-all">
       <fieldset className="group usenet">
         <legend>
-          <Icon name="plus" size={14} /> Add an indexer
+          <Icon name="plus" size={14} /> {t('Add an indexer')}
         </legend>
         <IndexerForm onAdded={reload} torrentDisabled={!torrentOn} />
       </fieldset>
       <fieldset className="group folders">
         <legend>
-          <Icon name="list" size={14} /> Your indexers {list && <small>({list.length})</small>}
+          <Icon name="list" size={14} /> {t('Your indexers')} {list && <small>({list.length})</small>}
         </legend>
-        {list && list.length === 0 && <p style={{ margin: 0, color: 'var(--text-dim)' }}>None yet. Pick a site from the list on the left, or paste a link.</p>}
+        {list && list.length === 0 && <p style={{ margin: 0, color: 'var(--text-dim)' }}>{t('None yet. Pick a site from the list on the left, or paste a link.')}</p>}
         {list && list.length > 1 && (
           <p style={{ margin: '0 0 12px' }}>
             <button className="btn-sm" disabled={testingAll} onClick={() => void testAll()}>
-              {testingAll ? 'Testing…' : 'Test all'}
+              {testingAll ? t('Testing…') : t('Test all')}
             </button>
           </p>
         )}
@@ -133,47 +136,57 @@ export default function IndexerSettings() {
       </fieldset>
       <fieldset className="group torrent flare-card">
         <legend>
-          <Icon name="shield" size={14} /> Cloudflare sites (optional)
+          <Icon name="shield" size={14} /> <TipLabel text={t('Some sites show a "checking your browser" page that only a real browser passes. FlareSolverr opens it for Mediarium and passes the cookies back.')} learnMore="indexers#sites-behind-a-cloudflare-check">{t('Cloudflare sites (optional)')}</TipLabel>
         </legend>
         {flareState?.configured && (
           <div className={`flare-status ${flareState.running ? 'ok' : 'down'}`} role="status">
             <span className="flare-dot" aria-hidden="true" />
-            <strong>{flareState.running ? (bundled && !flareSaved ? 'Built in and running' : 'Connected and running') : 'Not answering right now'}</strong>
-            {flareState.running && flareState.version && <small>version {flareState.version}</small>}
+            <strong>{flareState.running ? (bundled && !flareSaved ? t('Built in and running') : t('Connected and running')) : t('Not answering right now')}</strong>
+            {flareState.running && flareState.version && <small>{t('version {version}', { version: flareState.version })}</small>}
           </div>
         )}
         {bundled ? (
           <p style={{ marginTop: 0 }}>
-            A Cloudflare helper is built in, so sites with a &quot;checking your browser&quot; page just work. Use the box below only if you'd rather run your own.
+            {t('A Cloudflare helper is built in, so sites with a "checking your browser" page just work. Use the box below only if you\'d rather run your own.')}
           </p>
         ) : (
           <>
             <p style={{ marginTop: 0 }}>
-              Some sites show a &quot;checking your browser&quot; page that only a real browser can pass. Run the free <strong>FlareSolverr</strong> helper next to Mediarium and enter its address here. The <code>-full</code> version of Mediarium has it built in.
+              {tx('Some sites show a "checking your browser" page that only a real browser can pass. Run the free {name} helper next to Mediarium and enter its address here. The {full} version of Mediarium has it built in.', {
+                name: <strong>FlareSolverr</strong>,
+                full: <code>-full</code>,
+              })}
             </p>
             <details className="how-details" style={{ marginBottom: 12 }}>
-              <summary>How to add FlareSolverr to Docker</summary>
+              <summary>{t('How to add FlareSolverr to Docker')}</summary>
               <pre className="code-block">{`  flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
     restart: unless-stopped
     environment:
       - TZ=Etc/UTC`}</pre>
-              <p>Add this under <code>services:</code> in your compose file, run <code>docker compose up -d</code>, then enter <code>http://flaresolverr:8191</code> below.</p>
+              <p>
+                {tx('Add this under {services} in your compose file, run {command}, then enter {address} below.', {
+                  services: <code>services:</code>,
+                  command: <code>docker compose up -d</code>,
+                  address: <code>http://flaresolverr:8191</code>,
+                })}
+              </p>
             </details>
           </>
         )}
         <label className="flare-field">
-          {bundled ? 'Use my own helper instead (optional)' : 'FlareSolverr address'}
+          <TipLabel text={t('Sites with a Cloudflare check are fetched through this helper. Leave it empty to turn the helper off, or to use the built-in one if you have it.')}>{bundled ? t('Use my own helper instead (optional)') : t('FlareSolverr address')}</TipLabel>
           <input value={flare} onChange={(e) => setFlare(e.target.value)} placeholder="http://flaresolverr:8191" {...v.bind('flare', flare, setFlare)} />
           <FieldError v={v} name="flare" />
         </label>
         <button className="primary" onClick={() => void saveFlare()} disabled={flare.trim() === flareSaved}>
-          Save
+          {t('Save')}
         </button>
         <FormProblem v={v} />
       </fieldset>
       </div>
+      <IrcAnnounceCard />
     </div>
   )
 }

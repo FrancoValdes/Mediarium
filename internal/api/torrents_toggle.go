@@ -9,12 +9,19 @@ import (
 )
 
 // errTorrentsDisabled is what a torrent grab is refused with while the
-// torrent switch (Settings > Downloading > Usenet and torrents) is off. It is written for the person
+// torrent switch (Settings > Downloading > Torrents) is off. It is written for the person
 // reading it, so it is passed to the UI as is.
-var errTorrentsDisabled = errors.New("Torrents are switched off. Switch them on in Settings > Downloading > Usenet and torrents to download torrent releases.")
+var errTorrentsDisabled = errors.New("Torrents are switched off. Switch them on in Settings > Downloading > Torrents to download torrent releases.")
 
 // torrentsEnabled reports the torrent on/off switch. On unless explicitly
 // turned off, so upgrading never changes anyone's behavior underneath them.
+// torrentReleasesOn reports whether torrent releases may be searched for and
+// grabbed at all: with the built-in client on, or a debrid service or an
+// external download client to send them to.
+func (s *Server) torrentReleasesOn() bool {
+	return s.torrentsEnabled() || s.debridOn() || s.downloadClientOn()
+}
+
 func (s *Server) torrentsEnabled() bool {
 	v, _ := s.Settings.Get(settings.KeyTorrentEnabled)
 	return v != "0"
@@ -38,10 +45,11 @@ func (s *Server) setTorrentsEnabled(enabled bool) error {
 }
 
 // searchableIndexers is the indexer list searches and automation use: with
-// torrents off, torrent indexers are skipped so they are never queried.
+// nowhere to send torrents (the built-in client off and no debrid service or
+// download client), torrent indexers are skipped so they are never queried.
 func (s *Server) searchableIndexers() ([]indexers.Instance, error) {
 	all, err := s.IndexerRepo.List()
-	if err != nil || s.torrentsEnabled() {
+	if err != nil || s.torrentReleasesOn() {
 		return all, err
 	}
 	out := make([]indexers.Instance, 0, len(all))

@@ -18,11 +18,16 @@ type Repo struct {
 	db        *sql.DB
 	box       *crypto.Box
 	cardigann *CardigannManager
+	tracker   *Tracker
 }
 
 func NewRepo(db *sql.DB, box *crypto.Box) *Repo {
-	return &Repo{db: db, box: box}
+	return &Repo{db: db, box: box, tracker: NewTracker(db, nil)}
 }
+
+// Tracker is where the repo's indexers keep their back-off and search
+// counters.
+func (r *Repo) Tracker() *Tracker { return r.tracker }
 
 // SetCardigann attaches the engine that runs definition-based indexers to
 // every instance the repo returns.
@@ -149,6 +154,8 @@ func (r *Repo) Update(inst Instance, secret Secrets) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	// Editing an indexer is an attempt to fix it: it gets asked again at once.
+	r.tracker.Resume(inst.ID)
 	return nil
 }
 
@@ -199,6 +206,7 @@ func (r *Repo) scan(sc scanner) (Instance, error) {
 		}
 		return Instance{}, fmt.Errorf("scan indexer: %w", err)
 	}
+	inst.Tracker = r.tracker
 	inst.Protocol = Protocol(protocol)
 	inst.Kind = Kind(kind)
 	inst.Kind = defaultKind(inst)
@@ -262,6 +270,7 @@ func (r *Repo) Delete(id int64) error {
 	if r.cardigann != nil {
 		r.cardigann.Forget(id)
 	}
+	r.tracker.Delete(id)
 	return nil
 }
 

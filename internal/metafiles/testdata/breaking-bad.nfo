@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<tvshow>
+  <title>Breaking Bad</title>
+  <showtitle>Breaking Bad</showtitle>
+  <ratings>
+    <rating name="themoviedb" max="10" default="true">
+      <value>8.9</value>
+      <votes>14000</votes>
+    </rating>
+  </ratings>
+  <plot>A chemistry teacher diagnosed with cancer turns to making meth.</plot>
+  <mpaa>TV-MA</mpaa>
+  <id>81189</id>
+  <tmdbid>1396</tmdbid>
+  <tvdbid>81189</tvdbid>
+  <imdbid>tt0903747</imdbid>
+  <uniqueid type="tvdb" default="true">81189</uniqueid>
+  <uniqueid type="tmdb">1396</uniqueid>
+  <uniqueid type="imdb">tt0903747</uniqueid>
+  <genre>Drama</genre>
+  <genre>Crime</genre>
+  <premiered>2008-01-20</premiered>
+  <year>2008</year>
+  <status>Ended</status>
+  <studio>AMC</studio>
+  <actor>
+    <name>Bryan Cranston</name>
+    <role>Walter White</role>
+    <order>0</order>
+  </actor>
+</tvshow>

@@ -1,9 +1,11 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../components/Icon'
+import InfoTip from '../components/InfoTip'
 import ProfilePicker from '../components/ProfilePicker'
 import TitleTags from '../components/Tags'
 import WatchedLine from '../components/WatchedLine'
+import NumberingCard from '../components/NumberingCard'
 import SeriesTypePicker from '../components/SeriesTypePicker'
 import Switch from '../components/Switch'
 import TitleHero from '../components/TitleHero'
@@ -11,12 +13,14 @@ import WatchLinks from '../components/WatchLinks'
 import TitleEvents from '../components/TitleEvents'
 import { useToast } from '../components/Toast'
 import ReleaseTable from '../components/ReleaseTable'
+import CopiesCard from '../components/CopiesCard'
+import TitleRequestActions from '../components/TitleRequestActions'
 import FilesPanel from '../components/FilesPanel'
 import SubtitlesOffNote from '../components/SubtitlesOffNote'
 import SubtitlesPanel from '../components/SubtitlesPanel'
 import { useAuth } from '../AuthContext'
 import { useModules } from '../ModulesContext'
-import { api, isAdmin, type Episode, type SearchResult, type SeriesDetail as SeriesDetailData, type TVDetail } from '../api'
+import { api, can, isAdmin, isViewer, type Episode, type SearchResult, type SeriesDetail as SeriesDetailData, type TVDetail } from '../api'
 import { qualityText } from '../format'
 import { useLive } from '../useLive'
 import { useConfirm } from '../components/ConfirmProvider'
@@ -25,6 +29,7 @@ import ReleaseNotice from '../components/ReleaseNotice'
 import type { Unanswered } from '../releaseHint'
 import { useDocumentTitle } from '../documentTitle'
 import { localDate } from '../bookSeries'
+import { locale, plural, t } from '../i18n'
 
 // A target for interactive search: one episode, or a whole season (no
 // episode set) which only offers season packs.
@@ -32,6 +37,13 @@ interface SearchTarget {
   season: number
   episode?: number
   label: string
+}
+
+// What an episode's status badge says; the status itself stays the key.
+const EP_STATUS: Record<string, string> = {
+  missing: t('missing'),
+  downloading: t('downloading'),
+  downloaded: t('downloaded'),
 }
 
 // Series detail: seasons with per-episode status, and Sonarr-style
@@ -44,7 +56,13 @@ export default function SeriesDetail() {
 
 function SeriesPage() {
   const confirm = useConfirm()
-  const admin = isAdmin(useAuth().user)
+  const me = useAuth().user
+  const admin = isAdmin(me)
+  // What this account may do: a viewer, or a basic account with these switched
+  // off, is not shown buttons the server would refuse (as on a movie's page).
+  const canManage = can(me, 'manage')
+  const canReleases = can(me, 'releases')
+  const viewer = isViewer(me)
   const { subtitlesOn } = useModules()
   const { id } = useParams()
   const seriesId = Number(id)
@@ -96,20 +114,24 @@ function SeriesPage() {
     return [...map.entries()].sort((a, b) => a[0] - b[0])
   }, [series])
 
-  async function runSearch(t: SearchTarget) {
-    setTarget(t)
+  // Only the answer to the latest search is shown, so a slow earlier one can't land under the wrong episode.
+  const searchId = useRef(0)
+  async function runSearch(st: SearchTarget) {
+    const mine = ++searchId.current
+    setTarget(st)
     setResults(null)
     setSearching(true)
     setError('')
     setMessage('')
     try {
-      const a = await api.seriesSearch(seriesId, t.season, t.episode)
+      const a = await api.seriesSearch(seriesId, st.season, st.episode)
+      if (mine !== searchId.current) return
       setAnswered({ sources: a.sources, unanswered: a.unanswered })
       setResults(a.results)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (mine === searchId.current) setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setSearching(false)
+      if (mine === searchId.current) setSearching(false)
     }
   }
 
@@ -125,7 +147,7 @@ function SeriesPage() {
         season: target?.season,
         episode: target?.episode,
       })
-      setMessage(`Started downloading "${r.title}". Follow it in Activity.`)
+      setMessage(t('Started downloading "{title}". Follow it in Activity.', { title: r.title }))
       setTimeout(load, 500)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -137,7 +159,7 @@ function SeriesPage() {
   async function toggleSeries(monitored: boolean) {
     try {
       await api.setSeriesMonitored(seriesId, monitored)
-      toast.success(monitored ? 'Monitored: looking for missing episodes.' : 'Unmonitored: this show is left alone.')
+      toast.success(monitored ? t('Monitored: looking for missing episodes.') : t('Unmonitored: this show is left alone.'))
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -147,7 +169,7 @@ function SeriesPage() {
   async function toggleSeason(season: number, monitored: boolean) {
     try {
       await api.setSeasonMonitored(seriesId, season, monitored)
-      toast.success(`Season ${season} ${monitored ? 'monitored' : 'unmonitored'}.`)
+      toast.success(monitored ? t('Season {n} monitored.', { n: season }) : t('Season {n} unmonitored.', { n: season }))
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -157,7 +179,7 @@ function SeriesPage() {
   async function toggleEpisode(id: number, monitored: boolean) {
     try {
       await api.setEpisodeMonitored(id, monitored)
-      toast.success(monitored ? 'Episode monitored.' : 'Episode unmonitored.')
+      toast.success(monitored ? t('Episode monitored.') : t('Episode unmonitored.'))
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -179,24 +201,37 @@ function SeriesPage() {
     }
   }
 
+  const [refreshing, setRefreshing] = useState(false)
   async function refresh() {
     setError('')
+    setRefreshing(true)
     try {
       await api.refreshSeries(seriesId)
-      setMessage('Episode list refreshed.')
+      setMessage(t('Episode list refreshed.'))
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRefreshing(false)
     }
   }
 
   async function remove() {
     if (!series) return
     const usage = await api.seriesDiskUsage(seriesId).catch(() => null)
+    const copies = series.copyOf ? [] : ((await api.titleCopies('series', seriesId).catch(() => null))?.items ?? [])
     const answer = await confirm({
-      title: `Remove ${series.title} from your library?`,
-      body: <p>Mediarium stops tracking this show and cancels anything still downloading for it. You can add it back any time.</p>,
-      confirmLabel: 'Remove',
+      title: series.copyOf ? t('Remove this second copy of {title}?', { title: series.title }) : t('Remove {title} from your library?', { title: series.title }),
+      body: (
+        <p>
+          {series.copyOf
+            ? t('Mediarium stops tracking this copy and cancels anything still downloading for it. The main show isn’t touched.')
+            : t('Mediarium stops tracking this show and cancels anything still downloading for it. You can add it back any time.')}
+          {copies.length > 0 &&
+            ` ${plural(copies.length, 'Its second copy ({names}) goes too, with its files if you tick the box.', 'Its second copies ({names}) go too, with their files if you tick the box.', { names: copies.map((c) => c.profileName).join(', ') })}`}
+        </p>
+      ),
+      confirmLabel: t('Remove'),
       danger: true,
       option: removeOption('show', usage),
     })
@@ -210,13 +245,18 @@ function SeriesPage() {
     }
   }
 
-  if (!series) return loadError || error ? <p className="error-text">{loadError || error}</p> : <p>Loading…</p>
+  if (!series) return loadError || error ? <p className="error-text">{loadError || error}</p> : <p>{t('Loading…')}</p>
 
   const today = localDate(new Date())
   const isMissing = (e: { status: string; airDate?: string }) => e.status === 'missing' && !!e.airDate && e.airDate <= today
   // The next episode still to air, for the facts at the top.
   const next = series.episodes.filter((e) => e.airDate && e.airDate >= today).sort((a, b) => (a.airDate! < b.airDate! ? -1 : 1))[0]
-  const nextText = next ? `S${String(next.season).padStart(2, '0')}E${String(next.episode).padStart(2, '0')} on ${new Date(next.airDate + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''
+  const nextText = next
+    ? t('{episode} on {date}', {
+        episode: `S${String(next.season).padStart(2, '0')}E${String(next.episode).padStart(2, '0')}`,
+        date: new Date(next.airDate + 'T12:00:00').toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' }),
+      })
+    : ''
   // Seasons start folded, except the one that needs attention: the latest with
   // missing episodes, or else the latest season.
   const attention = [...seasons].reverse().find(([, eps]) => eps.some(isMissing))?.[0] ?? seasons[seasons.length - 1]?.[0]
@@ -225,6 +265,12 @@ function SeriesPage() {
 
   return (
     <div>
+      {series.copyOf ? (
+        <div className="notice notice-info" style={{ marginBottom: 16 }}>
+          {t('This is a second copy of the show, kept in another quality in the copies folder. Its episodes are looked for on their own.')}{' '}
+          <Link to={`/series/${series.copyOf}`}>{t('Open the main show')}</Link>
+        </div>
+      ) : null}
       <TitleHero
         info={{
           ...(tv ?? {}),
@@ -235,34 +281,41 @@ function SeriesPage() {
           overview: series.overview,
           certification: tv?.contentRating,
           facts: [
-            { label: 'Episodes', value: `${series.downloadedCount} of ${series.episodeCount} downloaded` },
-            ...(nextText ? [{ label: 'Next episode', value: nextText }] : []),
-            ...(tv?.networks?.length ? [{ label: 'Network', value: tv.networks.join(', ') }] : []),
+            { label: t('Episodes'), value: t('{done} of {total} downloaded', { done: series.downloadedCount, total: series.episodeCount }) },
+            ...(nextText ? [{ label: t('Next episode'), value: nextText }] : []),
+            ...(tv?.networks?.length ? [{ label: t('Network'), value: tv.networks.join(', ') }] : []),
           ],
         }}
         actions={
           <>
-            <button className="primary btn-with-icon" onClick={() => searchNow()} disabled={searchingNow}>
-              <Icon name="search" size={16} /> {searchingNow ? 'Searching…' : 'Find missing episodes'}
-            </button>
-            <button className="btn-with-icon" onClick={refresh}>
-              <Icon name="refresh" size={16} /> Refresh episodes
-            </button>
+            {canManage && (
+              <button className="primary btn-with-icon" onClick={() => searchNow()} disabled={searchingNow}>
+                <Icon name="search" size={16} /> {searchingNow ? t('Searching…') : t('Find missing episodes')}
+              </button>
+            )}
+            {canManage && <InfoTip text={t('Searches your indexers right now for the episodes that are still missing, even if the show is not monitored. To search one season or one episode, use the buttons further down.')} />}
+            {!viewer && (
+              <button className="btn-with-icon" onClick={refresh} disabled={refreshing}>
+                <Icon name="refresh" size={16} /> {refreshing ? t('Refreshing…') : t('Refresh episodes')}
+              </button>
+            )}
+            {!viewer && <InfoTip text={t('Fetches the episode list again, so new episodes, new seasons and changed air dates show up.')} />}
             {series.downloadedCount > 0 && <WatchLinks tmdbId={series.tmdbId} kind="tv" />}
             {admin && (
               <button className="btn-with-icon danger-ghost" onClick={remove}>
-                <Icon name="trash" size={16} /> Remove
+                <Icon name="trash" size={16} /> {t('Remove')}
               </button>
             )}
           </>
         }
       >
         <div className="title-controls">
-          <Switch checked={series.monitored} onChange={toggleSeries} label="Monitored" description="Keeps looking for missing episodes." />
-          <ProfilePicker kind="series" itemId={seriesId} />
-          <SeriesTypePicker id={seriesId} value={series.seriesType ?? 'standard'} onChange={(t) => setSeries((cur) => (cur ? { ...cur, seriesType: t } : cur))} />
+          <Switch checked={series.monitored} onChange={toggleSeries} disabled={!canManage} label={<span className="has-tip">{t('Monitored')}<InfoTip text={t('Mediarium keeps searching for the episodes of this show that are monitored and missing. Switch it off to leave the show alone; files you already have stay where they are.')} /></span>} description={t('Keeps looking for missing episodes.')} />
+          <ProfilePicker kind="series" itemId={seriesId}>
+            <TitleTags kind="tv" id={seriesId} />
+          </ProfilePicker>
+          {canManage && <SeriesTypePicker id={seriesId} value={series.seriesType ?? 'standard'} onChange={(type) => setSeries((cur) => (cur ? { ...cur, seriesType: type } : cur))} />}
         </div>
-        <TitleTags kind="tv" id={seriesId} />
         <WatchedLine kind="tv" id={seriesId} />
       </TitleHero>
 
@@ -271,18 +324,25 @@ function SeriesPage() {
 
       {target && (
         <section className="card" style={{ marginBottom: 24 }}>
-          <h2>Releases for {target.label}</h2>
-          {searching && <p>Looking for releases…</p>}
+          <h2>{t('Releases for {target}', { target: target.label })}</h2>
+          {searching && <p>{t('Looking for releases…')}</p>}
           {results !== null && <ReleaseNotice sources={answered.sources} unanswered={answered.unanswered} results={results.length} />}
+          {!searching && (results === null || results.length === 0) && (
+            <button className="btn-sm" onClick={() => setTarget(null)}>
+              {t('Close')}
+            </button>
+          )}
           {results !== null && results.length > 0 && (
-            <ReleaseTable results={results} grabbing={grabbing} onGrab={grab} showPackBadge />
+            <ReleaseTable results={results} grabbing={grabbing} onGrab={grab} showPackBadge onClose={() => setTarget(null)} />
           )}
         </section>
       )}
 
+      {canManage && <NumberingCard id={seriesId} seriesType={series.seriesType ?? 'standard'} />}
+
       {seasons.length > 0 && (
         <div className="season-bar">
-          <div className="chip-row" role="group" aria-label="Seasons">
+          <div className="chip-row" role="group" aria-label={t('Seasons')}>
             {seasons.map(([season, eps]) => (
               <button
                 key={season}
@@ -292,26 +352,27 @@ function SeriesPage() {
                   requestAnimationFrame(() => document.getElementById(`season-${season}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
                 }}
               >
-                {season === 0 ? 'Specials' : `Season ${season}`}
-                {eps.some(isMissing) && <span className="dot-missing" aria-label="has missing episodes" />}
+                {season === 0 ? t('Specials') : t('Season {n}', { n: season })}
+                {eps.some(isMissing) && <span className="dot-missing" aria-label={t('has missing episodes')} />}
               </button>
             ))}
           </div>
           <div className="season-bar-actions">
             <label className="inline-field">
               <input type="checkbox" checked={missingOnly} onChange={(e) => setMissingOnly(e.target.checked)} />
-              Missing episodes only
+              {t('Missing episodes only')}
+              <InfoTip text={t('Shows only the episodes that have aired and are not downloaded yet.')} />
             </label>
             <button className="btn-sm" onClick={() => setOpenSeasons(Object.fromEntries(seasons.map(([s]) => [s, true])))}>
-              Open all
+              {t('Open all')}
             </button>
             <button className="btn-sm" onClick={() => setOpenSeasons(Object.fromEntries(seasons.map(([s]) => [s, false])))}>
-              Close all
+              {t('Close all')}
             </button>
           </div>
         </div>
       )}
-      {missingOnly && shownSeasons.length === 0 && <p style={{ color: 'var(--text-dim)' }}>No episodes that have aired are missing.</p>}
+      {missingOnly && shownSeasons.length === 0 && <p style={{ color: 'var(--text-dim)' }}>{t('No episodes that have aired are missing.')}</p>}
 
       {shownSeasons.map(([season, allEps]) => {
         const eps = missingOnly ? allEps.filter(isMissing) : allEps
@@ -322,37 +383,43 @@ function SeriesPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <button className="season-toggle" aria-expanded={open} onClick={() => setOpenSeasons((o) => ({ ...o, [season]: !open }))}>
                 <Icon name={open ? 'chevron-down' : 'chevron-right'} size={18} />
-                <h2 style={{ margin: 0 }}>{season === 0 ? 'Specials' : `Season ${season}`}</h2>
+                <h2 style={{ margin: 0 }}>{season === 0 ? t('Specials') : t('Season {n}', { n: season })}</h2>
               </button>
               <span className={`badge ${done === allEps.length ? 'downloaded' : 'missing'}`}>
                 {done} / {allEps.length}
               </span>
               {season === 0 ? (
-                <span className="hint">Listed for reference. Mediarium can&apos;t look for specials yet.</span>
+                <span className="hint">{t("Specials aren't looked for until you tick them. Each one is searched on its own, by S00E number and by its title.")}</span>
               ) : (
                 <>
-                  <button onClick={() => runSearch({ season, label: `Season ${season} (packs)` })}>Search season</button>
+                  {canReleases && <button onClick={() => runSearch({ season, label: t('Season {n} (packs)', { n: season }) })}>{t('Search season')}</button>}
+                  {canReleases && <InfoTip text={t('Lists the releases found for this whole season, season packs included, so you can pick one yourself.')} />}
                   <label style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-dim)' }}>
                     <input
                       type="checkbox"
                       checked={allEps.every((e) => e.monitored)}
+                      disabled={!canManage}
                       onChange={(e) => toggleSeason(season, e.target.checked)}
                     />
-                    Monitored
+                    {t('Monitored')}
                   </label>
                 </>
               )}
             </div>
-            {open && <table style={{ marginTop: 8 }}>
+            {open && <table className="ep-table" style={{ marginTop: 8 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 32 }}></th>
+                  <th style={{ width: 32 }}>
+                    <span className="sr-only">{t('Monitored')}</span>
+                  </th>
                   <th style={{ width: 48 }}>#</th>
-                  <th>Title</th>
-                  <th>Air date</th>
-                  <th>Status</th>
-                  <th>Quality</th>
-                  <th></th>
+                  <th>{t('Title')}</th>
+                  <th>{t('Air date')}</th>
+                  <th>{t('Status')}</th>
+                  <th>{t('Quality')}</th>
+                  <th>
+                    <span className="sr-only">{t('Actions')}</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -362,37 +429,36 @@ function SeriesPage() {
                     <Fragment key={e.id}>
                     <tr>
                       <td>
-                        {season > 0 && (
-                          <input
-                            type="checkbox"
-                            checked={e.monitored}
-                            onChange={(ev) => toggleEpisode(e.id, ev.target.checked)}
-                            aria-label={`Monitor episode ${e.episode}`}
-                          />
-                        )}
+                        <input
+                          type="checkbox"
+                          checked={e.monitored}
+                          disabled={!canManage}
+                          onChange={(ev) => toggleEpisode(e.id, ev.target.checked)}
+                          aria-label={season === 0 ? t('Look for special {n}', { n: e.episode }) : t('Monitor episode {n}', { n: e.episode })}
+                        />
                       </td>
                       <td>{e.episode}</td>
-                      <td>{e.title || <span style={{ color: 'var(--text-dim)' }}>TBA</span>}</td>
+                      <td>{e.title || <span style={{ color: 'var(--text-dim)' }}>{t('TBA')}</span>}</td>
                       <td style={{ color: 'var(--text-dim)' }}>{e.airDate || '—'}</td>
                       <td>
                         {e.status === 'missing' && unaired ? (
-                          <span className="badge">unaired</span>
+                          <span className="badge">{t('unaired')}</span>
                         ) : (
-                          <span className={`badge ${e.status}`}>{e.status}</span>
+                          <span className={`badge ${e.status}`}>{EP_STATUS[e.status] ?? e.status}</span>
                         )}
                       </td>
                       <td>{qualityText(e.quality)}</td>
                       <td>
-                        {season > 0 && (
+                        {canReleases && (
                           <button
                             disabled={unaired && e.status === 'missing'}
-                            onClick={() => runSearch({ season, episode: e.episode, label: `S${String(season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}` })}
+                            onClick={() => runSearch({ season, episode: e.episode, label: season === 0 ? t('Special: {title}', { title: e.title || `S00E${String(e.episode).padStart(2, '0')}` }) : `S${String(season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}` })}
                           >
-                            Search
+                            {t('Search')}
                           </button>
                         )}{' '}
-                        {subtitlesOn && e.status === 'downloaded' && (
-                          <button onClick={() => setSubsOpen(subsOpen === e.id ? null : e.id)}>Subtitles</button>
+                        {subtitlesOn && e.status === 'downloaded' && can(me, 'subtitles') && (
+                          <button onClick={() => setSubsOpen(subsOpen === e.id ? null : e.id)}>{t('Subtitles')}</button>
                         )}
                       </td>
                     </tr>
@@ -413,9 +479,12 @@ function SeriesPage() {
         )
       })}
 
+      {!series.copyOf && <TitleRequestActions kind="tv" tmdbId={series.tmdbId} libraryId={series.id} title={series.title} />}
+      {!series.copyOf && <CopiesCard kind="series" id={series.id} admin={admin} />}
+
       <details className="card files-card" style={{ marginBottom: 24 }}>
         <summary>
-          <h2 style={{ margin: 0, display: 'inline' }}>What happened</h2>
+          <h2 style={{ margin: 0, display: 'inline' }}>{t('What happened')}</h2>
         </summary>
         <div style={{ marginTop: 14 }}>
           <TitleEvents kind="series" id={series.id} />
@@ -425,7 +494,7 @@ function SeriesPage() {
       {series.downloadedCount > 0 && (
         <details className="card files-card" style={{ marginBottom: 24 }}>
           <summary>
-            <h2 style={{ margin: 0, display: 'inline' }}>Files on disk</h2>
+            <h2 style={{ margin: 0, display: 'inline' }}>{t('Files on disk')}</h2>
           </summary>
           <div style={{ marginTop: 14 }}>
             <FilesPanel kind="series" id={series.id} />

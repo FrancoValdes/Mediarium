@@ -75,7 +75,7 @@ type bookPayload struct {
 }
 
 func toBookPayload(b books.Book, admin bool) bookPayload {
-	p := bookPayload{ID: b.ID, OLKey: b.OLKey, Title: b.Title, Author: b.Author, AuthorKey: b.AuthorKey, Year: b.Year, CoverURL: books.CoverURL(b.CoverID, "M"),
+	p := bookPayload{ID: b.ID, OLKey: b.OLKey, Title: b.Title, Author: b.Author, AuthorKey: b.AuthorKey, Year: b.Year, CoverURL: books.LocalCoverURL(b.CoverID, "M"),
 		Description: b.Description, AddedAt: b.AddedAt,
 		Ebook:      bookFormatPayload{Wanted: b.WantEbook, Status: b.EbookStatus, Format: b.EbookFormat},
 		Audiobook:  bookFormatPayload{Wanted: b.WantAudiobook, Status: b.AudioStatus, Format: b.AudioFormat},
@@ -87,7 +87,10 @@ func toBookPayload(b books.Book, admin bool) bookPayload {
 	return p
 }
 
+// handleListBooks lists the library's books. With ?brief=1 each book's
+// description is left out, as an overview is for movies.
 func (s *Server) handleListBooks(w http.ResponseWriter, r *http.Request) {
+	brief := r.URL.Query().Get("brief") == "1"
 	list, err := s.BookRepo.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -95,9 +98,16 @@ func (s *Server) handleListBooks(w http.ResponseWriter, r *http.Request) {
 	}
 	admin := isAdminRequest(r)
 	out := make([]bookPayload, 0, len(list))
+	var covers []int
 	for _, b := range list {
-		out = append(out, toBookPayload(b, admin))
+		p := toBookPayload(b, admin)
+		if brief {
+			p.Description = ""
+		}
+		out = append(out, p)
+		covers = append(covers, b.CoverID)
 	}
+	s.warmBookCovers("M", covers)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -144,6 +154,7 @@ func (s *Server) handleBookSearch(w http.ResponseWriter, r *http.Request) {
 		writeUpstreamError(w, "look up books", err)
 		return
 	}
+	newestFirst(found, q, func(f books.Found) string { return f.Title }, func(f books.Found) int { return f.Year })
 	writeJSON(w, http.StatusOK, s.bookResults(found))
 }
 
@@ -335,6 +346,7 @@ func (s *Server) handleBookReleases(w http.ResponseWriter, r *http.Request) {
 		p.Blocklisted = blocked[blocklist.Key(res.Title)]
 		out = append(out, p)
 	}
+	s.markCachedPayloads(r.Context(), out)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -373,7 +385,7 @@ func (s *Server) handleGrabBook(w http.ResponseWriter, r *http.Request) {
 
 // grabBook puts a release for one format of a book in the download line.
 func (s *Server) grabBook(b books.Book, f books.Format, title, url string, size int64, protocol indexers.Protocol, prio queue.Priority) (int64, error) {
-	if protocol == indexers.ProtocolTorrent && !s.torrentsEnabled() {
+	if protocol == indexers.ProtocolTorrent && !s.torrentReleasesOn() {
 		return 0, errTorrentsDisabled
 	}
 	s.grabMu.Lock()
@@ -418,7 +430,7 @@ func (s *Server) searchBook(bookID int64, f books.Format, retry bool) bool {
 		return false
 	}
 	blocked := s.blockedKeys()
-	for _, res := range filterSources(results, s.sourcesFor("")) {
+	for _, res := range filterSources(s.freshOnly(results), s.sourcesFor("")) {
 		if blocked[blocklist.Key(res.Title)] {
 			continue
 		}

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
+import { t } from '../i18n'
 import Icon from './Icon'
 import { useToast } from './Toast'
 
@@ -27,23 +28,25 @@ export default function SubtitleTiming({ kind, id, file, others, onDone }: { kin
 
   const secs = Number(seconds.replace(',', '.'))
   const valid = Number.isFinite(secs) && secs !== 0 && Math.abs(secs) <= 3600
+  // The number box sits inside the sentence, so split the phrase around it.
+  const [moveBefore, moveAfter] = t('Move by {seconds} seconds').split('{seconds}').map((s) => s.trim())
   return (
     <div className="sub-timing">
       <div className="sub-timing-row">
-        <span>Move by</span>
-        <input type="number" step={0.1} value={seconds} onChange={(e) => setSeconds(e.target.value)} aria-label="Seconds" disabled={busy} />
-        <span>seconds</span>
-        <button className="btn-sm" disabled={busy || !valid} onClick={() => void run({ shiftMs: Math.round(-Math.abs(secs) * 1000) })} title="Show the lines earlier">
-          Earlier
+        <span>{moveBefore}</span>
+        <input type="number" step={0.1} value={seconds} onChange={(e) => setSeconds(e.target.value)} aria-label={t('Seconds')} disabled={busy} />
+        <span>{moveAfter}</span>
+        <button className="btn-sm" disabled={busy || !valid} onClick={() => void run({ shiftMs: Math.round(-Math.abs(secs) * 1000) })} title={t('Show the lines earlier')}>
+          {t('Earlier')}
         </button>
-        <button className="btn-sm" disabled={busy || !valid} onClick={() => void run({ shiftMs: Math.round(Math.abs(secs) * 1000) })} title="Show the lines later">
-          Later
+        <button className="btn-sm" disabled={busy || !valid} onClick={() => void run({ shiftMs: Math.round(Math.abs(secs) * 1000) })} title={t('Show the lines later')}>
+          {t('Later')}
         </button>
       </div>
       {others.length > 0 && (
         <div className="sub-timing-row">
-          <span>Line up with</span>
-          <select value={ref} onChange={(e) => setRef(e.target.value)} disabled={busy} aria-label="Subtitle that is in time">
+          <span>{t('Line up with')}</span>
+          <select value={ref} onChange={(e) => setRef(e.target.value)} disabled={busy} aria-label={t('Subtitle that is in time')}>
             {others.map((o) => (
               <option key={o} value={o}>
                 {o.split('/').pop()}
@@ -51,15 +54,15 @@ export default function SubtitleTiming({ kind, id, file, others, onDone }: { kin
             ))}
           </select>
           <button className="btn-sm btn-with-icon" disabled={busy || !ref} onClick={() => void run({ reference: ref })}>
-            <Icon name="refresh" size={13} /> Line up
+            <Icon name="refresh" size={13} /> {t('Line up')}
           </button>
         </div>
       )}
       <div className="sub-timing-row">
         <button className="btn-sm" disabled={busy} onClick={() => void run({ undo: true })}>
-          Put the original back
+          {t('Put the original back')}
         </button>
-        <small className="hint">The original is kept as a .bak file next to it.</small>
+        <small className="hint">{t('The original is kept as a .bak file next to it.')}</small>
       </div>
     </div>
   )

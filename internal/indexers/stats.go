@@ -1,0 +1,151 @@
+package indexers
+
+import (
+	"fmt"
+	"log/slog"
+	"time"
+)
+
+// Per-indexer counters for the Statistics page: how many searches each
+// indexer got, how many failed, how many releases it returned and how many of
+// its releases were grabbed. One row per indexer per day.
+
+const dayFmt = "2006-01-02"
+
+// StatsKeepDays is how long the daily counters are kept.
+const StatsKeepDays = 90
+
+// Stat is one indexer's counters over a period.
+type Stat struct {
+	IndexerID int64
+	Name      string
+	Queries   int
+	Failures  int
+	Results   int
+	Grabs     int
+}
+
+// SuccessRate is the share of searches that got an answer, 0 to 1. It is -1
+// when there were no searches.
+func (s Stat) SuccessRate() float64 {
+	if s.Queries == 0 {
+		return -1
+	}
+	ok := s.Queries - s.Failures
+	if ok < 0 {
+		ok = 0
+	}
+	return float64(ok) / float64(s.Queries)
+}
+
+func (t *Tracker) bump(id int64, queries, failures, results, grabs int) {
+	if t == nil || t.db == nil {
+		return
+	}
+	day := t.now().UTC().Format(dayFmt)
+	t.mu.Lock()
+	prune := t.prunedOn != day
+	t.prunedOn = day
+	t.mu.Unlock()
+	if prune { // once a day
+		t.Prune()
+	}
+	_, err := t.db.Exec(`INSERT INTO indexer_stats (indexer_id, day, queries, failures, results, grabs) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(indexer_id, day) DO UPDATE SET queries = queries + excluded.queries, failures = failures + excluded.failures,
+		  results = results + excluded.results, grabs = grabs + excluded.grabs`,
+		id, day, queries, failures, results, grabs)
+	if err != nil {
+		slog.Warn("indexers: count indexer search", "indexer", id, "err", err)
+	}
+}
+
+// RecordSearch counts one search of an indexer: how many releases it gave, or
+// the error when it failed. It also keeps the back-off up to date.
+func (t *Tracker) RecordSearch(id int64, results []Result, err error) {
+	if t == nil {
+		return
+	}
+	if err != nil {
+		t.Failed(id, err)
+		t.bump(id, 1, 1, 0, 0)
+		return
+	}
+	t.Succeeded(id)
+	t.bump(id, 1, 0, len(results), 0)
+	t.remember(id, results)
+}
+
+func (t *Tracker) remember(id int64, results []Result) {
+	if len(results) == 0 {
+		return
+	}
+	now := t.now()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.sources) > maxSource {
+		for k, v := range t.sources {
+			if now.After(v.expiry) {
+				delete(t.sources, k)
+			}
+		}
+		if len(t.sources) > maxSource { // all of it fresh: start over
+			t.sources = map[string]sourceNote{}
+		}
+	}
+	for _, r := range results {
+		if r.DownloadURL != "" {
+			t.sources[r.DownloadURL] = sourceNote{id: id, expiry: now.Add(sourceTTL)}
+		}
+	}
+}
+
+// NoteGrab counts a grab for the indexer that gave the release at url. A
+// release from a search long ago, or one the tracker never saw, is not
+// counted.
+func (t *Tracker) NoteGrab(url string) {
+	if t == nil || url == "" {
+		return
+	}
+	t.mu.Lock()
+	n, ok := t.sources[url]
+	t.mu.Unlock()
+	if !ok || t.now().After(n.expiry) {
+		return
+	}
+	t.bump(n.id, 0, 0, 0, 1)
+}
+
+// Stats adds up the counters of every indexer since the given day (UTC). An
+// indexer with no searches in the period is listed with zeros.
+func (t *Tracker) Stats(since time.Time) ([]Stat, error) {
+	if t == nil || t.db == nil {
+		return nil, nil
+	}
+	rows, err := t.db.Query(`SELECT i.id, i.name, COALESCE(SUM(s.queries), 0), COALESCE(SUM(s.failures), 0), COALESCE(SUM(s.results), 0), COALESCE(SUM(s.grabs), 0)
+		FROM indexers i LEFT JOIN indexer_stats s ON s.indexer_id = i.id AND s.day >= ?
+		GROUP BY i.id, i.name ORDER BY i.id`, since.UTC().Format(dayFmt))
+	if err != nil {
+		return nil, fmt.Errorf("read indexer statistics: %w", err)
+	}
+	defer rows.Close()
+	var out []Stat
+	for rows.Next() {
+		var s Stat
+		if err := rows.Scan(&s.IndexerID, &s.Name, &s.Queries, &s.Failures, &s.Results, &s.Grabs); err != nil {
+			return nil, fmt.Errorf("read indexer statistics: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// Prune forgets counters older than StatsKeepDays.
+func (t *Tracker) Prune() {
+	if t == nil || t.db == nil {
+		return
+	}
+	cut := t.now().UTC().AddDate(0, 0, -StatsKeepDays).Format(dayFmt)
+	if _, err := t.db.Exec(`DELETE FROM indexer_stats WHERE day < ?`, cut); err != nil {
+		slog.Warn("indexers: prune indexer statistics", "err", err)
+	}
+}

@@ -2,8 +2,33 @@ package api
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
+
+func TestLogPathHidesTheSecretInAnAddress(t *testing.T) {
+	const secret = "0123456789abcdef0123456789abcdef"
+	tests := []struct{ in, want string }{
+		{"/api/calendar/feed/" + secret + ".ics", "/api/calendar/feed/…"},
+		{"/api/calendar/feed/", "/api/calendar/feed/…"},
+		{"/kobo/" + secret + "/v1/library/sync", "/kobo/…/v1/library/sync"},
+		{"/kobo/" + secret + "/v1/library/abc/metadata", "/kobo/…/v1/library/abc/metadata"},
+		{"/kobo/" + secret, "/kobo/…"},
+		{"/api/queue", "/api/queue"},
+		{"/api/calendar/feed", "/api/calendar/feed"},
+		{"/api/auth/ereader/kobo/resync", "/api/auth/ereader/kobo/resync"},
+		{"/opds/books", "/opds/books"},
+		{"/", "/"},
+	}
+	for _, tt := range tests {
+		if got := logPath(tt.in); got != tt.want {
+			t.Errorf("logPath(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+		if strings.Contains(logPath(tt.in), secret) {
+			t.Errorf("logPath(%q) still holds the secret", tt.in)
+		}
+	}
+}
 
 func TestWhichRequestsGetTheBusyDeadline(t *testing.T) {
 	tests := []struct {
@@ -11,6 +36,10 @@ func TestWhichRequestsGetTheBusyDeadline(t *testing.T) {
 		want         bool
 	}{
 		{"GET", "/api/auth/me", true},
+		{"GET", "/api/auth/methods", true},
+		{"GET", "/api/auth/oidc", true},
+		{"GET", "/api/auth/oidc/start", false},
+		{"GET", "/api/auth/oidc/callback", false},
 		{"GET", "/api/queue", true},
 		{"GET", "/api/dashboard", true},
 		{"GET", "/api/movies", true},

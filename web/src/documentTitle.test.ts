@@ -5,7 +5,7 @@ import { titleFor } from './documentTitle.ts'
 
 test('titleFor puts the page first and the app second', () => {
   assert.equal(titleFor('Library'), 'Library · Mediarium')
-  assert.equal(titleFor('Server and backup'), 'Server and backup · Mediarium')
+  assert.equal(titleFor('Server and updates'), 'Server and updates · Mediarium')
   assert.equal(titleFor('  Dashboard '), 'Dashboard · Mediarium')
 })
 

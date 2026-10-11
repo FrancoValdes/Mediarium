@@ -29,6 +29,9 @@ func unansweredFrom(outcomes []indexers.Outcome) []unansweredSource {
 		if o.Err != nil {
 			out = append(out, unansweredSource{Name: o.IndexerName, Message: indexers.ProblemMessage(o)})
 		}
+		if o.Skipped {
+			out = append(out, unansweredSource{Name: o.IndexerName, Message: indexers.PausedMessage(o.IndexerName, o.Health, nil)})
+		}
 	}
 	return out
 }

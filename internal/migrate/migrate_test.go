@@ -240,7 +240,7 @@ func TestPreviewChangesNothingAndReportsEveryItem(t *testing.T) {
 
 	// Prowlarr
 	p := pv.Prowlarr
-	if p == nil || !p.OK || p.Summary != (Summary{Total: 9, Add: 5, Exists: 1, Skip: 3}) {
+	if p == nil || !p.OK || p.Summary != (Summary{Total: 9, Add: 8, Exists: 1}) {
 		t.Fatalf("prowlarr: %+v", p)
 	}
 	for _, it := range p.Items {
@@ -258,8 +258,10 @@ func TestPreviewChangesNothingAndReportsEveryItem(t *testing.T) {
 				t.Fatalf("1337x: %+v", it)
 			}
 		case "Gone Site", "BroadcasTheNet", "Odd Path":
-			if it.Action != ActionSkip || it.Reason == "" {
-				t.Fatalf("%s should be skipped with a reason: %+v", it.Name, it)
+			// What Mediarium can't run itself stays on Prowlarr, as its own feed.
+			id := map[string]string{"Gone Site": "/6", "BroadcasTheNet": "/7", "Odd Path": "/9"}[it.Name]
+			if it.Action != ActionAdd || !strings.HasSuffix(it.BaseURL, id) || !strings.Contains(it.Reason, "stays on Prowlarr") || it.DefinitionID != "" {
+				t.Fatalf("%s should be added through Prowlarr's feed: %+v", it.Name, it)
 			}
 		}
 	}
@@ -309,7 +311,7 @@ func TestImportRunsOnceAndIsIdempotent(t *testing.T) {
 	if res.Series != (Counts{Added: 2, Skipped: 1, FilesLinked: 3}) {
 		t.Fatalf("series: %+v (items %+v)", res.Series, st.Items)
 	}
-	if res.Indexers != (Counts{Added: 5, Existing: 1, Skipped: 3, Disabled: 3}) {
+	if res.Indexers != (Counts{Added: 8, Existing: 1, Disabled: 4}) {
 		t.Fatalf("indexers: %+v (items %+v)", res.Indexers, st.Items)
 	}
 	if res.UsenetServers != (Counts{Added: 3, Disabled: 2}) {
@@ -381,6 +383,12 @@ func TestImportRunsOnceAndIsIdempotent(t *testing.T) {
 	if j := byName["Jackett (all)"]; j.Enabled || j.Kind != indexers.KindTorznab || !strings.Contains(j.LastTestError, "jackett") {
 		t.Fatalf("jackett should be added switched off with its test error: %+v", j)
 	}
+	if b := byName["BroadcasTheNet"]; b.Kind != indexers.KindTorznab || b.APIKey != prowlarrKey || !strings.HasSuffix(b.BaseURL, "/7") || b.Protocol != indexers.ProtocolTorrent {
+		t.Fatalf("a site Mediarium has no definition for stays on Prowlarr's own feed, with Prowlarr's key: %+v", b)
+	}
+	if o := byName["Odd Path"]; o.Kind != indexers.KindNewznab || o.APIKey != prowlarrKey || !strings.HasSuffix(o.BaseURL, "/9") {
+		t.Fatalf("a Newznab indexer with an odd API path goes through Prowlarr too: %+v", o)
+	}
 	if d := byName["DrunkenSlug"]; d.Enabled || d.APIKey != "" {
 		t.Fatalf("masked key must not be copied and the indexer must be off: %+v", d)
 	}
@@ -418,7 +426,7 @@ func TestImportRunsOnceAndIsIdempotent(t *testing.T) {
 	}
 	r2 := st2.Results
 	if r2.Movies.Added != 0 || r2.Movies.Existing != 4 || r2.Series.Added != 0 || r2.Series.Existing != 2 ||
-		r2.Indexers.Added != 0 || r2.Indexers.Existing != 6 || r2.UsenetServers.Added != 0 || r2.UsenetServers.Existing != 3 || r2.Series.FilesLinked != 0 || r2.Movies.FilesLinked != 0 {
+		r2.Indexers.Added != 0 || r2.Indexers.Existing != 9 || r2.UsenetServers.Added != 0 || r2.UsenetServers.Existing != 3 || r2.Series.FilesLinked != 0 || r2.Movies.FilesLinked != 0 {
 		t.Fatalf("second run changed something: %+v", r2)
 	}
 	if movies, _ := h.lib.List(); len(movies) != 4 {
@@ -427,7 +435,7 @@ func TestImportRunsOnceAndIsIdempotent(t *testing.T) {
 	if shows, _ := h.lib.ListSeries(); len(shows) != 2 {
 		t.Fatalf("series after two runs: %d", len(shows))
 	}
-	if list, _ := h.idx.List(); len(list) != 5 {
+	if list, _ := h.idx.List(); len(list) != 8 {
 		t.Fatalf("indexers after two runs: %d", len(list))
 	}
 	if list, _ := h.servers.ListAll(); len(list) != 3 {

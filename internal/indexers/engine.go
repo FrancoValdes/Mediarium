@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +49,9 @@ type Instance struct {
 	Settings map[string]string
 	// Cardigann runs definition-based indexers; the repo sets it.
 	Cardigann *CardigannManager
+	// Tracker keeps the indexer's back-off and search counters; the repo sets
+	// it. Nil (an instance built by hand) means neither is kept.
+	Tracker *Tracker
 	// LastTestError is the message of the last failed Test ("" = passed or
 	// never tested); LastTestAt is when it ran.
 	LastTestError string
@@ -75,14 +79,32 @@ type Outcome struct {
 	IndexerName string
 	Results     []Result
 	Err         error
+	// Skipped is set when the indexer was not asked because it is paused after
+	// repeated failures (see Tracker); PausedUntil says until when. Err is nil
+	// then: a paused indexer is not a new problem.
+	Skipped     bool
+	PausedUntil time.Time
+	Health      Health
 }
 
 const perIndexerTimeout = 15 * time.Second
+
+// apostropheless drops the apostrophes and quote marks inside a name.
+var apostropheless = strings.NewReplacer("'", "", "’", "", "‘", "", "`", "", "´", "")
+
+// SearchText cleans what is sent to an indexer. Release names are written without
+// apostrophes ("Hells.Kitchen.US.S24E01", "Marvels.Agents.of.SHIELD"), and an
+// indexer that is asked for "Hell's Kitchen" often answers with nothing, so the
+// apostrophes go before the search.
+func SearchText(q string) string {
+	return strings.Join(strings.Fields(apostropheless.Replace(q)), " ")
+}
 
 // SearchAll queries every enabled instance concurrently and returns one
 // Outcome per instance ("one unified result list ... clearly
 // tagged by source").
 func SearchAll(ctx context.Context, instances []Instance, query string, categories []int) []Outcome {
+	query = SearchText(query)
 	var enabled []Instance
 	for _, inst := range instances {
 		if inst.Enabled {
@@ -93,6 +115,11 @@ func SearchAll(ctx context.Context, instances []Instance, query string, categori
 	outcomes := make([]Outcome, len(enabled))
 	var wg sync.WaitGroup
 	for i, inst := range enabled {
+		if until, paused := inst.Tracker.PausedUntil(inst.ID); paused {
+			h, _ := inst.Tracker.Health(inst.ID)
+			outcomes[i] = Outcome{IndexerName: inst.Name, Skipped: true, PausedUntil: until, Health: h}
+			continue
+		}
 		wg.Add(1)
 		go func(i int, inst Instance) {
 			defer wg.Done()
@@ -125,6 +152,10 @@ func SearchAll(ctx context.Context, instances []Instance, query string, categori
 				results[j].Priority = inst.Priority
 			}
 			outcomes[i] = Outcome{IndexerName: inst.Name, Results: results, Err: err}
+			// A search cut short by the caller says nothing about the indexer.
+			if ctx.Err() == nil && !errors.Is(err, context.Canceled) {
+				inst.Tracker.RecordSearch(inst.ID, results, err)
+			}
 		}(i, inst)
 	}
 	wg.Wait()
@@ -167,9 +198,21 @@ func ProblemMessage(o Outcome) string {
 // (but not discarding — callers can still inspect Outcome.Err) failed ones.
 func MergeResults(outcomes []Outcome) []Result {
 	var all []Result
+	// Several queries for one thing (S00E05 and the special's title, an
+	// anime's season and absolute number) often bring back the same release
+	// from the same indexer: it is listed once.
+	seen := map[[3]string]bool{}
 	for _, o := range outcomes {
-		if o.Err == nil {
-			all = append(all, o.Results...)
+		if o.Err != nil {
+			continue
+		}
+		for _, r := range o.Results {
+			key := [3]string{r.IndexerName, r.DownloadURL, r.Title}
+			if r.DownloadURL != "" && seen[key] {
+				continue
+			}
+			seen[key] = true
+			all = append(all, r)
 		}
 	}
 	return all

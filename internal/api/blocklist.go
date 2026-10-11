@@ -145,7 +145,7 @@ func (s *Server) retrySeries(seriesID int64) {
 	if err != nil {
 		return
 	}
-	if s.autoGrabTV(s.targetedTVSearcher(context.Background(), instances, maxTVSearchesPerHunt), "retry", profiles, tvScope{seriesID: seriesID}) == 0 {
+	if s.autoGrabTV(s.targetedTVSearcher(context.Background(), instances, maxTVSearchesPerHunt, false), "retry", profiles, tvScope{seriesID: seriesID}) == 0 {
 		s.retryEvent(0, seriesID, noOtherRelease)
 	}
 }
@@ -158,8 +158,26 @@ type blocklistPayload struct {
 	CreatedAt    string `json:"createdAt,omitempty"`
 }
 
+// handleListBlocklist lists the blocklist, newest first. With no query it is
+// every entry, as a plain list. With limit (and offset) it is one page, and the
+// answer is {items, total, limit, offset}; the limit is at most 500.
 func (s *Server) handleListBlocklist(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.Blocklist.List()
+	var (
+		entries       []blocklist.Entry
+		total         int
+		err           error
+		limit, offset int
+	)
+	paged := r.URL.Query().Get("limit") != ""
+	if paged {
+		limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ = strconv.Atoi(r.URL.Query().Get("offset"))
+		limit = min(max(limit, 1), 500)
+		offset = max(offset, 0)
+		entries, total, err = s.Blocklist.Page(limit, offset)
+	} else {
+		entries, err = s.Blocklist.List()
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -171,6 +189,10 @@ func (s *Server) handleListBlocklist(w http.ResponseWriter, r *http.Request) {
 			p.CreatedAt = e.CreatedAt.Format(time.RFC3339)
 		}
 		out = append(out, p)
+	}
+	if paged {
+		writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": total, "limit": limit, "offset": offset})
+		return
 	}
 	writeJSON(w, http.StatusOK, out)
 }

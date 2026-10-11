@@ -149,6 +149,7 @@ func requestKey(kind, payload string) string {
 		MBID      string `json:"mbid"`
 		AlbumMBID string `json:"albumMbid"`
 		OLKey     string `json:"olKey"`
+		FourK     bool   `json:"fourK"`
 	}
 	if json.Unmarshal([]byte(payload), &v) != nil {
 		return ""
@@ -156,6 +157,9 @@ func requestKey(kind, payload string) string {
 	switch kind {
 	case "movie", "tv":
 		if v.TMDBID > 0 {
+			if v.FourK { // the 4K copy is its own request
+				return fmt.Sprintf("%s:tmdb:%d:4k", kind, v.TMDBID)
+			}
 			return fmt.Sprintf("%s:tmdb:%d", kind, v.TMDBID)
 		}
 	case "music":
@@ -180,12 +184,25 @@ func (s *Server) fileRequest(w http.ResponseWriter, r *http.Request, kind string
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	fourK := payloadFourK(body)
+	if fourK && !s.fourKReady(kind) {
+		writeError(w, http.StatusBadRequest, "Asking for a 4K copy isn't available here.")
+		return
+	}
 	info, err := s.describeRequest(ctx, kind, body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if info.inLibrary {
+	if info.inLibrary && fourK {
+		// A title that is in the library can still be asked for in 4K.
+		tmdbID := payloadTMDBID(string(body))
+		if s.hasFourKCopy(kind, tmdbID) {
+			writeError(w, http.StatusConflict, "That already has a 4K copy.")
+			return
+		}
+		info, _ = s.describeLibraryTitle(kind, tmdbID)
+	} else if info.inLibrary {
 		writeError(w, http.StatusConflict, "That's already in the library.")
 		return
 	}
@@ -202,12 +219,19 @@ func (s *Server) fileRequest(w http.ResponseWriter, r *http.Request, kind string
 			return
 		}
 	}
-	req, err := s.Requests.Create(requests.Request{Kind: kind, Title: info.title, Year: info.year, Poster: info.poster, Payload: string(body), RequestedBy: by})
+	if q := s.requestQuota(by); q.Limit > 0 && q.Left == 0 {
+		writeError(w, http.StatusTooManyRequests, quotaRefusal(q, time.Now()))
+		return
+	}
+	req, err := s.Requests.Create(requests.Request{Kind: kind, Title: info.title, Year: info.year, Poster: info.poster, Payload: string(body), RequestedBy: by, FourK: fourK})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	name := requestName(req)
+	if fourK {
+		name += " in 4K"
+	}
 	_ = s.QueueRepo.LogActivity(0, "added", fmt.Sprintf("Asked for %s%s", name, byline))
 	s.notifyEvent("request", "New request: "+name, fmt.Sprintf("%s asked for %s. Approve or decline it under Activity > Requests.", strings.TrimPrefix(byline, " by "), name))
 	writeJSON(w, http.StatusAccepted, map[string]any{"requested": true, "request": req, "message": "Sent to an administrator. You'll see the answer under Activity > Requests."})
@@ -305,8 +329,13 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	inner := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader([]byte(req.Payload))).WithContext(ctx)
 	inner.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	handler(rec, inner)
 	note := ""
+	if req.FourK && s.requestInLibrary(r.Context(), req) {
+		// The title is in the library already: only its 4K copy is left to add.
+		rec.Code = http.StatusOK
+	} else {
+		handler(rec, inner)
+	}
 	switch {
 	case rec.Code < 300:
 	case rec.Code == http.StatusConflict && s.requestInLibrary(r.Context(), req):
@@ -327,12 +356,25 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, e.Error)
 		return
 	}
+	if req.FourK {
+		copyNote, err := s.addFourKCopy(req)
+		if err != nil {
+			slog.Info("requests: 4K copy failed", "request", req.ID, "err", err)
+			writeError(w, http.StatusConflict, sentence(err.Error()))
+			return
+		}
+		if copyNote != "" {
+			note = strings.TrimSpace(note + " " + copyNote)
+		}
+	}
 	adminID, byline := requester(r)
 	if err := s.Requests.Decide(req.ID, requests.Approved, note, adminID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = s.QueueRepo.LogActivity(0, "added", fmt.Sprintf("Request for %s approved%s", requestName(req), byline))
+	label := requestLabel(req)
+	_ = s.QueueRepo.LogActivity(0, "added", fmt.Sprintf("Request for %s approved%s", label, byline))
+	s.tellPerson(req.RequestedBy, "Your request was approved: "+label, label+" was approved. You'll get another message when it's ready to watch.", requestPath(req))
 	out, _ := s.Requests.Get(req.ID)
 	writeJSON(w, http.StatusOK, out)
 }
@@ -370,7 +412,12 @@ func (s *Server) handleDeclineRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = s.QueueRepo.LogActivity(0, "removed", fmt.Sprintf("Request for %s declined%s", requestName(req), byline))
+	_ = s.QueueRepo.LogActivity(0, "removed", fmt.Sprintf("Request for %s declined%s", requestLabel(req), byline))
+	why := ""
+	if note != "" {
+		why = " Reason: " + sentence(note)
+	}
+	s.tellPerson(req.RequestedBy, "Your request was declined: "+requestLabel(req), requestLabel(req)+" was declined."+why, "/queue")
 	out, _ := s.Requests.Get(req.ID)
 	writeJSON(w, http.StatusOK, out)
 }

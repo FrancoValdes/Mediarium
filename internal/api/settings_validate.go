@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/rdborg/mediarium/internal/metadata"
 	"github.com/rdborg/mediarium/internal/organizer"
 	"path"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rdborg/mediarium/internal/parser"
+	"github.com/rdborg/mediarium/internal/quality"
 	"github.com/rdborg/mediarium/internal/settings"
 )
 
@@ -153,7 +155,20 @@ func (s *Server) validateSettings(req *settingsPayload) string {
 	if m := checkChoice(req.ImportConflictPolicy, `Choose what to do when a file with that name already exists: "skip", "overwrite", "overwrite_if_better" or "ask".`, conflictPolicies...); m != "" {
 		return m
 	}
-	if l := req.QualityLanguage; l != "" && !slices.Contains(parser.LanguageNames(), l) {
+	// Audio languages: one or several names, best first, and "Original" for the
+	// language each title was made in.
+	if l := req.QualityLanguage; l != "" {
+		names := quality.ParseLanguages(l)
+		if len(names) == 0 {
+			return "Choose one of the languages in the list."
+		}
+		for _, n := range names {
+			if n != quality.OriginalLanguage && !slices.Contains(parser.LanguageNames(), n) {
+				return "Choose one of the languages in the list."
+			}
+		}
+	}
+	if l := req.InfoLanguage; l != "" && !metadata.IsInfoLanguage(l) {
 		return "Choose one of the languages in the list."
 	}
 	if m := checkChoice(req.DefaultSources, `Choose where to download from: "usenet", "torrent" or "both".`, sourcesUsenet, sourcesTorrent, sourcesBoth); m != "" {
@@ -193,6 +208,9 @@ func (s *Server) validateSettings(req *settingsPayload) string {
 	if d := req.HistoryRetentionDays; d != nil && (*d < 0 || *d > maxHistoryDays) {
 		return fmt.Sprintf("History retention must be a number of days between 0 and %d. Use 0 to keep everything.", maxHistoryDays)
 	}
+	if d := req.UsenetRetentionDays; d != nil && (*d < 0 || *d > maxRetentionDays) {
+		return fmt.Sprintf("The Usenet retention must be a number of days from 1 to %d, or 0 for no limit.", maxRetentionDays)
+	}
 	if d := req.DownloadsAtOnce; d != nil && (*d < minDownloadsAtOnce || *d > maxDownloadsAtOnce) {
 		return fmt.Sprintf("Downloads at the same time must be a number from %d to %d.", minDownloadsAtOnce, maxDownloadsAtOnce)
 	}
@@ -218,6 +236,11 @@ func (s *Server) validateSettings(req *settingsPayload) string {
 			return fmt.Sprintf("Pick at most %d subtitle languages.", maxSubtitleLangs)
 		}
 		req.SubtitleLanguages = cleaned
+	}
+
+	// A subtitle source can't be switched on before it has a key or an add-on.
+	if m := s.checkSourceSwitches(req); m != "" {
+		return m
 	}
 
 	// Legal notice date.

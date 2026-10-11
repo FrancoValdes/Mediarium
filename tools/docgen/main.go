@@ -229,7 +229,7 @@ func envDoc(root string) ([]byte, error) {
 	sort.Slice(vars, func(i, j int) bool { return vars[i].Name < vars[j].Name })
 	var b strings.Builder
 	b.WriteString("# Environment variables\n\n" + banner)
-	b.WriteString("Container-level settings only. Everything else (indexers, Usenet servers, naming, VPN, notifications) is set in the app under Settings, not here. `PUID`, `PGID` and `TZ` are read by the container entrypoint, not by the app.\n\n| Variable | Default |\n|---|---|\n")
+	b.WriteString("Container-level settings only. Everything else (indexers, Usenet servers, naming, VPN, notifications) is set in the app under Settings, not here. `PUID`, `PGID` and `TZ` are read by the container entrypoint, not by the app. Every variable here except those three can also be given as `NAME_FILE=/path/to/file` (for example `/run/secrets/x` with Docker secrets): the app reads the value from that file and trims the whitespace around it. If both are set, `NAME` wins.\n\n| Variable | Default |\n|---|---|\n")
 	for _, v := range vars {
 		fmt.Fprintf(&b, "| `%s` | `%s` |\n", v.Name, v.Default)
 	}

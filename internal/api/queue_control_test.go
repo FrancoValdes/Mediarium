@@ -513,6 +513,28 @@ func TestPauseAllAndResumeAll(t *testing.T) {
 	}
 }
 
+func TestPauseAllCanBeLimitedToOneKind(t *testing.T) {
+	e := newControlEnv(t, 2)
+	usenet, err := e.server.QueueRepo.Enqueue(queue.Item{ReleaseTitle: "Usenet.Release", NZBURL: e.nzbURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	torrent, err := e.server.QueueRepo.Enqueue(queue.Item{ReleaseTitle: "Torrent.Release", NZBURL: "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567", Protocol: queue.ProtocolTorrent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := postJSON[map[string]any](t, e.client, e.base+"/api/queue/pause-all?protocol=torrent", nil, http.StatusOK); resp["paused"] != float64(1) {
+		t.Fatalf("expected only the torrent paused, got %+v", resp)
+	}
+	if e.status(t, torrent) != "paused" || e.status(t, usenet) == "paused" {
+		t.Fatalf("only the torrent should be paused: torrent %s, usenet %s", e.status(t, torrent), e.status(t, usenet))
+	}
+	// Resuming Usenet ones finds nothing paused of that kind.
+	if resp := postJSON[map[string]any](t, e.client, e.base+"/api/queue/resume-all?protocol=usenet", nil, http.StatusOK); resp["resumed"] != float64(0) || resp["skipped"] != float64(0) {
+		t.Fatalf("no paused Usenet downloads to resume, got %+v", resp)
+	}
+}
+
 // --- state transitions ---
 
 func TestQueueControlRefusesWhatDoesNotApply(t *testing.T) {

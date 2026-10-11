@@ -22,7 +22,71 @@ const forbiddenMessage = "Only an administrator can do this."
 
 // notAllowedMessage is the 403 body for a basic account calling a route its
 // permissions leave out.
-const notAllowedMessage = "Your account isn't allowed to do this. An administrator can change that in Settings > Accounts."
+const notAllowedMessage = "Your account isn't allowed to do this. An administrator can change that in Settings > Accounts > All accounts."
+
+// readOnlyMessage is the 403 body when a viewer account, or an API key made
+// read-only, tries to change something.
+const readOnlyMessage = "This account can only look, not change anything."
+const readOnlyKeyMessage = "This API key is read-only. It can only be used for GET requests."
+
+// viewerWritable are the routes a viewer account may call with a method that
+// changes something: only what concerns the person themselves (their own
+// profile, password, second step, passkeys and reading place), never the
+// library, the downloads or the settings.
+var viewerWritable = map[string]bool{
+	"PUT /api/auth/profile":                   true,
+	"POST /api/auth/change-password":          true,
+	"POST /api/auth/two-step/setup":           true,
+	"POST /api/auth/two-step/enable":          true,
+	"POST /api/auth/two-step/disable":         true,
+	"POST /api/auth/two-step/recovery":        true,
+	"POST /api/auth/passkeys/register/begin":  true,
+	"POST /api/auth/passkeys/register/finish": true,
+	"PUT /api/auth/passkeys/{id}":             true,
+	"DELETE /api/auth/passkeys/{id}":          true,
+	"POST /api/auth/oidc/link":                true,
+	"DELETE /api/auth/oidc/link":              true,
+	"PUT /api/books/{id}/progress":            true,
+}
+
+// viewerHidden are routes a viewer may not even read: they show things that
+// belong to someone who manages the account (API keys, connections to other
+// services, the secret calendar address).
+var viewerHidden = map[string]bool{
+	"GET /api/auth/api-keys":              true,
+	"GET /api/auth/ereader":               true,
+	"GET /api/calendar/feed":              true,
+	"GET /api/plex-watchlist":             true,
+	"GET /api/plex-watchlist/pin/{pinId}": true,
+	"GET /api/plex-watchlist/items":       true,
+}
+
+// readOnlyAllows decides whether a caller that may only read can make this
+// call. A read-only API key gets GET and HEAD, nothing else. A viewer account
+// gets the same plus viewerWritable, and never viewerHidden. It is checked for
+// every route in one place, so a route added later is covered without anyone
+// remembering to do it.
+func readOnlyAllows(u *auth.User, method, pattern string) (bool, string) {
+	read := method == http.MethodGet || method == http.MethodHead
+	if u.ReadOnlyKey {
+		if !read {
+			return false, readOnlyKeyMessage
+		}
+		// A key that may only read still may not read other credentials.
+		if viewerHidden[pattern] {
+			return false, forbiddenMessage
+		}
+	}
+	if u.Viewer && !u.IsAdmin {
+		if viewerHidden[pattern] {
+			return false, forbiddenMessage
+		}
+		if !read && !viewerWritable[pattern] {
+			return false, readOnlyMessage
+		}
+	}
+	return true, ""
+}
 
 // routeTable is the signed-in half of the API. A route can only be added
 // through one of its two groups (member or admin), so every route carries an
@@ -94,6 +158,12 @@ func (t *routeTable) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, forbiddenMessage)
 			return
 		}
+		if user.ReadOnly() {
+			if allowed, msg := readOnlyAllows(user, r.Method, pattern); !allowed {
+				writeError(w, http.StatusForbidden, msg)
+				return
+			}
+		}
 		if need := t.perms[pattern]; len(need) > 0 && !user.IsAdmin {
 			if t.permsOf == nil {
 				writeError(w, http.StatusForbidden, notAllowedMessage)
@@ -150,7 +220,7 @@ func (e *errorScrubber) Write(p []byte) (int, error) {
 	if len(body) > 500 {
 		body = body[:500]
 	}
-	slog.Warn("api: server error hidden from a non-administrator", "method", e.r.Method, "path", e.r.URL.Path, "response", body)
+	slog.Warn("api: server error hidden from a non-administrator", "method", e.r.Method, "path", logPath(e.r.URL.Path), "response", body)
 	if _, err := e.ResponseWriter.Write([]byte(`{"error":"` + genericServerError + `"}` + "\n")); err != nil {
 		return 0, err
 	}
@@ -188,7 +258,7 @@ func requireSession(w http.ResponseWriter, r *http.Request) bool {
 	if r.Header.Get("X-API-Key") == "" {
 		return true
 	}
-	slog.Warn("api: refused an API key for something that needs a signed-in session", "method", r.Method, "path", r.URL.Path)
+	slog.Warn("api: refused an API key for something that needs a signed-in session", "method", r.Method, "path", logPath(r.URL.Path))
 	writeError(w, http.StatusForbidden, sessionOnlyMessage)
 	return false
 }

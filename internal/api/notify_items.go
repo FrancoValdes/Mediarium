@@ -56,9 +56,9 @@ func (s *Server) movieItemByID(id int64, title string, year, tmdbID int) notify.
 func seriesItem(sr library.Series, season int, episodes []int) notify.Item {
 	it := notify.Item{Media: "show", Title: sr.Title, Year: sr.Year, PosterURL: smallPoster(sr.PosterPath), LinkPath: fmt.Sprintf("/series/%d", sr.ID)}
 	switch {
-	case season > 0 && len(episodes) == 1:
+	case len(episodes) == 1:
 		it.Media, it.Episode = "episode", fmt.Sprintf("S%02dE%02d", season, episodes[0])
-	case season > 0 && len(episodes) > 1:
+	case len(episodes) > 1:
 		it.Media, it.Episode = "episode", fmt.Sprintf("S%02dE%02d-E%02d", season, episodes[0], episodes[len(episodes)-1])
 	case season > 0:
 		it.Episode = fmt.Sprintf("Season %d", season)

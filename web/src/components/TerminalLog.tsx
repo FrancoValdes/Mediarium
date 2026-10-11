@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { copyText } from './CopyBox'
+import { t } from '../i18n'
 import Icon from './Icon'
 import './TerminalLog.css'
 
@@ -20,7 +21,7 @@ function clock(iso: string): string {
 // scrolled into view as lines arrive. `running` adds a waiting line with a
 // blinking cursor. Lines are revealed one after another so it reads as it
 // happened, unless the person prefers less motion.
-export default function TerminalLog({ lines, running = false, label = 'Log' }: { lines: LogLine[]; running?: boolean; label?: string }) {
+export default function TerminalLog({ lines, running = false, label = t('Log') }: { lines: LogLine[]; running?: boolean; label?: string }) {
   const [shown, setShown] = useState(lines.length)
   const [copied, setCopied] = useState(false)
   const body = useRef<HTMLDivElement>(null)
@@ -64,8 +65,8 @@ export default function TerminalLog({ lines, running = false, label = 'Log' }: {
       <div className="term-bar">
         <span className="term-title">{label}</span>
         {lines.length > 0 && (
-          <button type="button" className="term-copy" onClick={() => void copy()} aria-label="Copy the log">
-            {copied ? <Icon name="check" size={13} /> : null} {copied ? 'Copied' : 'Copy'}
+          <button type="button" className="term-copy" onClick={() => void copy()} aria-label={t('Copy the log')}>
+            {copied ? <Icon name="check" size={13} /> : null} {copied ? t('Copied') : t('Copy')}
           </button>
         )}
       </div>
@@ -81,7 +82,7 @@ export default function TerminalLog({ lines, running = false, label = 'Log' }: {
           <div className="term-line wait">
             <span className="term-time" />
             <span className="term-mark" aria-hidden="true">&gt;</span>
-            <span className="term-text">Working<span className="term-cursor" /></span>
+            <span className="term-text">{t('Working')}<span className="term-cursor" /></span>
           </div>
         )}
       </div>

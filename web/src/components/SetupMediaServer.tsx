@@ -3,6 +3,7 @@ import { type MediaServer, type MediaServerKind } from '../api'
 import { FieldError, useValidation } from '../useValidation'
 import { firstError, required, url as urlCheck } from '../validate'
 import Icon from './Icon'
+import { t } from '../i18n'
 import { FindServers, JellyfinEmbySignIn, PlexSignIn } from './MediaServerSignIn'
 import { MEDIA_SERVER_BRAND, MediaServerMark } from './mediaServerBrand'
 
@@ -28,7 +29,7 @@ export default function SetupMediaServer({
   const [pick, setPick] = useState<MediaServerKind | null>(preferred ?? servers[0]?.kind ?? null)
   const [address, setAddress] = useState('')
   const example = pick ? EXAMPLE[pick] : EXAMPLE.jellyfin
-  const v = useValidation({ address: firstError(required(address, `Add the address of your server, for example ${example}.`), urlCheck(address, { example })) })
+  const v = useValidation({ address: firstError(required(address, t('Add the address of your server, for example {example}.', { example: example ?? '' })), urlCheck(address, { example })) })
 
   return (
     <div className="ms-step">
@@ -44,14 +45,14 @@ export default function SetupMediaServer({
                 </small>
               </span>
               <span className="badge downloaded">
-                <Icon name="check" size={12} /> Connected
+                <Icon name="check" size={12} /> {t('Connected')}
               </span>
             </li>
           ))}
         </ul>
       )}
 
-      <div className="ms-pick" role="radiogroup" aria-label="Your media server">
+      <div className="ms-pick" role="radiogroup" aria-label={t('Your media server')}>
         {KINDS.map((k) => (
           <button
             key={k}
@@ -72,10 +73,10 @@ export default function SetupMediaServer({
       {(pick === 'jellyfin' || pick === 'emby') && (
         <div className="ms-form">
           <label>
-            {MEDIA_SERVER_BRAND[pick].label} address
+            {t('{server} address', { server: MEDIA_SERVER_BRAND[pick].label })}
             <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={example} spellCheck={false} {...v.bind('address', address, setAddress)} />
             <FieldError v={v} name="address" />
-            <small className="field-hint">The address you open {MEDIA_SERVER_BRAND[pick].label} at in your browser, including the port number.</small>
+            <small className="field-hint">{t('The address you open {server} at in your browser, including the port number.', { server: MEDIA_SERVER_BRAND[pick].label })}</small>
           </label>
           <FindServers
             onPick={(f) => {
@@ -86,7 +87,7 @@ export default function SetupMediaServer({
           <JellyfinEmbySignIn kind={pick} baseUrl={address} checkAddress={() => v.attempt()} onAdded={onAdded} />
         </div>
       )}
-      {pick === null && <p className="fbox-calm">Pick yours to connect it, or press Continue to skip.</p>}
+      {pick === null && <p className="fbox-calm">{t('Pick yours to connect it, or press Continue to skip.')}</p>}
     </div>
   )
 }

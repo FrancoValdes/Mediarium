@@ -9,6 +9,7 @@
 // This file is deliberately free of React and browser-only code so it can be
 // unit-tested with plain node (see validate.test.ts). The matching server-side
 // rules live in internal/api/validate.go, and the two are kept in step.
+import { t } from './i18n.ts'
 
 export type Message = string | null
 
@@ -22,7 +23,7 @@ const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 const blank = (v: unknown) => str(v).trim() === ''
 
 /** A value that has to be filled in. Pass the whole message for the field. */
-export function required(value: unknown, message = "This can't be left empty."): Message {
+export function required(value: unknown, message = t("This can't be left empty.")): Message {
   return blank(value) ? message : null
 }
 
@@ -37,7 +38,7 @@ export const PASSWORD_MAX_BYTES = 72
 export function email(value: string): Message {
   const v = str(value).trim()
   if (v === '') return null
-  const bad = "That email address doesn't look right. It should look like name@example.com."
+  const bad = t("That email address doesn't look right. It should look like name@example.com.")
   if (/[\s,;<>]/.test(v) || v.length > 254) return bad
   const at = v.indexOf('@')
   if (at < 1 || at !== v.lastIndexOf('@')) return bad
@@ -50,8 +51,8 @@ export function email(value: string): Message {
 export function username(value: string): Message {
   const v = str(value).trim()
   if (v === '') return null
-  if (v.length < USERNAME_MIN || v.length > USERNAME_MAX) return `A username needs to be ${USERNAME_MIN} to ${USERNAME_MAX} characters long.`
-  if (!/^[A-Za-z0-9._-]+$/.test(v)) return 'Usernames can only use letters, numbers, dots, dashes and underscores.'
+  if (v.length < USERNAME_MIN || v.length > USERNAME_MAX) return t('A username needs to be {min} to {max} characters long.', { min: USERNAME_MIN, max: USERNAME_MAX })
+  if (!/^[A-Za-z0-9._-]+$/.test(v)) return t('Usernames can only use letters, numbers, dots, dashes and underscores.')
   return null
 }
 
@@ -60,18 +61,18 @@ const utf8Length = (s: string) => new TextEncoder().encode(s).length
 export function password(value: string): Message {
   const v = str(value)
   if (v === '') return null
-  if (v.length < PASSWORD_MIN) return `Passwords need at least ${PASSWORD_MIN} characters.`
-  if (utf8Length(v) > PASSWORD_MAX_BYTES) return `Passwords can be at most ${PASSWORD_MAX_BYTES} characters long.`
+  if (v.length < PASSWORD_MIN) return t('Passwords need at least {n} characters.', { n: PASSWORD_MIN })
+  if (utf8Length(v) > PASSWORD_MAX_BYTES) return t('Passwords can be at most {n} characters long.', { n: PASSWORD_MAX_BYTES })
   return null
 }
 
 export function passwordsMatch(pw: string, again: string): Message {
   if (again === '') return null
-  return pw === again ? null : "The two passwords don't match."
+  return pw === again ? null : t("The two passwords don't match.")
 }
 
 export function maxLength(value: string, max: number, label: string): Message {
-  return str(value).trim().length > max ? `${label} can be at most ${max} characters long.` : null
+  return str(value).trim().length > max ? t('{label} can be at most {max} characters long.', { label, max }) : null
 }
 
 // ---- Addresses ------------------------------------------------------------
@@ -119,11 +120,11 @@ export function isHostOrIP(s: string): boolean {
 export function hostOrIP(value: string, example = 'news.example.com'): Message {
   const v = str(value).trim()
   if (v === '') return null
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v) || v.includes('/')) return `Enter just the server name, without http:// or a path. For example ${example}.`
-  if (/\s/.test(v)) return "The server name can't contain spaces."
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v) || v.includes('/')) return t('Enter just the server name, without http:// or a path. For example {example}.', { example })
+  if (/\s/.test(v)) return t("The server name can't contain spaces.")
   // A single colon means a port was tacked on; IPv6 addresses have several.
-  if (v.split(':').length === 2 && !v.startsWith('[')) return `Put the port in the Port box, not in the address. The address should look like ${example}.`
-  if (!isHostOrIP(v)) return `That doesn't look like a server name or IP address. It should look like ${example} or 192.168.1.10.`
+  if (v.split(':').length === 2 && !v.startsWith('[')) return t('Put the port in the Port box, not in the address. The address should look like {example}.', { example })
+  if (!isHostOrIP(v)) return t("That doesn't look like a server name or IP address. It should look like {example} or 192.168.1.10.", { example })
   return null
 }
 
@@ -139,20 +140,20 @@ export function url(value: string, opts: UrlOptions = {}): Message {
   const v = str(value).trim()
   if (v === '') return null
   const example = opts.example ?? 'http://192.168.1.10:8080'
-  if (/\s/.test(v)) return "The address can't contain spaces."
-  if (v.startsWith('/')) return `That doesn't look like a web address. It should look like ${example}.`
+  if (/\s/.test(v)) return t("The address can't contain spaces.")
+  if (v.startsWith('/')) return t("That doesn't look like a web address. It should look like {example}.", { example })
   const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(v)
-  if (!hasScheme && opts.requireScheme) return `Start the address with http:// or https://, for example ${example}.`
-  if (hasScheme && !/^https?:\/\//i.test(v)) return `The address has to start with http:// or https://, for example ${example}.`
+  if (!hasScheme && opts.requireScheme) return t('Start the address with http:// or https://, for example {example}.', { example })
+  if (hasScheme && !/^https?:\/\//i.test(v)) return t('The address has to start with http:// or https://, for example {example}.', { example })
   let u: URL
   try {
     u = new URL(hasScheme ? v : `http://${v}`)
   } catch {
-    return `That doesn't look like a web address. It should look like ${example}.`
+    return t("That doesn't look like a web address. It should look like {example}.", { example })
   }
   const host = u.hostname.replace(/^\[|\]$/g, '')
-  if (host === '') return `That address is missing a server name. It should look like ${example}.`
-  if (!isHostOrIP(host)) return `That doesn't look like a web address. It should look like ${example}.`
+  if (host === '') return t('That address is missing a server name. It should look like {example}.', { example })
+  if (!isHostOrIP(host)) return t("That doesn't look like a web address. It should look like {example}.", { example })
   return null
 }
 
@@ -164,9 +165,9 @@ export function isPort(value: unknown): boolean {
   return n >= 1 && n <= 65535
 }
 
-export function port(value: unknown, label = 'Port'): Message {
+export function port(value: unknown, label = t('Port')): Message {
   if (blank(value)) return null
-  return isPort(value) ? null : `${label} must be a number between 1 and 65535.`
+  return isPort(value) ? null : t('{label} must be a number between 1 and 65535.', { label })
 }
 
 // ---- Numbers --------------------------------------------------------------
@@ -180,25 +181,31 @@ export interface RangeOptions {
   allowBlank?: boolean
 }
 
-const fmt = (n: number) => n.toLocaleString('en-US')
-
 /** A whole number (or a decimal, if asked) within limits. `label` starts the sentence, e.g. "Connections". */
 export function numberRange(value: unknown, label: string, opts: RangeOptions = {}): Message {
   const { min, max, decimal = false, allowBlank = true } = opts
   const s = str(value).trim()
-  const noun = decimal ? 'a number' : 'a whole number'
-  if (s === '') return allowBlank ? null : `${label} must be ${noun}${limits(min, max)}.`
+  if (s === '') return allowBlank ? null : rangeMessage(label, decimal, min, max)
   const n = Number(s)
-  if (!Number.isFinite(n) || (!decimal && !Number.isInteger(n))) return `${label} must be ${noun}${limits(min, max)}.`
-  if ((min !== undefined && n < min) || (max !== undefined && n > max)) return `${label} must be ${noun}${limits(min, max)}.`
+  if (!Number.isFinite(n) || (!decimal && !Number.isInteger(n))) return rangeMessage(label, decimal, min, max)
+  if ((min !== undefined && n < min) || (max !== undefined && n > max)) return rangeMessage(label, decimal, min, max)
   return null
 }
 
-function limits(min?: number, max?: number): string {
-  if (min !== undefined && max !== undefined) return ` between ${fmt(min)} and ${fmt(max)}`
-  if (min !== undefined) return min === 0 ? ' of 0 or more' : min === 1 ? ' of 1 or more' : ` of ${fmt(min)} or more`
-  if (max !== undefined) return ` of ${fmt(max)} or less`
-  return ''
+// The whole sentence for a number that is out of range, so each language can
+// word it its own way.
+function rangeMessage(label: string, decimal: boolean, min?: number, max?: number): string {
+  const vars = { label, min: min ?? 0, max: max ?? 0 }
+  if (decimal) {
+    if (min !== undefined && max !== undefined) return t('{label} must be a number between {min} and {max}.', vars)
+    if (min !== undefined) return t('{label} must be a number of {min} or more.', vars)
+    if (max !== undefined) return t('{label} must be a number of {max} or less.', vars)
+    return t('{label} must be a number.', vars)
+  }
+  if (min !== undefined && max !== undefined) return t('{label} must be a whole number between {min} and {max}.', vars)
+  if (min !== undefined) return t('{label} must be a whole number of {min} or more.', vars)
+  if (max !== undefined) return t('{label} must be a whole number of {max} or less.', vars)
+  return t('{label} must be a whole number.', vars)
 }
 
 /** A whole number of at least 1. */
@@ -222,9 +229,9 @@ export function folderPath(value: string, example = '/media/movies'): Message {
   const v = str(value).trim()
   if (v === '') return null
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f]/.test(v)) return "The folder path can't contain hidden or control characters."
+  if (/[\u0000-\u001f]/.test(v)) return t("The folder path can't contain hidden or control characters.")
   if (!(v.startsWith('/') || /^[A-Za-z]:[\\/]/.test(v) || v.startsWith('\\\\'))) {
-    return `That folder path isn't complete. It should start with / or a drive letter, for example ${example}.`
+    return t("That folder path isn't complete. It should start with / or a drive letter, for example {example}.", { example })
   }
   return null
 }
@@ -233,8 +240,8 @@ export function folderPath(value: string, example = '/media/movies'): Message {
 export function apiKey(value: string): Message {
   const v = str(value).trim()
   if (v === '') return null
-  if (/\s/.test(v)) return "That key has a space or line break in it. Copy just the key itself, with nothing around it."
-  if (v.length > 512) return 'That key is much longer than a real one. Check that you copied only the key.'
+  if (/\s/.test(v)) return t('That key has a space or line break in it. Copy just the key itself, with nothing around it.')
+  if (v.length > 512) return t('That key is much longer than a real one. Check that you copied only the key.')
   return null
 }
 
@@ -243,7 +250,7 @@ export function plainName(value: string, label: string): Message {
   const v = str(value).trim()
   if (v === '') return null
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f]/.test(v)) return `${label} can't contain control characters.`
+  if (/[\u0000-\u001f]/.test(v)) return t("{label} can't contain control characters.", { label })
   return null
 }
 
@@ -253,19 +260,19 @@ export function plainName(value: string, label: string): Message {
 export function hostPort(value: string, example = 'vpn.example.com:51820'): Message {
   const v = str(value).trim()
   if (v === '') return null
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v) || v.includes('/') || /\s/.test(v)) return `Enter the address and port only, like ${example}.`
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v) || v.includes('/') || /\s/.test(v)) return t('Enter the address and port only, like {example}.', { example })
   const m = /^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/.exec(v)
-  if (!m) return `Add the port after the address, like ${example}.`
-  if (!isPort(m[3])) return 'The port must be a number between 1 and 65535.'
-  if (!isHostOrIP(m[1] ?? m[2])) return `That doesn't look like a server name or IP address. It should look like ${example}.`
+  if (!m) return t('Add the port after the address, like {example}.', { example })
+  if (!isPort(m[3])) return t('The port must be a number between 1 and 65535.')
+  if (!isHostOrIP(m[1] ?? m[2])) return t("That doesn't look like a server name or IP address. It should look like {example}.", { example })
   return null
 }
 
 /** A WireGuard key: 32 bytes written in base64, which is always 44 characters ending in =. */
-export function wireguardKey(value: string, label = 'The key'): Message {
+export function wireguardKey(value: string, label = t('The key')): Message {
   const v = str(value).trim()
   if (v === '') return null
-  if (!/^[A-Za-z0-9+/]{43}=$/.test(v)) return `${label} should be 44 characters ending in =, exactly as it appears in your provider's config. Copy just the key, with nothing around it.`
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(v)) return t("{label} should be 44 characters ending in =, exactly as it appears in your provider's config. Copy just the key, with nothing around it.", { label })
   return null
 }
 
@@ -273,13 +280,13 @@ export function wireguardKey(value: string, label = 'The key'): Message {
 export function ipWithPrefix(value: string, example = '10.2.0.2/32'): Message {
   const v = str(value).trim()
   if (v === '') return null
-  const bad = `That doesn't look like an IP address. It should look like ${example}.`
+  const bad = t("That doesn't look like an IP address. It should look like {example}.", { example })
   const [addr, prefix, ...rest] = v.split('/')
   if (rest.length > 0) return bad
   const v6 = addr.includes(':')
   if (!(v6 ? isIPv6(addr) : isIPv4(addr))) return bad
   if (prefix !== undefined) {
-    if (!/^\d{1,3}$/.test(prefix) || Number(prefix) > (v6 ? 128 : 32)) return `The number after the / should be between 0 and ${v6 ? 128 : 32}, like ${example}.`
+    if (!/^\d{1,3}$/.test(prefix) || Number(prefix) > (v6 ? 128 : 32)) return t('The number after the / should be between 0 and {max}, like {example}.', { max: v6 ? 128 : 32, example })
   }
   return null
 }

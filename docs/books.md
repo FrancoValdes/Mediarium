@@ -5,7 +5,7 @@ Mediarium can look after books too: as an ebook, an audiobook or both. Each form
 ## Switching them on
 
 1. Open **Settings > Media types** and switch on **Ebooks**, **Audiobooks** or both.
-2. Open **Settings > Library > Folders and file names** and check the **Ebooks folder** and **Audiobooks folder**. They start from `EBOOKS_DIR` and `AUDIOBOOKS_DIR` (`/ebooks` and `/audiobooks` by default). The folder has to be mapped into the container; see [modules.md](./modules.md#adding-music-ebooks-or-audiobooks-later).
+2. Open **Settings > Library > Folders** and check the **Ebooks folder** and **Audiobooks folder**. They start from `EBOOKS_DIR` and `AUDIOBOOKS_DIR` (`/ebooks` and `/audiobooks` by default). The folder has to be mapped into the container; see [modules.md](./modules.md#adding-music-ebooks-or-audiobooks-later).
 3. Make sure at least one of your indexers carries books. Ebooks are searched in the Newznab categories 7000 and 7020, audiobooks in 3030.
 
 You can also pick them in the first-run wizard, on the **What do you want to manage?** step.
@@ -20,7 +20,7 @@ Open **Library**, then the **Ebooks** or **Audiobooks** tab, and press **Add**. 
 
 ## Importing the books you already have
 
-Administrators see an **Import** button on the Ebooks and Audiobooks tabs. Press **Start import** and Mediarium reads that folder, looks each book up on Open Library, and adds what it recognises to your library as downloaded, **where it is**. Nothing is moved, renamed or changed.
+Administrators see an **Import** button on the Ebooks and Audiobooks tabs. Press **Start import** and Mediarium reads that folder, looks each book up on Open Library, and adds what it recognises to your library as downloaded, **where it is**. Nothing is moved, renamed or changed. For an audiobook that Open Library does not have, Mediarium asks Audible (through Audnexus) before giving up, and adds the book with the narrator, length, series and release date Audible has. Such a book has no "More about this book" link, because there is no Open Library page for it.
 
 - It understands the usual layouts: `Author/Title/book.epub` (Mediarium, Calibre), `Author/Title.epub`, `Author - Title.epub`, and for audiobooks `Author/Title/` or `Author/Series/Title/` with the audio files inside. `CD 1` or `Disc 2` folders count as part of the book above them. A year like `(2021)`, Calibre's `(123)` and notes like `[Unabridged]` are ignored, and so are series numbers like `1 - `.
 - An ebook folder with the same book in several formats counts once, with the best format.
@@ -42,6 +42,8 @@ Administrators see an **Import** button on the Ebooks and Audiobooks tabs. Press
 ![Discover on the eBooks & Audiobooks tab: a Trending this week row of covers, each with a corner banner saying eBook, Audiobook or eBook + Audio](images/discover-books.png)
 
 ## The book page
+
+A book page from Discover or the Library has its own cover, blown up, blurred and faded into the background behind the title, since a book has no wide picture like a film does.
 
 Each book has a page with its cover, author, year and description, and a panel for each format that is switched on:
 
@@ -65,7 +67,7 @@ Switch on **Follow this series** and Mediarium:
 - checks the series twice a day and adds new books as they appear;
 - waits for a book's release date before it looks for it. Until then the book page says when it comes out.
 
-Books with a release date show up on **Upcoming > Calendar** (a green square badge with a book) and in the calendar feed, from 30 days back to 120 days ahead. Clicking one opens the book. On **Upcoming > Wanted**, a book that isn't out yet says **Out** and the day, without a Search now button. Release dates mostly come from Hardcover (see below); Open Library rarely knows them.
+Books with a release date show up on **Upcoming > Calendar** with their cover in a lilac book frame (orange with headphones for an audiobook) and in the calendar feed, from 30 days back to 120 days ahead. Clicking one opens the book. On **Upcoming > Wanted**, a book that isn't out yet says **Out** and the day, without a Search now button. Release dates mostly come from Hardcover (see below); Open Library rarely knows them.
 
 Only whole books count: a novella in between (book 2.5), box sets and collections are left out, but you can still add them by hand. Switching **Follow this series** off keeps the books you have.
 
@@ -109,7 +111,7 @@ Downloading a better ebook later (an EPUB after a PDF) replaces the file. A wors
 
 ## Reading and listening: Mediarium Books
 
-**Mediarium Books** is a reader and an audiobook player built in, made to feel like an app of its own. Open it from **eBooks/Audiobooks Player** at the top right of every page, the **Read** or **Listen** button on a downloaded book's cover in the Library, or **Read** / **Listen** on a downloaded book's page. It opens in a window of its own, with no Mediarium menus, at `/bookshelf/`.
+**Mediarium Books** is a reader and an audiobook player built in, made to feel like an app of its own. Open it from the book button at the bottom of the sidebar, the **Read** or **Listen** button on a downloaded book's cover in the Library, or **Read** / **Listen** on a downloaded book's page. It opens in a window of its own, with no Mediarium menus, at `/bookshelf/`.
 
 - **Install it as its own app.** In Chrome or Edge, open Mediarium Books and choose **Install** in the address bar (on a phone: **Add to Home screen**). It gets its own icon, named Mediarium Books, separate from Mediarium. Safari on iPhone: **Share > Add to Home Screen**.
 - **The shelf** shows **Continue** (what you were reading or listening to, with how far you got) and every downloaded book, with **Read** and **Listen**. **Reading** and **Listening** narrow it to ebooks or audiobooks.
@@ -148,6 +150,80 @@ You can also read and listen in an app made for it, and connect it under **Setti
 
 Once connected, a new book shows up there right after it's downloaded, and the book's page has a **Listen in Audiobookshelf** or **Read in Kavita** link. Point the app's library at the same folder as Mediarium's Audiobooks or Ebooks folder. See [media-servers.md](./media-servers.md#audiobookshelf-and-kavita-books).
 
+## Reading on an e-reader
+
+Your ebooks can also go to an e-reader. There are two ways, and both are off until you turn them on from your own profile page (**Profile > Read on an e-reader**). Each account has its own, and each only lets the e-reader read books: it can't add, change or delete anything.
+
+Both need **Ebooks** switched on under **Settings > Media types**, and an account that is allowed to read books (the **Play** permission under **Settings > Account & Access**; administrators always are). Books reach an e-reader whichever way they got into the library: downloaded by Mediarium, imported from a folder, or put there by another tool such as Shelfmark.
+
+### Reading apps: the OPDS catalogue
+
+OPDS is the catalogue format most reading apps understand. Mediarium serves OPDS 1.2 at `/opds/` and OPDS 2.0 at `/opds/v2/`.
+
+1. Open **Profile > Read on an e-reader** and press **Make an e-reader password**. Copy it straight away: it is shown once. It is not your sign-in password, and it can't be used to sign in to Mediarium.
+2. In your app, add a catalogue. Use the address from the profile page (for example `https://books.example.com/opds/`), your user name and the e-reader password.
+
+It works with KOReader, Moon+ Reader, Librera, Marvin, Foliate and other OPDS apps. What the apps show:
+
+- **Recently added**, **All books** (by title), **Authors** and **Series**, 50 books to a page.
+- Search by title, author or series (apps that read the OpenSearch description, which these do).
+- Covers and small cover pictures. A cover comes from the book file itself when it has one, otherwise from Open Library.
+- The download is the book's own file (EPUB, MOBI, AZW3 or PDF), exactly as it is in your library.
+
+Only ebooks are listed, not audiobooks. Making a new password stops the old one; **Turn it off** removes it.
+
+The app sends the password with every request, so if you reach Mediarium from outside your home network, use an `https` address (through your reverse proxy). Over plain `http` on your own network it is fine.
+
+If someone tries too many wrong passwords, Mediarium makes them wait about 15 minutes. That counter is separate from the web sign-in, so it can't lock you out of the page.
+
+### Kobo sync
+
+A Kobo can fetch your ebooks from Mediarium over Wi-Fi, with covers, and your reading place is kept in step with Mediarium Books. You tell the Kobo about Mediarium by changing one line in a file on the Kobo. Nothing else on the Kobo changes, and you can put the old line back at any time.
+
+**Before you start**
+
+- Set the Kobo up as you normally would, including signing in to your Kobo account. Mediarium passes the Kobo's own store traffic on to Kobo (see below), which is why that matters.
+- Mediarium has to be reachable from the Kobo: on the same Wi-Fi network, or from outside through your reverse proxy. A reverse proxy must pass on the `Host` and `X-Forwarded-Proto` headers (the web page needs the same).
+- Make a copy of the file you are about to edit.
+
+**Steps**
+
+1. In Mediarium open **Profile > Read on an e-reader**, and under **Kobo sync** press **Make my Kobo address**. Mediarium shows the line to use, which looks like `api_endpoint=https://books.example.com/kobo/…`. Press **Copy**.
+2. Connect the Kobo to your computer with its USB cable and open it as a drive.
+3. Open the hidden folder `.kobo`, then `Kobo`, and open the file `Kobo eReader.conf` in a plain text editor (Notepad is fine; don't use Word).
+4. Find the section `[OneStoreServices]`. If it already has a line starting with `api_endpoint=` (usually `api_endpoint=https://storeapi.kobo.com`), replace that whole line with the line from Mediarium. If it has none, add the line under the section name. There must be only one `api_endpoint` line. Save the file.
+5. Eject the Kobo safely, unplug it, and tap the sync button on the Kobo (the circular arrows).
+
+To go back to Kobo's own store, put the old `api_endpoint` line back.
+
+**What to expect**
+
+- The first sync brings every ebook that Mediarium has as an EPUB, MOBI, AZW or AZW3 file. They show up as books on the Kobo with their covers, title, author and series.
+- Mediarium turns each book into Kobo's own format (KEPUB) the first time the Kobo downloads it, and keeps that copy in the cache folder (`/config/cache/kepub`). The files in your library are never changed. Kindle books are turned into EPUB first. A book locked with DRM can't be converted and fails to download; the rest are not affected.
+- A book that unpacks to something huge (over 1 GB in total, a single file over 512 MB, or more than 20,000 files inside) is not converted. The Kobo gets the plain EPUB instead.
+- PDFs are not sent. Put those on the Kobo by cable.
+- Each sync sends 100 books at most; the Kobo asks again by itself until it has them all.
+- **Your place in each book goes both ways.** When you read on the Kobo, the next sync saves the percentage and the finished state to your Mediarium account, so Mediarium Books opens the book at about the same place (it jumps to that percentage). When you read in Mediarium Books, the Kobo gets the new percentage on its next sync. The Kobo's exact place in the book can only be used by the Kobo, so after you've read on in Mediarium Books the Kobo goes by the percentage until you read on it again.
+- A book that is added to Mediarium later arrives on the next sync. A book whose ebook is removed from Mediarium is taken off the Kobo.
+- If a book's file is replaced in Mediarium later (a better format came in), the Kobo keeps the copy it already has. To get the new one, remove the book on the Kobo, press **Send everything again** and sync.
+- A book you take off the Kobo yourself (**Remove** on the device) stays off. To bring it back, or after a factory reset of the Kobo, press **Send everything again** on the profile page and sync.
+- Collections you make on the Kobo stay on the Kobo; Mediarium does not sync them.
+- Books you buy in the Kobo store still show up, because Mediarium adds what Kobo's store has to its own answer.
+
+**Passing the Kobo's own traffic on.** Once the Kobo points at Mediarium, it sends all its store traffic there too: signing in, store pages, books bought in the store. Mediarium doesn't handle those. It passes them on unchanged to Kobo's servers (`storeapi.kobo.com`) and gives the Kobo the answer. What is passed on is only what the Kobo itself sent, and it is not saved or logged. Your Mediarium address and token are never sent to Kobo. If Kobo's servers can't be reached, the Kobo gets an empty answer for those calls and your Mediarium library still works.
+
+**Keep the address private.** The address contains a long secret that works like a password for reading your books, so anyone who has it can download them. It is kept encrypted, and you can see it again on your profile page. **Make a new address** stops the old one at once (you then have to change the line on the Kobo again), and **Turn it off** removes it. Wrong guesses are counted: after about 20 from one address, Mediarium answers "too many tries" for 15 minutes. The address and the token are never written to the log.
+
+**If it doesn't work**
+
+- *Nothing happens on sync.* Check the line was saved exactly, with one `api_endpoint` line. A wrong or turned-off address gets "unknown token" (401).
+- *Books arrive without covers.* The Kobo fetches covers from the host name in the address. If you use a reverse proxy, make sure it passes on the `Host` and `X-Forwarded-Proto` headers. Some Kobo firmware leaves the port off a host name; if your address has a port (like `:8264`) and covers are missing, put a reverse proxy in front so the address has no port.
+- *My edit was undone.* Some newer Kobo models and firmware versions put the file back after a restart or an update. Edit it again after the update.
+- *A book fails to download.* The reason is in Mediarium's log (with the book's number, never the address). A DRM-locked Kindle book can't be converted. Anything else is worth reporting.
+- *The Kobo asks me to sign in again.* Sign in on the Kobo as usual; Mediarium passes that on to Kobo.
+
+**Not tested on a real Kobo yet.** Mediarium's Kobo sync follows the way Kobo's store talks to a device, as the open source servers that already do this (Calibre-Web, Komga) have worked out. It is tested here with a program that plays the part of a Kobo and replays those requests, not on a physical Kobo, because none was at hand. If you try it on yours, please say how it went on Mediarium's GitHub page, with the model and firmware version.
+
 ## Search, Wanted, the dashboard and Activity
 
 The search box at the top of every page finds books too (under **Books**, after movies, shows and artists). A book you have opens its page; one you don't opens the add window.
@@ -185,6 +261,10 @@ The dashboard has an **Ebooks** and an **Audiobooks** card with how many books y
 | GET | `/api/book-authors/{key}/works?sort=popular\|newest` | An author's books on Open Library (box sets left out), marked when in the library |
 | PUT | `/api/book-authors/{key}/follow` | Follow an author: `{"name", "ebook": bool, "audiobook": bool}` |
 | DELETE | `/api/book-authors/{key}/follow` | Stop following; their books stay |
+| GET | `/api/auth/ereader` | Your e-reader access: the OPDS e-reader password (on or off) and the Kobo sync address, as `opds` and `kobo` |
+| POST / DELETE | `/api/auth/ereader/opds` | Make a new e-reader password (answered once, as `password`) / turn it off |
+| POST / DELETE | `/api/auth/ereader/kobo` | Make a new Kobo address (`kobo.path`, `/kobo/<token>`) / turn it off |
+| POST | `/api/auth/ereader/kobo/resync` | Forget what was sent to your Kobo, so the next sync sends every book again |
 | GET | `/api/books/{id}/links` | Where the book can be read or listened to: the connected Audiobookshelf and Kavita servers that have it |
 | GET | `/api/books/{id}` | One book |
 | PUT | `/api/books/{id}/want` | `{"format": "ebook" or "audiobook", "wanted": bool}` |
@@ -195,4 +275,15 @@ The dashboard has an **Ebooks** and an **Audiobooks** card with how many books y
 | POST | `/api/books/import` | Start importing the books already on disk: `{"format": "ebook", "audiobook" or ""}` (administrators). 409 while one runs |
 | GET | `/api/books/import` | Where the import is: `phase` (running, done, failed), `done`, `total`, a `summary` by result and the `results` (administrators) |
 
+- The OPDS catalogue is at `/opds/` (Atom, OPDS 1.2) and `/opds/v2/` (JSON, OPDS 2.0), read-only, signed in with HTTP Basic: the account's user name and its e-reader password. `/opds/new`, `/opds/books`, `/opds/authors`, `/opds/series` and `/opds/search?q=` are the feeds (`?page=` pages of 50); `/opds/opensearch.xml` is the search description; `/opds/books/{id}/download`, `/cover` and `/thumbnail` are the file and the pictures.
+- Kobo sync lives under `/kobo/<token>/`: `v1/initialization`, `v1/library/sync`, `v1/library/{id}/metadata`, `v1/library/{id}/state` (GET and PUT), `v1/library/{id}` (DELETE), `download/{id}/kepub` and the cover addresses `{id}/{width}/{height}/{greyscale}/image.jpg`. Every other path is passed on to `storeapi.kobo.com`. A book's id on the Kobo is a UUID that starts `6d656469-6172-4975-8000-` followed by the book's number in hex.
+
+- The OPDS catalogue is at `/opds/` (Atom, OPDS 1.2) and `/opds/v2/` (JSON, OPDS 2.0), read-only, signed in with HTTP Basic: the account's user name and its e-reader password. `/opds/new`, `/opds/books`, `/opds/authors`, `/opds/series` and `/opds/search?q=` are the feeds (`?page=` pages of 50); `/opds/opensearch.xml` is the search description; `/opds/books/{id}/download`, `/cover` and `/thumbnail` are the file and the pictures.
+- Kobo sync lives under `/kobo/<token>/`: `v1/initialization`, `v1/library/sync`, `v1/library/{id}/metadata`, `v1/library/{id}/state` (GET and PUT), `v1/library/{id}` (DELETE), `download/{id}/kepub` and the cover addresses `{id}/{width}/{height}/{greyscale}/image.jpg`. Every other path is passed on to `storeapi.kobo.com`. A book's id on the Kobo is a UUID that starts `6d656469-6172-4975-8000-` followed by the book's number in hex.
+
+- The OPDS catalogue is at `/opds/` (Atom, OPDS 1.2) and `/opds/v2/` (JSON, OPDS 2.0), read-only, signed in with HTTP Basic: the account's user name and its e-reader password. `/opds/new`, `/opds/books`, `/opds/authors`, `/opds/series` and `/opds/search?q=` are the feeds (`?page=` pages of 50); `/opds/opensearch.xml` is the search description; `/opds/books/{id}/download`, `/cover` and `/thumbnail` are the file and the pictures.
+- Kobo sync lives under `/kobo/<token>/`: `v1/initialization`, `v1/library/sync`, `v1/library/{id}/metadata`, `v1/library/{id}/state` (GET and PUT), `v1/library/{id}` (DELETE), `download/{id}/kepub` and the cover addresses `{id}/{width}/{height}/{greyscale}/image.jpg`. Every other path is passed on to `storeapi.kobo.com`. A book's id on the Kobo is a UUID that starts `6d656469-6172-4975-8000-` followed by the book's number in hex.
+
 Every `/api/books` and `/api/book-authors` route answers 404 while both ebooks and audiobooks are switched off. Adding a book in a format that is switched off answers 409.
+
+Book covers come from Open Library. Mediarium fetches each cover once and keeps a copy in the `book-covers` folder inside the config folder, so pages of books don't wait on Open Library every time. Deleting that folder is safe: the covers are fetched again when needed.

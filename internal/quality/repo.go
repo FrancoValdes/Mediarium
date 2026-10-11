@@ -95,6 +95,9 @@ func Validate(p Profile) (Profile, error) {
 	}
 	p.Preferred = kept
 	p.Fallback = cleanFallback(p.ID, p.Fallback)
+	if err := validateFormatScores(&p); err != nil {
+		return p, err
+	}
 	return p, nil
 }
 
@@ -236,16 +239,16 @@ func decodeTiers(s string) []Tier {
 	return out
 }
 
-const selectProfile = `SELECT id, name, allowed_tiers, cutoff, upgrade_allowed, must_contain, must_not_contain, preferred, fallback, max_size_gb FROM quality_profiles`
+const selectProfile = `SELECT id, name, allowed_tiers, cutoff, upgrade_allowed, must_contain, must_not_contain, preferred, fallback, max_size_gb, format_scores, min_format_score, cutoff_format_score, no_season_packs, skip_bad FROM quality_profiles`
 
 func scanProfile(scan func(dest ...any) error) (Profile, error) {
 	var (
 		p                               Profile
 		allowed, cutoff                 string
 		mustContain, mustNot, preferred string
-		fallback                        string
+		fallback, scores                string
 	)
-	if err := scan(&p.ID, &p.Name, &allowed, &cutoff, &p.UpgradeAllowed, &mustContain, &mustNot, &preferred, &fallback, &p.MaxSizeGB); err != nil {
+	if err := scan(&p.ID, &p.Name, &allowed, &cutoff, &p.UpgradeAllowed, &mustContain, &mustNot, &preferred, &fallback, &p.MaxSizeGB, &scores, &p.MinFormatScore, &p.CutoffFormatScore, &p.NoSeasonPacks, &p.SkipBadReleases); err != nil {
 		return Profile{}, err
 	}
 	p.Allowed = decodeTiers(allowed)
@@ -254,6 +257,7 @@ func scanProfile(scan func(dest ...any) error) (Profile, error) {
 	p.MustNotContain = decodeLines(mustNot)
 	p.Preferred = decodePreferred(preferred)
 	p.Fallback = cleanFallback(p.ID, decodeFallback(fallback))
+	p.FormatScores = decodeFormatScores(scores)
 	return p, nil
 }
 
@@ -295,9 +299,10 @@ func (r *Repo) Create(p Profile) (Profile, error) {
 		return Profile{}, err
 	}
 	res, err := r.db.Exec(
-		`INSERT INTO quality_profiles (name, allowed_tiers, cutoff, upgrade_allowed, must_contain, must_not_contain, preferred, fallback, max_size_gb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO quality_profiles (name, allowed_tiers, cutoff, upgrade_allowed, must_contain, must_not_contain, preferred, fallback, max_size_gb, format_scores, min_format_score, cutoff_format_score, no_season_packs, skip_bad) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.Name, encodeTiers(p.Allowed), string(p.Cutoff), p.UpgradeAllowed,
 		encodeLines(p.MustContain), encodeLines(p.MustNotContain), encodePreferred(p.Preferred), encodeFallback(p.Fallback), p.MaxSizeGB,
+		encodeFormatScores(p.FormatScores), p.MinFormatScore, p.CutoffFormatScore, p.NoSeasonPacks, p.SkipBadReleases,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -318,9 +323,10 @@ func (r *Repo) Update(p Profile) (Profile, error) {
 		return Profile{}, err
 	}
 	res, err := r.db.Exec(
-		`UPDATE quality_profiles SET name = ?, allowed_tiers = ?, cutoff = ?, upgrade_allowed = ?, must_contain = ?, must_not_contain = ?, preferred = ?, fallback = ?, max_size_gb = ? WHERE id = ?`,
+		`UPDATE quality_profiles SET name = ?, allowed_tiers = ?, cutoff = ?, upgrade_allowed = ?, must_contain = ?, must_not_contain = ?, preferred = ?, fallback = ?, max_size_gb = ?, format_scores = ?, min_format_score = ?, cutoff_format_score = ?, no_season_packs = ?, skip_bad = ? WHERE id = ?`,
 		p.Name, encodeTiers(p.Allowed), string(p.Cutoff), p.UpgradeAllowed,
-		encodeLines(p.MustContain), encodeLines(p.MustNotContain), encodePreferred(p.Preferred), encodeFallback(p.Fallback), p.MaxSizeGB, p.ID,
+		encodeLines(p.MustContain), encodeLines(p.MustNotContain), encodePreferred(p.Preferred), encodeFallback(p.Fallback), p.MaxSizeGB,
+		encodeFormatScores(p.FormatScores), p.MinFormatScore, p.CutoffFormatScore, p.NoSeasonPacks, p.SkipBadReleases, p.ID,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {

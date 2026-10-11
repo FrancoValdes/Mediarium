@@ -1,0 +1,373 @@
+/* The calendar as a cinema's programme. The month in big display type, a
+   printed grid of days with hairlines between them, each release a small
+   poster in its kind's frame (a ticket, a TV screen, a sleeve with its
+   record, a book, a cover wearing headphones). Today is lit like the
+   projector's lamp. On narrow screens, and when picked, the days become a
+   list with a ticket stub for each date.
+
+   Status works as everywhere else: solid when you have it, a bright line
+   while it downloads, a dashed outline in the kind's colour while it's
+   wanted. A wanted one whose day has passed also glows, because it's late.
+
+   Loaded after the global sheets, so the old .cal-* rules don't reach it. */
+
+.prog {
+  container: prog / inline-size;
+  --line: color-mix(in srgb, var(--text) 9%, transparent);
+  --cell: color-mix(in srgb, var(--panel-top) 60%, var(--panel-bottom));
+  --cell-wkend: color-mix(in srgb, var(--text) 3%, var(--cell));
+  --lamp: var(--accent);
+  min-width: 0;
+}
+.prog .k-movie, .prog-badge.k-movie { --kc: var(--c-movie); }
+.prog .k-tv, .prog-badge.k-tv { --kc: var(--c-tv); }
+.prog .k-music, .prog-badge.k-music { --kc: var(--c-music); }
+.prog .k-book, .prog-badge.k-book { --kc: var(--c-book); }
+.prog .k-audiobook, .prog-badge.k-audiobook { --kc: var(--c-audiobook); }
+
+/* ---- Header: the month as a title, a console to move through time ---- */
+.prog-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px 24px; margin-bottom: 18px; }
+.prog-title { min-width: 0; }
+.prog-month {
+  margin: 0; font-family: var(--font-display); font-weight: 800; font-size: clamp(2.3rem, 4.8vw, 3.8rem);
+  line-height: 0.9; letter-spacing: -0.045em; color: var(--text);
+}
+.prog-month::first-letter { text-transform: uppercase; }
+.prog.compact .prog-month { font-size: clamp(1.7rem, 2.8vw, 2.3rem); }
+.prog-year { font-family: var(--font-mono); font-weight: 400; font-size: 0.3em; letter-spacing: 0.12em; color: var(--text-faint); vertical-align: 0.95em; margin-left: 0.15em; }
+.prog-count { margin: 10px 0 0; font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.06em; color: var(--text-dim); }
+
+.prog-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.prog-console {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--rim);
+}
+.prog-round {
+  width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; color: var(--text);
+  background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px var(--rim), 0 4px 10px -4px var(--lift);
+  transition: color 0.16s var(--ease), box-shadow 0.16s var(--ease);
+}
+.prog-round:hover {
+  background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom)); color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 14px -4px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.prog-round:active { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--rim); }
+.prog-back { display: inline-flex; transform: rotate(180deg); }
+.prog-today {
+  height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: var(--text);
+  font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.1em; text-transform: uppercase;
+  transition: background 0.16s var(--ease);
+}
+.prog-today:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.prog-round:focus-visible, .prog-today:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- Month: a printed grid with hairlines ---------------------------- */
+.prog-board {
+  border-radius: 22px; overflow: hidden; background: var(--line);
+  box-shadow: 0 0 0 1px var(--rim), 0 28px 50px -34px var(--lift);
+}
+.prog-dows, .prog-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; }
+.prog-dows span {
+  padding: 11px 12px 9px; background: var(--panel-top); color: var(--text-faint);
+  font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prog-dows span.wkend { background: color-mix(in srgb, var(--text) 3%, var(--panel-top)); }
+.prog-grid { margin-top: 1px; }
+
+.prog-cell { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 132px; padding: 8px 8px 10px; background: var(--cell); }
+.prog.compact .prog-cell { min-height: 112px; }
+.prog-cell.wkend { background: var(--cell-wkend); }
+.prog-cell.out {
+  background: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--text) 3%, transparent) 7px 8px), var(--cell);
+}
+.prog-cell.out > * { opacity: 0.42; }
+.prog-cell-head { display: flex; align-items: center; gap: 7px; min-height: 18px; }
+.prog-num { font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.prog-cell.has .prog-num { color: var(--text); }
+.prog-cell.past:not(.today) .prog-num { color: var(--text-faint); }
+.prog-cell.past .prog-slots { opacity: 0.66; transition: opacity 0.16s var(--ease); }
+.prog-cell.past:hover .prog-slots, .prog-cell.past:focus-within .prog-slots { opacity: 1; }
+
+/* Today: lit from the corner, a lamp beside the date. */
+.prog-cell.today {
+  z-index: 1;
+  background: radial-gradient(150% 95% at 0 0, color-mix(in srgb, var(--lamp) 17%, transparent), transparent 64%), var(--cell);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--lamp) 75%, transparent), 0 0 28px -6px color-mix(in srgb, var(--lamp) 55%, transparent);
+}
+.prog-cell.today .prog-num { color: var(--lamp); font-weight: 600; }
+.prog-lamp {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--lamp);
+  box-shadow: 0 0 10px var(--lamp), 0 0 2px var(--lamp);
+  animation: prog-lamp 3.2s ease-in-out infinite;
+}
+@keyframes prog-lamp { 50% { opacity: 0.6; box-shadow: 0 0 4px var(--lamp); } }
+
+.prog-slots { display: grid; gap: 5px; min-width: 0; }
+.prog-more {
+  align-self: flex-start; min-height: 0; padding: 2px 6px; margin-left: -2px; border: 0; border-radius: 6px; background: none;
+  color: var(--accent); font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.04em;
+}
+.prog-more:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.prog-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* One release in a day: poster, title, and the code or kind in its colour. */
+.prog-slot {
+  position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 6px 4px 4px;
+  border: 1px solid transparent; border-radius: 9px; color: var(--text); text-decoration: none;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+a.prog-slot:hover { text-decoration: none; background: color-mix(in srgb, var(--kc) 11%, transparent); }
+.prog-slot-text { display: grid; gap: 2px; min-width: 0; }
+.prog-slot-title {
+  font-size: 0.76rem; font-weight: 600; line-height: 1.2; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.prog-slot-meta {
+  display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--kc);
+  font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden;
+}
+.prog-slot-meta svg { flex: none; }
+/* The page's list links are underlined; these are cards. */
+.prog a.prog-slot, .prog a.prog-card { text-decoration: none; }
+.prog-slot:focus-visible, .prog-card:focus-visible { outline: 2px solid var(--kc); outline-offset: 2px; }
+
+/* ---- Status: solid, a live line, dashed ------------------------------ */
+.prog-slot.s-downloaded, .prog-card.s-downloaded {
+  background: color-mix(in srgb, var(--kc) 13%, transparent); border-color: color-mix(in srgb, var(--kc) 34%, transparent);
+}
+.prog-slot.s-missing, .prog-card.s-missing { border-style: dashed; border-color: color-mix(in srgb, var(--kc) 65%, transparent); }
+.prog-slot.s-downloading, .prog-card.s-downloading { background: color-mix(in srgb, var(--kc) 6%, transparent); border-color: color-mix(in srgb, var(--kc) 22%, transparent); }
+.prog-slot.s-downloading::after, .prog-card.s-downloading::after {
+  content: ''; position: absolute; left: 6px; right: 6px; bottom: -1px; height: 2px; border-radius: 2px; pointer-events: none;
+  background: linear-gradient(90deg, var(--kc) 0%, color-mix(in srgb, var(--kc) 35%, #fff) 50%, var(--kc) 100%) 0 0 / 200% 100%;
+  box-shadow: 0 0 8px var(--kc), 0 0 2px var(--kc);
+  animation: prog-live 1.6s linear infinite;
+}
+@keyframes prog-live { to { background-position: -200% 0; } }
+.prog-slot.late, .prog-card.late { box-shadow: 0 0 14px -4px color-mix(in srgb, var(--kc) 80%, transparent); }
+.s-missing .prog-thumb img { filter: grayscale(0.6) brightness(0.78); transition: filter 0.32s var(--ease); }
+a.s-missing:hover .prog-thumb img, a.s-missing:focus-visible .prog-thumb img { filter: none; }
+
+/* ---- Posters in their kind's frame ----------------------------------- */
+.prog-thumb {
+  --tw: 28px; --th: 42px;
+  position: relative; flex: none; display: block; width: var(--tw); height: var(--th); border-radius: 3px;
+  transition: transform 0.32s var(--ease-out);
+}
+.prog-thumb > img, .prog-thumb-blank {
+  position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit;
+}
+.prog-thumb-blank {
+  display: grid; place-items: center; color: var(--kc);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--kc) 24%, var(--surface-2)), color-mix(in srgb, var(--kc) 8%, var(--surface)));
+}
+.prog-thumb-blank svg { width: 70%; height: auto; max-width: 22px; }
+a.prog-slot:hover .prog-thumb, a.prog-slot:focus-visible .prog-thumb,
+a.prog-card:hover .prog-thumb, a.prog-card:focus-visible .prog-thumb { transform: translateY(-2px) rotate(-3deg); }
+
+/* Ticket: notches and a tear line. */
+.prog-thumb.f-movie {
+  -webkit-mask: radial-gradient(circle 3px at 0 72%, #0000 95%, #000) left / 51% 100% no-repeat, radial-gradient(circle 3px at 100% 72%, #0000 95%, #000) right / 51% 100% no-repeat;
+  mask: radial-gradient(circle 3px at 0 72%, #0000 95%, #000) left / 51% 100% no-repeat, radial-gradient(circle 3px at 100% 72%, #0000 95%, #000) right / 51% 100% no-repeat;
+}
+.prog-thumb.f-movie::after { content: ''; position: absolute; z-index: 2; top: 72%; left: 3px; right: 3px; border-top: 1px dashed rgba(255, 255, 255, 0.6); }
+
+/* TV: a screen with a bulge and scanlines in a small cabinet. */
+.prog-thumb.f-tv { padding: 2px; border-radius: 6px / 8px; background: #20253b; box-shadow: 0 0 0 1px var(--rim); }
+.prog-thumb.f-tv > img, .prog-thumb.f-tv .prog-thumb-blank { border-radius: 4px / 6px; }
+.prog-thumb.f-tv::after {
+  content: ''; position: absolute; z-index: 2; inset: 2px; border-radius: 4px / 6px; pointer-events: none;
+  background: linear-gradient(128deg, rgba(255, 255, 255, 0.22), transparent 30%), repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.2) 0 1px, transparent 1px 3px);
+}
+
+@media (prefers-color-scheme: light) { :root:not([data-theme='dark']) .prog-thumb.f-tv { background: #cdd2e0; } }
+:root[data-theme='light'] .prog-thumb.f-tv { background: #cdd2e0; }
+
+/* Music: a square sleeve with the record sliding out to the right. */
+.prog-thumb.f-music { --tw: 34px; --th: 34px; margin-right: 8px; border-radius: 3px; }
+.prog-thumb.f-music::before {
+  content: ''; position: absolute; z-index: 0; top: 2px; bottom: 2px; right: -9px; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle, #0b0c12 0 6%, var(--kc) 7% 26%, #1b1d2b 27% 30%, transparent 31%), repeating-radial-gradient(circle, #1b1d2b 0 1px, #30344b 1.3px 2.2px);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  transition: transform 0.4s var(--ease-out);
+}
+a:hover > .prog-thumb.f-music::before, a:focus-visible > .prog-thumb.f-music::before { transform: translateX(3px) rotate(90deg); }
+
+/* Book: a spine and page edges. */
+.prog-thumb.f-book { border-radius: 1px 3px 3px 1px; box-shadow: 2px 1px 0 -1px #f1ece0, 3px 2px 0 -1px #cfc6b2; }
+.prog-thumb.f-book::after {
+  content: ''; position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 1px 0 0 1px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.45), rgba(255, 255, 255, 0.2) 60%, transparent);
+}
+
+/* Audiobook: a square cover wearing headphones. */
+.prog-thumb.f-audiobook { --tw: 32px; --th: 32px; margin: 5px 3px 0; border-radius: 4px; }
+.prog-thumb.f-audiobook::before {
+  content: ''; position: absolute; z-index: 2; left: -3px; right: -3px; top: -6px; height: 70%; pointer-events: none;
+  border: 2px solid var(--kc); border-bottom: 0; border-radius: 999px 999px 0 0;
+}
+.prog-thumb.f-audiobook::after {
+  content: ''; position: absolute; z-index: 2; left: -4px; right: -4px; top: 38%; height: 44%; border-radius: 3px; pointer-events: none;
+  background: linear-gradient(90deg, var(--kc) 0 4px, transparent 4px calc(100% - 4px), var(--kc) calc(100% - 4px));
+}
+
+/* ---- Agenda: a ticket stub for the date, cards beside it -------------- */
+.prog-agenda { display: none; list-style: none; margin: 0; padding: 0; gap: 14px; }
+.prog[data-view='agenda'] .prog-board { display: none; }
+.prog[data-view='agenda'] .prog-agenda { display: grid; }
+.prog-day { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-items: start; }
+.prog-stub {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  min-height: 92px; padding: 12px 8px 12px 6px; border-radius: 14px; text-align: center;
+  background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom));
+  box-shadow: inset 0 0 0 1px var(--rim), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  -webkit-mask: radial-gradient(circle 7px at 100% 0, #0000 95%, #000) top / 100% 51% no-repeat, radial-gradient(circle 7px at 100% 100%, #0000 95%, #000) bottom / 100% 51% no-repeat;
+  mask: radial-gradient(circle 7px at 100% 0, #0000 95%, #000) top / 100% 51% no-repeat, radial-gradient(circle 7px at 100% 100%, #0000 95%, #000) bottom / 100% 51% no-repeat;
+}
+.prog-stub::after { content: ''; position: absolute; right: 0; top: 12px; bottom: 12px; border-right: 2px dashed color-mix(in srgb, var(--text) 16%, transparent); }
+.prog-stub-num { font-family: var(--font-display); font-weight: 800; font-size: 2.2rem; line-height: 0.88; letter-spacing: -0.045em; color: var(--text); }
+.prog-stub-wd, .prog-stub-mon { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); line-height: 1.2; }
+.prog-stub-mon { color: var(--text-faint); }
+.prog-day.today .prog-stub {
+  background: radial-gradient(130% 90% at 50% 0, color-mix(in srgb, var(--lamp) 22%, transparent), transparent 70%), linear-gradient(180deg, var(--panel-top), var(--panel-bottom));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--lamp) 70%, transparent);
+}
+.prog-day.today .prog-stub-num, .prog-day.today .prog-stub-wd { color: var(--lamp); }
+.prog-day.past .prog-stub { opacity: 0.72; }
+.prog-day.past .prog-cards { opacity: 0.8; }
+
+.prog-cards {
+  list-style: none; margin: 0; padding: 0 0 0 12px; min-width: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 10px; align-content: start;
+}
+.prog-quiet {
+  align-self: center; margin: 0 0 0 12px; padding: 0 0 0 16px; min-height: 0;
+  font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.06em; color: var(--text-dim);
+}
+.prog-card {
+  position: relative; display: flex; align-items: center; gap: 14px; min-width: 0; min-height: 92px; padding: 10px 14px 10px 12px;
+  border: 1px solid var(--rim); border-radius: 14px; overflow: hidden; color: var(--text); text-decoration: none;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  transition: border-color 0.16s var(--ease), background 0.16s var(--ease);
+}
+a.prog-card:hover { text-decoration: none; border-color: color-mix(in srgb, var(--kc) 70%, transparent); }
+.prog-card.s-downloading::after { left: 0; right: 0; bottom: 0; border-radius: 0; }
+.prog-card .prog-thumb { --tw: 46px; --th: 69px; border-radius: 4px; }
+.prog-card .prog-thumb.f-movie {
+  -webkit-mask: radial-gradient(circle 5px at 0 72%, #0000 95%, #000) left / 51% 100% no-repeat, radial-gradient(circle 5px at 100% 72%, #0000 95%, #000) right / 51% 100% no-repeat;
+  mask: radial-gradient(circle 5px at 0 72%, #0000 95%, #000) left / 51% 100% no-repeat, radial-gradient(circle 5px at 100% 72%, #0000 95%, #000) right / 51% 100% no-repeat;
+}
+.prog-card .prog-thumb.f-movie::after { left: 5px; right: 5px; }
+.prog-card .prog-thumb.f-tv { padding: 3px; border-radius: 9px / 12px; }
+.prog-card .prog-thumb.f-tv::after { inset: 3px; }
+.prog-card .prog-thumb.f-music { --tw: 58px; --th: 58px; margin-right: 12px; }
+.prog-card .prog-thumb.f-music::before { right: -14px; }
+.prog-card .prog-thumb.f-audiobook { --tw: 54px; --th: 54px; margin: 8px 5px 0; border-radius: 6px; }
+.prog-card .prog-thumb.f-audiobook::before { top: -9px; left: -5px; right: -5px; border-width: 3px; }
+.prog-card .prog-thumb.f-audiobook::after { left: -6px; right: -6px; background: linear-gradient(90deg, var(--kc) 0 6px, transparent 6px calc(100% - 6px), var(--kc) calc(100% - 6px)); }
+.prog-card .prog-thumb.f-book { box-shadow: 3px 1px 0 -1px #f1ece0, 5px 3px 0 -2px #cfc6b2; }
+.prog-card .prog-thumb-blank svg { max-width: 28px; }
+.prog-card-text { display: grid; gap: 5px; min-width: 0; }
+.prog-card-title {
+  font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1.2; letter-spacing: -0.01em; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.prog-card-sub { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 0.82rem; color: var(--text-dim); }
+.prog-code { flex: none; font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.04em; color: var(--kc); }
+.prog-rest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prog-card-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.prog-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--kc); }
+.prog-state { color: var(--text-dim); }
+.prog-card.s-downloading .prog-state { color: var(--kc); }
+
+/* ---- Legend: the kinds as their glyphs, the three states as samples --- */
+.prog-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; margin-top: 14px; font-size: 0.8rem; color: var(--text-dim); }
+.prog-legend ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.prog-legend li { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.prog-legend-kinds li { color: var(--text); }
+.prog-legend-kinds svg { color: var(--kc); }
+.prog-swatch { position: relative; display: inline-block; width: 26px; height: 16px; border-radius: 5px; border: 1px solid transparent; --sw: var(--text-dim); }
+.prog-swatch.s-downloaded { background: color-mix(in srgb, var(--sw) 24%, transparent); border-color: color-mix(in srgb, var(--sw) 45%, transparent); }
+.prog-swatch.s-downloading { border-color: color-mix(in srgb, var(--sw) 25%, transparent); }
+.prog-swatch.s-downloading::after { content: ''; position: absolute; left: 2px; right: 2px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--text); box-shadow: 0 0 6px var(--text); }
+.prog-swatch.s-missing { border: 1px dashed var(--sw); }
+
+/* ---- Badge (dashboard lists) ----------------------------------------- */
+.prog-badge {
+  display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 9px; color: var(--kc);
+  background: color-mix(in srgb, var(--kc) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kc) 28%, transparent);
+}
+
+/* ---- Moving between months ------------------------------------------- */
+.prog-grid.slide-next, .prog-agenda.slide-next { animation: prog-next 0.36s var(--ease-out) both; }
+.prog-grid.slide-prev, .prog-agenda.slide-prev { animation: prog-prev 0.36s var(--ease-out) both; }
+@keyframes prog-next { from { opacity: 0; transform: translateX(28px); } }
+@keyframes prog-prev { from { opacity: 0; transform: translateX(-28px); } }
+
+/* ---- Sizes ------------------------------------------------------------ */
+/* Mid width: the days are too narrow for titles, so each shows its posters
+   side by side; the title is in the tooltip and read out by screen readers. */
+@container prog (max-width: 980px) {
+  .prog-slots { display: flex; flex-wrap: wrap; gap: 6px; }
+  .prog-slot { padding: 3px; gap: 0; }
+  .prog-slot-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .prog-slot .prog-thumb { --tw: 34px; --th: 51px; }
+  .prog-slot .prog-thumb.f-music { --tw: 40px; --th: 40px; margin-right: 10px; }
+  .prog-slot .prog-thumb.f-audiobook { --tw: 38px; --th: 38px; }
+  .prog-dows span { padding-left: 8px; padding-right: 4px; letter-spacing: 0.1em; }
+}
+/* Phones and narrow panels: always the list. */
+@container prog (max-width: 640px) {
+  .prog-board, .prog-views { display: none; }
+  .prog-agenda { display: grid; }
+  .prog-day { grid-template-columns: 64px minmax(0, 1fr); }
+  .prog-stub-num { font-size: 1.9rem; }
+  .prog-cards { padding-left: 10px; gap: 8px; }
+  .prog-card { gap: 12px; padding: 9px 12px 9px 10px; }
+  .prog-legend { justify-content: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prog-lamp, .prog-slot.s-downloading::after, .prog-card.s-downloading::after, .prog-grid, .prog-agenda { animation: none !important; }
+  .prog-thumb, .prog-thumb::before, .prog-slot, .prog-card, .prog-round, .prog-today, .prog-cell .prog-slots, .s-missing .prog-thumb img { transition: none !important; }
+  a.prog-slot:hover .prog-thumb, a.prog-slot:focus-visible .prog-thumb, a.prog-card:hover .prog-thumb, a.prog-card:focus-visible .prog-thumb { transform: none; }
+  a:hover > .prog-thumb.f-music::before, a:focus-visible > .prog-thumb.f-music::before { transform: none; }
+}
+@media (forced-colors: active) {
+  .prog-slot, .prog-card, .prog-swatch { border-color: CanvasText; }
+  .prog-cell.today { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+
+/* ==== Posters view ======================================================
+   Each day shows its first release as a big poster with the name in a frosted
+   bubble over the bottom; more than one adds a "+n more" bubble that opens the
+   whole day as a window of posters. Wanted releases keep the dashed outline. */
+.prog-grid.posters .prog-cell { min-height: 236px; }
+.pt-day { position: relative; flex: 1; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.pt { position: relative; display: block; flex: 1; min-height: 190px; border-radius: 12px; overflow: hidden; color: #fff; text-decoration: none; background: var(--surface-2); box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 14%, transparent); transition: box-shadow 0.16s ease; }
+.pt:hover { box-shadow: 0 0 0 2px var(--accent); }
+.pt:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.pt img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pt-blank { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-faint); }
+.pt.s-missing { box-shadow: 0 0 0 1.5px var(--accent); outline: 1.5px dashed color-mix(in srgb, var(--accent) 80%, transparent); outline-offset: -4px; }
+.pt.s-missing img { filter: grayscale(0.6) brightness(0.7); }
+.pt.late { box-shadow: 0 0 0 1.5px var(--danger); }
+.prog-cell.past .pt img { opacity: 0.8; }
+.pt-bubble { position: absolute; left: 6px; right: 6px; bottom: 6px; display: grid; gap: 2px; padding: 6px 9px; border-radius: 10px; background: rgba(8, 10, 18, 0.62); -webkit-backdrop-filter: blur(10px) saturate(1.3); backdrop-filter: blur(10px) saturate(1.3); border: 1px solid rgba(255, 255, 255, 0.14); }
+.pt-title { font-family: var(--font-display); font-weight: 700; font-size: 0.82rem; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pt-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 5px; font-size: 0.7rem; color: rgba(255, 255, 255, 0.82); font-family: var(--font-mono); }
+.pt-state { margin-left: auto; padding: 0 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-size: 0.64rem; }
+.pt-more { align-self: flex-start; min-height: 0; padding: 2px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 600; background: color-mix(in srgb, var(--accent) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); }
+.pt-day { position: static; }
+.prog-cell { position: relative; }
+.pt-pop { position: absolute; z-index: 30; top: 6px; left: 50%; transform: translateX(-50%); width: min(540px, 86vw); padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); animation: pop-scale 0.16s ease both; }
+.pt-pop.at-start { left: 6px; transform: none; }
+.pt-pop.at-end { left: auto; right: 6px; transform: none; }
+.pt-pop.up { top: auto; bottom: 6px; }
+.pt-pop-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.pt-pop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.pt-pop-grid .pt { flex: none; aspect-ratio: 2 / 3; min-height: 0; }
+@media (prefers-reduced-motion: reduce) { .pt, .pt-pop { transition: none; animation: none; } }

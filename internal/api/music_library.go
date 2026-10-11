@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -161,6 +162,18 @@ func (s *Server) handleMusicSearchArtists(w http.ResponseWriter, r *http.Request
 		musicBrainzError(w, err, "nothing found")
 		return
 	}
+	// Best match first; artists with the same name and score are listed with
+	// the newest one on top.
+	sort.SliceStable(found, func(i, j int) bool {
+		if found[i].Score != found[j].Score {
+			return found[i].Score > found[j].Score
+		}
+		yi, yj := found[i].BeginYear(), found[j].BeginYear()
+		if (yi == 0) != (yj == 0) {
+			return yj == 0
+		}
+		return yi > yj
+	})
 	out := make([]musicArtistResultPayload, len(found))
 	for i, a := range found {
 		out[i] = musicArtistResultPayload{MBID: a.ID, Name: a.Name, SortName: a.SortName, Disambiguation: a.Disambiguation, Type: a.Type, Country: a.Country, Score: a.Score}
@@ -558,6 +571,11 @@ func (s *Server) handleMusicWanted(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	albumIDs := make([]int64, len(wanted))
+	for i, wa := range wanted {
+		albumIDs[i] = wa.album.ID
+	}
+	searches, _ := s.QueueRepo.LastAlbumSearches(albumIDs)
 	out := make([]musicWantedPayload, 0, len(wanted))
 	for _, wa := range wanted {
 		p := musicWantedPayload{musicAlbumPayload: toMusicAlbumPayload(wa.album), ProfileName: wa.profile.Name}
@@ -565,8 +583,8 @@ func (s *Server) handleMusicWanted(w http.ResponseWriter, r *http.Request) {
 		if kind == "cutoff" {
 			p.Cutoff = string(wa.profile.Cutoff)
 		}
-		if events, err := s.QueueRepo.AlbumEvents(wa.album.ID, 40); err == nil {
-			p.LastSearch, p.LastSearchAt = lastSearch(events)
+		if e, ok := searches[wa.album.ID]; ok {
+			p.LastSearch, p.LastSearchAt = e.Message, e.At
 		}
 		out = append(out, p)
 	}

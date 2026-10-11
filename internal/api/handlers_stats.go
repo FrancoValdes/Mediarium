@@ -101,6 +101,12 @@ func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 		{"Movies", s.moviesRoot()},
 		{"TV", s.tvRoot()},
 	}
+	for _, f := range s.movieFolders()[min(1, len(s.movieFolders())):] {
+		folders = append(folders, folder{"Movies (more)", f})
+	}
+	for _, f := range s.tvFolders()[min(1, len(s.tvFolders())):] {
+		folders = append(folders, folder{"TV (more)", f})
+	}
 	if s.musicEnabled() {
 		folders = append(folders, folder{"Music", s.musicRoot()})
 	}

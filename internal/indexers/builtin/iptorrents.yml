@@ -1,0 +1,231 @@
+---
+# IPTorrents, the private general tracker. Shipped with Mediarium because
+# the shared definition list doesn't have it (Prowlarr and Jackett run it
+# from their own code, with a browser cookie instead of a login form).
+#
+# Written from public descriptions of how the site's pages are laid out
+# (the Jackett and Prowlarr indexer notes). It has NOT been run against the
+# live site yet: a member with an account needs to try it. The notes for
+# testers are in docs/indexers.md.
+#
+# How the pages work, as described publicly:
+#   - search is  /t?<category id>=&q=<terms>&free=on&o=<sort>&p=<page>
+#     (each wanted category is a key with an empty value);
+#   - results are a table with id "torrents"; a result row has a title link
+#     with class "hv", a "sub" div (tags | "3.2 hours ago by someone"), a
+#     link to /download.php/<id>/<name>.torrent, a category icon link whose
+#     href is "?<category id>", and a span with class "free" on freeleech
+#     torrents;
+#   - the size column is the sixth cell; snatches, seeders and leechers are
+#     the last three cells (an optional files column sits before them);
+#   - a signed-in page carries a link to /lout.php.
+# The site only shows icons in the category column, 100 torrents per page and
+# the files count column if the member sets that in the site's own profile.
+id: iptorrents
+name: IPTorrents
+description: "New and not tested against the live site yet: if you have an IPTorrents account, please try it and tell me how it went. Private general tracker; sign in with your browser cookie."
+language: en-US
+type: private
+encoding: UTF-8
+# The first address is the main site. The others are mirrors that the site and
+# the indexer projects list for when the main one is blocked or down; use the
+# one that works for you.
+links:
+  - https://iptorrents.com/
+  - https://iptorrents.me/
+  - https://getcrazy.me/
+  - https://findnemo.net/
+  - https://beelyrics.net/
+  - https://venom.global/
+  - https://workisboring.net/
+  - https://ipt.lol/
+  - https://ipt.cool/
+  - https://ipt.world/
+
+caps:
+  categorymappings:
+    # movies
+    - {id: 72, cat: Movies, desc: "Movies"}
+    - {id: 87, cat: Movies/3D, desc: "Movie/3D"}
+    - {id: 77, cat: Movies/SD, desc: "Movie/480p"}
+    - {id: 101, cat: Movies/UHD, desc: "Movie/4K"}
+    - {id: 89, cat: Movies/BluRay, desc: "Movie/BD-R"}
+    - {id: 90, cat: Movies/BluRay, desc: "Movie/BD-Rip"}
+    - {id: 96, cat: Movies/SD, desc: "Movie/Cam"}
+    - {id: 6, cat: Movies/DVD, desc: "Movie/DVD-R"}
+    - {id: 48, cat: Movies/HD, desc: "Movie/HD/Bluray"}
+    - {id: 54, cat: Movies, desc: "Movie/Kids"}
+    - {id: 62, cat: Movies/SD, desc: "Movie/MP4"}
+    - {id: 38, cat: Movies/Foreign, desc: "Movie/Non-English"}
+    - {id: 68, cat: Movies, desc: "Movie/Packs"}
+    - {id: 20, cat: Movies/WEB-DL, desc: "Movie/Web-DL"}
+    - {id: 7, cat: Movies/SD, desc: "Movie/Xvid"}
+    - {id: 100, cat: Movies/x265, desc: "Movie/x265"}
+    # TV
+    - {id: 73, cat: TV, desc: "TV"}
+    - {id: 26, cat: TV/Documentary, desc: "TV/Documentaries"}
+    - {id: 55, cat: TV/Sport, desc: "Sports"}
+    - {id: 78, cat: TV/SD, desc: "TV/480p"}
+    - {id: 23, cat: TV/HD, desc: "TV/BD"}
+    - {id: 24, cat: TV/SD, desc: "TV/DVD-R"}
+    - {id: 25, cat: TV/SD, desc: "TV/DVD-Rip"}
+    - {id: 66, cat: TV/Other, desc: "TV/Mobile"}
+    - {id: 82, cat: TV/Foreign, desc: "TV/Non-English"}
+    - {id: 65, cat: TV, desc: "TV/Packs"}
+    - {id: 83, cat: TV/Foreign, desc: "TV/Packs/Non-English"}
+    - {id: 79, cat: TV/SD, desc: "TV/SD/x264"}
+    - {id: 22, cat: TV/WEB-DL, desc: "TV/Web-DL"}
+    - {id: 5, cat: TV/HD, desc: "TV/x264"}
+    - {id: 99, cat: TV/x265, desc: "TV/x265"}
+    - {id: 4, cat: TV/SD, desc: "TV/Xvid"}
+    - {id: 60, cat: TV/Anime, desc: "Anime"}
+    # games
+    - {id: 74, cat: PC/Games, desc: "Games"}
+    - {id: 2, cat: Console, desc: "Games/Mixed"}
+    - {id: 47, cat: Console/NDS, desc: "Games/Nintendo DS"}
+    - {id: 43, cat: PC/Games, desc: "Games/PC-ISO"}
+    - {id: 45, cat: PC/Games, desc: "Games/PC-Rip"}
+    - {id: 71, cat: Console/PS3, desc: "Games/PS3"}
+    - {id: 50, cat: Console/Wii, desc: "Games/Wii"}
+    - {id: 44, cat: Console/Xbox 360, desc: "Games/Xbox-360"}
+    # music and audio
+    - {id: 75, cat: Audio, desc: "Music"}
+    - {id: 3, cat: Audio/MP3, desc: "Music/Audio"}
+    - {id: 80, cat: Audio/Lossless, desc: "Music/Flac"}
+    - {id: 93, cat: Audio, desc: "Music/Packs"}
+    - {id: 37, cat: Audio/Video, desc: "Music/Video"}
+    - {id: 21, cat: Audio/Other, desc: "Podcast"}
+    - {id: 64, cat: Audio/Audiobook, desc: "AudioBook"}
+    # books
+    - {id: 35, cat: Books, desc: "Books"}
+    - {id: 102, cat: Books/Foreign, desc: "Books/Non-English"}
+    - {id: 94, cat: Books/Comics, desc: "Books/Comics"}
+    - {id: 95, cat: Books/Other, desc: "Books/Educational"}
+    - {id: 92, cat: Books/Mags, desc: "Books/Magazines & Newspapers"}
+    # programs and the rest
+    - {id: 1, cat: PC, desc: "Appz"}
+    - {id: 86, cat: PC, desc: "Appz/Non-English"}
+    - {id: 69, cat: PC/Mac, desc: "Appz/Mac"}
+    - {id: 58, cat: PC/Mobile-Other, desc: "Appz/Mobile"}
+    - {id: 76, cat: Other/Misc, desc: "Other/Miscellaneous"}
+    - {id: 98, cat: Other/Misc, desc: "Other/Fonts"}
+    - {id: 36, cat: Other/Misc, desc: "Other/Pics/Wallpapers"}
+  modes:
+    search: [q]
+    tv-search: [q, season, ep]
+    movie-search: [q]
+    music-search: [q]
+    book-search: [q]
+
+settings:
+  - name: info_new
+    type: info
+    label: "New site, not tested against the live IPTorrents yet. In your IPTorrents profile, set 'Torrents per page' to 100, tick the files count option and set the category column to icons, or results can come back empty."
+  - name: cookie
+    type: password
+    label: Cookie
+  - name: info_cookie
+    type: info_cookie
+  - name: useragent
+    type: text
+    label: User-Agent
+  - name: info_useragent
+    type: info_useragent
+  - name: freeleech
+    type: checkbox
+    label: Search freeleech only
+    default: false
+  - name: sort
+    type: select
+    label: Sort results by
+    default: time
+    options:
+      time: Newest first
+      seeders: Seeders
+      leechers: Leechers
+      completed: Snatches
+      size: Size
+      name: Name
+
+# There is no login form to fill in: the cookie from the browser is the
+# login. The check looks for the sign-out link on the front page.
+login:
+  method: cookie
+  test:
+    path: /
+    selector: a[href*="/lout.php"]
+
+search:
+  paths:
+    - path: t
+  keywordsfilters:
+    # the site's search treats - ! | @ ~ ( ) " / as commands, so only words,
+    # numbers and the * wildcard are sent
+    - name: re_replace
+      args: ["[^\\p{L}\\p{N}\\s*]", " "]
+    # "Show S02" (a whole season) also finds S02E01, S02E02...
+    - name: re_replace
+      args: ["(?i)\\b(S\\d{1,3})\\s*$", "$1*"]
+    - name: re_replace
+      args: ["\\s+", " "]
+    - name: trim
+  inputs:
+    # every wanted category is a key with no value: 72=&73=
+    $raw: "{{ range .Categories }}{{ . }}=&{{ end }}"
+    # all words must match
+    q: "{{ if .Keywords }}+({{ .Keywords }}){{ end }}"
+    free: "{{ if .Config.freeleech }}on{{ end }}"
+    o: "{{ if ne .Config.sort \"time\" }}{{ .Config.sort }}{{ end }}"
+  rows:
+    selector: table#torrents tr:has(a.hv)
+  fields:
+    category:
+      selector: td:nth-child(1) a[href^="?"]
+      attribute: href
+      filters:
+        - name: regexp
+          args: "(\\d+)"
+    title:
+      selector: a.hv
+      filters:
+        # request markers some uploaders add to the name
+        - name: re_replace
+          args: ["(?i)[\\[(]\\s*REQ(?:UEST(?:ED)?)?\\s*[\\])]", ""]
+        - name: re_replace
+          args: ["\\s+", " "]
+        - name: trim
+    details:
+      selector: a.hv
+      attribute: href
+    download:
+      selector: a[href^="/download.php/"]
+      attribute: href
+    size:
+      selector: td:nth-child(6)
+    grabs:
+      selector: td:nth-last-child(3)
+      optional: true
+    seeders:
+      selector: td:nth-last-child(2)
+      optional: true
+    leechers:
+      selector: td:nth-last-child(1)
+      optional: true
+    date:
+      # "Drama, Thriller | 3.2 hours ago by someone": keep the part after the
+      # last bar and before " by "
+      selector: div.sub
+      optional: true
+      filters:
+        - name: re_replace
+          args: ["(?s)^.*\\|", ""]
+        - name: re_replace
+          args: ["(?s)\\s+by\\s.*$", ""]
+        - name: trim
+        - name: timeago
+    downloadvolumefactor:
+      case:
+        span.free: 0
+        "*": 1
+    uploadvolumefactor:
+      text: 1

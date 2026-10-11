@@ -1,0 +1,29 @@
+/* The request portal: settings card, quota line, reports. */
+.rp-lead { margin: 0 0 14px; color: var(--text-dim); }
+.rp-block { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rim); }
+.rp-h3 { margin: 0 0 8px; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.rp-row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; margin: 8px 0; }
+.rp-row label { display: grid; gap: 4px; }
+.rp-people { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.rp-people th { text-align: left; font-weight: 500; color: var(--text-dim); font-size: 0.82rem; padding: 4px 8px 4px 0; }
+.rp-people td { padding: 6px 8px 6px 0; border-top: 1px solid var(--rim); }
+
+.request-quota { margin: 0 0 12px; color: var(--text-dim); font-size: 0.92rem; }
+.request-quota strong { color: var(--text); font-weight: 600; }
+.request-quota.out strong { color: var(--bad, #e57373); }
+.fourk-tag { margin-left: 6px; padding: 1px 6px; border-radius: 3px 7px 7px 7px; border: 1px solid var(--rim); font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.06em; }
+
+.issue-list { display: grid; gap: 8px; }
+.issue-row { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.issue-row .qthumb { width: 44px; height: 66px; }
+.issue-row .wmain { display: grid; gap: 3px; min-width: 0; }
+.issue-row .wmain small { color: var(--text-dim); }
+.issue-row .issue-text { margin: 2px 0 0; overflow-wrap: anywhere; }
+.issue-row .issue-answer { margin: 4px 0 0; padding: 6px 10px; border-left: 3px solid var(--rim); color: var(--text-dim); overflow-wrap: anywhere; }
+.issue-row.st-resolved { opacity: 0.8; }
+.issue-reply { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.issue-reply input { flex: 1 1 260px; }
+
+.title-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.problem-form { display: grid; gap: 12px; }
+.problem-form textarea { min-height: 90px; resize: vertical; }

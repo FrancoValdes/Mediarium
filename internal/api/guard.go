@@ -59,8 +59,10 @@ var deadlinePrefixes = []string{
 
 // deadlineExempt are routes under those prefixes that reach outside the
 // database anyway (other services, or the disk: a disk-usage count can sit
-// behind a hard drive that has to spin up first).
-var deadlineExempt = []string{"/search", "/similar", "/subtitles", "/files", "/cover", "-check", "/disk-usage"}
+// behind a hard drive that has to spin up first). "/oidc/" is the single
+// sign-on start and return: they talk to the provider, and when that is slow
+// they answer with a redirect back to the sign-in page, not the busy message.
+var deadlineExempt = []string{"/search", "/similar", "/subtitles", "/files", "/cover", "-check", "/disk-usage", "/oidc/"}
 
 func guarded(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -80,6 +82,31 @@ func guarded(r *http.Request) bool {
 	return false
 }
 
+// Two addresses carry a secret in the path itself: the calendar feed's link and
+// the address a Kobo e-reader is given. Whoever has the address has the access,
+// so it must never end up in a log.
+const (
+	calendarFeedPrefix = "/api/calendar/feed/"
+	koboPrefix         = "/kobo/"
+)
+
+// logPath is a request path as it may be written to the log: the secret part
+// of an address that has one is cut off and shown as "…". The URL base is
+// already gone from the path by the time it is logged.
+func logPath(p string) string {
+	switch {
+	case strings.HasPrefix(p, calendarFeedPrefix):
+		return calendarFeedPrefix + "…"
+	case strings.HasPrefix(p, koboPrefix):
+		// Only the first part after /kobo/ is the secret; what follows says which call it was.
+		if _, rest, ok := strings.Cut(p[len(koboPrefix):], "/"); ok {
+			return koboPrefix + "…/" + rest
+		}
+		return koboPrefix + "…"
+	}
+	return p
+}
+
 // slowRequest is how long a request may take before it is logged.
 const slowRequest = 3 * time.Second
 
@@ -95,7 +122,7 @@ func (s *Server) busyGuard(next http.Handler) http.Handler {
 			if took := time.Since(start); took >= slowRequest {
 				st := s.db.Stats()
 				slog.Warn("slow request",
-					"method", r.Method, "path", r.URL.Path, "took", took.Round(time.Millisecond).String(),
+					"method", r.Method, "path", logPath(r.URL.Path), "took", took.Round(time.Millisecond).String(),
 					"db_in_use", st.InUse, "db_max", st.MaxOpenConnections, "db_waits", st.WaitCount,
 					"db_wait_total", st.WaitDuration.Round(time.Millisecond).String())
 			}
@@ -158,7 +185,7 @@ func (s *Server) serveWithDeadline(w http.ResponseWriter, r *http.Request, next 
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"error":"` + busyMessage + `","busy":true}` + "\n"))
 			st := s.db.Stats()
-			slog.Warn("request gave up waiting", "method", r.Method, "path", r.URL.Path, "after", d.String(),
+			slog.Warn("request gave up waiting", "method", r.Method, "path", logPath(r.URL.Path), "after", d.String(),
 				"db_in_use", st.InUse, "db_max", st.MaxOpenConnections, "db_waits", st.WaitCount)
 		}
 	}

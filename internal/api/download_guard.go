@@ -68,7 +68,7 @@ func (s *Server) checkMovieNotDownloading(movieID int64) error {
 // episode of its season, both as the new grab and as a running download.
 func (s *Server) checkEpisodesNotDownloading(seriesID int64, hintSeason, hintEpisode int, releaseTitle string) error {
 	season, episodes := resolveTVTarget(releaseTitle, hintSeason, hintEpisode)
-	if season == 0 {
+	if season == 0 && len(episodes) == 0 {
 		return nil // the grab itself reports this
 	}
 	items, err := s.QueueRepo.List()

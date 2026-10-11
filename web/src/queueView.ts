@@ -3,6 +3,7 @@
 // the list the same way (sortQueueItems in Go); this repeats it so the page
 // stays in order even when it is shown a list in another order.
 import type { QueueItem } from './api'
+import { t } from './i18n.ts'
 
 type Status = QueueItem['status']
 
@@ -64,42 +65,41 @@ export function groupQueue(items: readonly QueueItem[]): QueueSections {
 
 // What the status badge says.
 export function statusLabel(q: Pick<QueueItem, 'status' | 'interrupted' | 'pending'>): string {
-  if (q.pending === 'pausing') return 'Pausing…'
-  if (q.pending === 'stopping') return 'Stopping…'
+  if (q.pending === 'pausing') return t('Pausing…')
+  if (q.pending === 'stopping') return t('Stopping…')
   switch (q.status) {
     case 'queued':
-      return 'Waiting in line'
+      return t('Waiting in line')
     case 'downloading':
-      return 'Downloading'
+      return t('Downloading')
     case 'importing':
-      return 'Importing'
+      return t('Importing')
     case 'paused':
-      return q.interrupted ? 'Partly downloaded, stopped' : 'Paused'
+      return q.interrupted ? t('Partly downloaded, stopped') : t('Paused')
     case 'stopped':
-      return 'Stopped'
+      return t('Stopped')
     case 'failed':
-      return 'Failed'
+      return t('Failed')
     case 'conflict':
-      return 'Needs a decision'
+      return t('Needs a decision')
     case 'completed':
-      return 'Done'
+      return t('Done')
   }
 }
 
-// "2nd", "3rd", "11th", "21st".
-function ordinal(n: number): string {
-  const last = n % 10
-  const teen = n % 100 >= 11 && n % 100 <= 13
-  if (!teen && last === 1) return `${n}st`
-  if (!teen && last === 2) return `${n}nd`
-  if (!teen && last === 3) return `${n}rd`
-  return `${n}th`
-}
-
-// Where a download waiting in line stands: "Next in line", "3rd in line".
+// Where a download waiting in line stands: "Next in line", "3rd in line",
+// "11th in line", "21st in line". Each English ending is its own phrase, so
+// other languages can write the place their own way.
 export function linePlace(position?: number): string {
-  if (!position || position < 1) return 'Waiting in line'
-  return position === 1 ? 'Next in line' : `${ordinal(position)} in line`
+  if (!position || position < 1) return t('Waiting in line')
+  if (position === 1) return t('Next in line')
+  const n = String(position)
+  const last = position % 10
+  const teen = position % 100 >= 11 && position % 100 <= 13
+  if (!teen && last === 1) return t('{n}st in line', { n })
+  if (!teen && last === 2) return t('{n}nd in line', { n })
+  if (!teen && last === 3) return t('{n}rd in line', { n })
+  return t('{n}th in line', { n })
 }
 
 // The line under a waiting, paused or stopped download that says what happened
@@ -109,13 +109,13 @@ export function stateNote(q: Pick<QueueItem, 'status' | 'interrupted' | 'keptFil
   if (q.status === 'paused') {
     if (q.interrupted) {
       return q.keptFiles
-        ? 'Mediarium was restarted while this was downloading. Press Resume to carry on from what is already saved.'
-        : 'Mediarium was restarted before this started downloading. Press Resume to start it.'
+        ? t('Mediarium was restarted while this was downloading. Press Resume to carry on from what is already saved.')
+        : t('Mediarium was restarted before this started downloading. Press Resume to start it.')
     }
-    return q.keptFiles || q.progressPct > 0 ? 'Paused. What is downloaded so far is kept. Press Resume to carry on.' : 'Paused. Press Resume to start it.'
+    return q.keptFiles || q.progressPct > 0 ? t('Paused. What is downloaded so far is kept. Press Resume to carry on.') : t('Paused. Press Resume to start it.')
   }
   if (q.status === 'stopped') {
-    return q.keptFiles ? 'The part that was downloaded is still on disk.' : ''
+    return q.keptFiles ? t('The part that was downloaded is still on disk.') : ''
   }
   return ''
 }

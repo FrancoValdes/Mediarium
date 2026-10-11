@@ -47,7 +47,16 @@ func (c *Client) WorkInfo(ctx context.Context, key string) (WorkInfo, error) {
 			} `json:"author"`
 		} `json:"authors"`
 	}
+	// The search index (author name, first year, editions) doesn't need the work's own answer, so both are asked at once.
+	var search struct {
+		Docs []olDoc `json:"docs"`
+	}
+	searched := make(chan error, 1)
+	go func() {
+		searched <- c.get(ctx, "/search.json", url.Values{"q": {"key:/works/" + key}, "fields": {docFields}, "limit": {"1"}}, &search)
+	}()
 	if err := c.get(ctx, "/works/"+url.PathEscape(key)+".json", nil, &res); err != nil {
+		<-searched
 		return WorkInfo{}, err
 	}
 	info := WorkInfo{Found: Found{Key: key, Title: res.Title}, Description: textOf(res.Description), Subjects: []string{}}
@@ -69,10 +78,7 @@ func (c *Client) WorkInfo(ctx context.Context, key string) (WorkInfo, error) {
 		}
 	}
 	// The search index knows the author's name, the first year and the editions.
-	var search struct {
-		Docs []olDoc `json:"docs"`
-	}
-	if err := c.get(ctx, "/search.json", url.Values{"q": {"key:/works/" + key}, "fields": {docFields}, "limit": {"1"}}, &search); err == nil {
+	if err := <-searched; err == nil {
 		if f := founds(search.Docs, false); len(f) > 0 {
 			info.Author, info.Year, info.HasEbook, info.HasAudio = f[0].Author, f[0].Year, f[0].HasEbook, f[0].HasAudio
 			if info.AuthorKey == "" {

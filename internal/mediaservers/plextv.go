@@ -28,10 +28,13 @@ const PlexTVURL = "https://plex.tv"
 
 // PlexTV talks to plex.tv.
 type PlexTV struct {
-	HTTP     *http.Client
-	BaseURL  string // PlexTVURL; tests point it at a fake
-	ClientID string // this install's X-Plex-Client-Identifier; must stay the same for a PIN's lifetime
-	Version  string
+	HTTP    *http.Client
+	BaseURL string // PlexTVURL; tests point it at a fake
+	// DiscoverURL is Plex's catalogue service, which holds watchlists
+	// (PlexDiscoverURL; tests point it at a fake).
+	DiscoverURL string
+	ClientID    string // this install's X-Plex-Client-Identifier; must stay the same for a PIN's lifetime
+	Version     string
 }
 
 // PlexPIN is a PIN as plex.tv reports it.
@@ -83,6 +86,10 @@ func (p *PlexTV) call(ctx context.Context, method, path string, query url.Values
 	if base == "" {
 		base = PlexTVURL
 	}
+	return p.callAt(ctx, base, method, path, query, token, out)
+}
+
+func (p *PlexTV) callAt(ctx context.Context, base, method, path string, query url.Values, token string, out any) error {
 	target := base + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()

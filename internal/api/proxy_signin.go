@@ -81,6 +81,10 @@ func (s *Server) proxyUser(r *http.Request) *auth.User {
 		slog.Warn("auth: the proxy named an account that does not exist", "header", header, "from", s.clientIP(r))
 		return nil
 	}
+	if u.Disabled {
+		slog.Warn("auth: the proxy named an account that is turned off", "header", header, "from", s.clientIP(r))
+		return nil
+	}
 	return u
 }
 

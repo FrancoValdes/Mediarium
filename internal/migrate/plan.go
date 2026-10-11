@@ -480,14 +480,14 @@ func knownIndexers(st state) seenIndexers {
 func (im *Importer) planIndexers(ctx context.Context, p *plan, ip *IndexersPreview, d *prowlarrData, seen seenIndexers) {
 	seenURL, seenDef := seen.url, seen.def
 	for _, x := range d.Indexers {
-		ipl := im.planIndexer(ctx, x, seenURL, seenDef)
+		ipl := im.planIndexer(ctx, x, d, seenURL, seenDef)
 		ip.Summary.count(ipl.item.Action)
 		ip.Items = append(ip.Items, ipl.item)
 		p.indexers = append(p.indexers, ipl)
 	}
 }
 
-func (im *Importer) planIndexer(ctx context.Context, x prowlarrIndexer, seenURL, seenDef map[string]bool) indexerPlan {
+func (im *Importer) planIndexer(ctx context.Context, x prowlarrIndexer, d *prowlarrData, seenURL, seenDef map[string]bool) indexerPlan {
 	item := IndexerItem{Name: x.Name, Implementation: x.Implementation, Protocol: strings.ToLower(x.Protocol), Enabled: x.Enable, Categories: x.categoryIDs()}
 	protocol := indexers.ProtocolUsenet
 	if item.Protocol == string(indexers.ProtocolTorrent) {
@@ -516,7 +516,9 @@ func (im *Importer) planIndexer(ctx context.Context, x prowlarrIndexer, seenURL,
 		case strings.TrimSpace(base) == "":
 			item.Action, item.Reason = ActionSkip, "Prowlarr gave no address for it"
 		case !ok:
-			item.Action, item.Reason = ActionSkip, fmt.Sprintf("its API path %q doesn't end in /api, which Mediarium can't call; add it by hand", apiPath)
+			if !im.planThroughProwlarr(x, d, &item, &ipl, seenURL, fmt.Sprintf("its API path %q doesn't end in /api, which Mediarium can't call", apiPath)) {
+				item.Action, item.Reason = ActionSkip, fmt.Sprintf("its API path %q doesn't end in /api, which Mediarium can't call; add it by hand", apiPath)
+			}
 		case seenURL[normURL(addr)]:
 			item.Action, item.Reason = ActionExists, "already added (same address)"
 		default:
@@ -530,9 +532,12 @@ func (im *Importer) planIndexer(ctx context.Context, x prowlarrIndexer, seenURL,
 			ipl.inst = indexers.Instance{Name: x.Name, Kind: kind, BaseURL: addr, APIKey: strings.TrimSpace(key), Protocol: protocol, Enabled: x.Enable && !ipl.masked}
 		}
 	default:
-		im.planSiteIndexer(ctx, x, &item, &ipl, &notes, seenDef)
+		im.planSiteIndexer(ctx, x, d, &item, &ipl, &notes, seenURL, seenDef)
 	}
 	if item.Action == ActionAdd && len(notes) > 0 {
+		if item.Reason != "" {
+			notes = append([]string{item.Reason}, notes...)
+		}
 		item.Reason = strings.Join(notes, "; ")
 	}
 	ipl.item = item
@@ -542,13 +547,20 @@ func (im *Importer) planIndexer(ctx context.Context, x prowlarrIndexer, seenURL,
 // planSiteIndexer maps an indexer Prowlarr runs from a community definition
 // (or one of its own built-in ones) to Mediarium's definition of the same
 // id, copying the settings that fit.
-func (im *Importer) planSiteIndexer(ctx context.Context, x prowlarrIndexer, item *IndexerItem, ipl *indexerPlan, notes *[]string, seenDef map[string]bool) {
+func (im *Importer) planSiteIndexer(ctx context.Context, x prowlarrIndexer, d *prowlarrData, item *IndexerItem, ipl *indexerPlan, notes *[]string, seenURL, seenDef map[string]bool) {
+	// Whatever Mediarium can't run itself stays on Prowlarr: its own feed for
+	// the indexer works the same for every site.
+	through := func(why, fallback string) {
+		if !im.planThroughProwlarr(x, d, item, ipl, seenURL, why) {
+			item.Action, item.Reason = ActionSkip, fallback
+		}
+	}
 	defID := strings.TrimSpace(x.DefinitionName)
 	if defID == "" {
 		defID = strings.TrimSpace(x.Implementation)
 	}
 	if im.deps.Definition == nil || defID == "" {
-		item.Action, item.Reason = ActionSkip, "unsupported indexer type ("+x.Implementation+"): add it by hand"
+		through("it is an unsupported type ("+x.Implementation+")", "unsupported indexer type ("+x.Implementation+"): add it by hand")
 		return
 	}
 	sum, err := im.deps.Definition(ctx, defID)
@@ -557,13 +569,13 @@ func (im *Importer) planSiteIndexer(ctx context.Context, x prowlarrIndexer, item
 	}
 	switch {
 	case errors.Is(err, indexers.ErrDefinitionNotFound):
-		item.Action, item.Reason = ActionSkip, fmt.Sprintf("Mediarium's site list has no %q. Add it by hand", defID)
+		through(fmt.Sprintf("Mediarium's site list has no %q", defID), fmt.Sprintf("Mediarium's site list has no %q. Add it by hand", defID))
 		return
 	case err != nil:
 		item.Action, item.Reason = ActionSkip, "couldn't load Mediarium's site list: "+err.Error()
 		return
 	case !sum.Supported:
-		item.Action, item.Reason = ActionSkip, fmt.Sprintf("Mediarium can't run the %s definition yet (%s)", sum.Name, sum.Problem)
+		through(fmt.Sprintf("Mediarium can't run the %s definition yet (%s)", sum.Name, sum.Problem), fmt.Sprintf("Mediarium can't run the %s definition yet (%s)", sum.Name, sum.Problem))
 		return
 	}
 	item.DefinitionID = sum.ID
@@ -587,7 +599,7 @@ func (im *Importer) planSiteIndexer(ctx context.Context, x prowlarrIndexer, item
 		}
 		base = sum.Links[0]
 	default:
-		item.Action, item.Reason = ActionSkip, "the definition lists no address: add it by hand"
+		through("the definition lists no address", "the definition lists no address: add it by hand")
 		return
 	}
 	item.BaseURL = base
@@ -621,6 +633,30 @@ func (im *Importer) planSiteIndexer(ctx context.Context, x prowlarrIndexer, item
 	item.Action = ActionAdd
 	ipl.inst = indexers.Instance{Name: x.Name, Kind: indexers.KindCardigann, DefinitionID: sum.ID, BaseURL: base, Protocol: protocol, Enabled: x.Enable && !hidden, Settings: settings}
 	ipl.secret = sum.IsSecret
+}
+
+// planThroughProwlarr adds an indexer as a Newznab or Torznab feed served by
+// Prowlarr itself, with Prowlarr's API key. It returns false when that isn't
+// possible (no id or key), so the caller can skip it with its own reason.
+func (im *Importer) planThroughProwlarr(x prowlarrIndexer, d *prowlarrData, item *IndexerItem, ipl *indexerPlan, seenURL map[string]bool, why string) bool {
+	if d == nil || x.ID <= 0 || d.Base == "" || d.Key == "" {
+		return false
+	}
+	addr := d.feedURL(x.ID)
+	protocol, kind := indexers.ProtocolUsenet, indexers.KindNewznab
+	if strings.EqualFold(x.Protocol, string(indexers.ProtocolTorrent)) {
+		protocol, kind = indexers.ProtocolTorrent, indexers.KindTorznab
+	}
+	item.Protocol, item.BaseURL, item.DefinitionID = string(protocol), addr, ""
+	if seenURL[normURL(addr)] {
+		item.Action, item.Reason = ActionExists, "already added (same address)"
+		return true
+	}
+	seenURL[normURL(addr)] = true
+	item.Action = ActionAdd
+	item.Reason = why + ", so it stays on Prowlarr: added as Prowlarr's own feed for it, with Prowlarr's API key"
+	ipl.inst = indexers.Instance{Name: x.Name, Kind: kind, BaseURL: addr, APIKey: d.Key, Protocol: protocol, Enabled: x.Enable}
+	return true
 }
 
 // siteSetting converts one Prowlarr value to the text Mediarium stores for
@@ -736,7 +772,7 @@ func planServer(p *plan, sp *ServersPreview, app string, s newsServer, seen map[
 			notes = append(notes, "switched off in "+app+", so added switched off")
 		}
 		if masked(s.Password) {
-			notes = append(notes, app+" did not reveal the password: added switched off, enter it under Settings > Downloading > Usenet and torrents")
+			notes = append(notes, app+" did not reveal the password: added switched off, enter it under Settings > Downloading > Usenet")
 		}
 		if item.Optional {
 			notes = append(notes, "optional in "+app+"; Mediarium tries servers in priority order")

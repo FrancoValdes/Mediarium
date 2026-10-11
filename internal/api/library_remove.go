@@ -83,7 +83,7 @@ func (s *Server) removeMovieFiles(m library.Movie) (removedFiles, error) {
 	if m.FilePath == "" {
 		return removedFiles{}, nil
 	}
-	root := s.moviesRoot()
+	root := s.movieRootFor(m)
 	own := []string{m.FilePath}
 	folder := filepath.Dir(m.FilePath)
 	if s.isTitleFolder(root, folder, own, func(name string) bool { return matchesMovie(name, m) }) {
@@ -174,7 +174,7 @@ func (s *Server) removeSeriesFiles(series library.Series, files []string) (remov
 	if len(files) == 0 {
 		return removedFiles{}, nil
 	}
-	root := s.tvRoot()
+	root := s.seriesRootFor(series)
 	folder := commonDir(files)
 	if seasonFolderName.MatchString(filepath.Base(folder)) {
 		folder = filepath.Dir(folder)
@@ -259,14 +259,14 @@ func (s *Server) isTitleFolder(root, folder string, own []string, ours func(name
 // episodes), for isTitleFolder.
 func (s *Server) trackedFiles() []string {
 	var out []string
-	if movies, err := s.MovieRepo.List(); err == nil {
+	if movies, err := s.MovieRepo.ListWithCopies(); err == nil {
 		for _, m := range movies {
 			if m.FilePath != "" {
 				out = append(out, m.FilePath)
 			}
 		}
 	}
-	if shows, err := s.MovieRepo.ListSeries(); err == nil {
+	if shows, err := s.MovieRepo.ListSeriesWithCopies(); err == nil {
 		for _, sr := range shows {
 			eps, err := s.MovieRepo.ListEpisodes(sr.ID)
 			if err != nil {

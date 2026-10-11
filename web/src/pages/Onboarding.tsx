@@ -4,6 +4,7 @@ import { api, type IndexerConfig, type MediaServer, type QualityProfile, type Se
 import { useAuth } from '../AuthContext'
 import { titleFor } from '../documentTitle'
 import BrandMark from '../components/BrandMark'
+import LogoGlyph from '../components/LogoGlyph'
 import Icon from '../components/Icon'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ConnectedServiceCard from '../components/ConnectedServiceCard'
@@ -15,6 +16,7 @@ import SetupGaps from '../components/SetupGaps'
 import ServiceKeyCard from '../components/ServiceKeyCard'
 import { OPENSUBTITLES_COPY, TMDB_COPY, TRAKT_COPY } from '../components/serviceCopy'
 import SetupMediaServer from '../components/SetupMediaServer'
+import InfoLanguageCard from '../components/InfoLanguageCard'
 import SetupMediaTypes from '../components/SetupMediaTypes'
 import SetupPaths from '../components/SetupPaths'
 import UsenetServerForm, { blankServer, type UsenetServerDraft } from '../components/UsenetServerForm'
@@ -39,11 +41,13 @@ import {
 import { factsFromDashboard, requiredGaps, setupGaps, type SetupGap } from '../setupStatus'
 import * as check from '../validate'
 import { FieldError, FormProblem, useValidation, type Errors } from '../useValidation'
+import { chooseLanguage, currentLanguage, LANGUAGES, t, tc, tx, type Lang } from '../i18n'
+import AmbientBackdrop from '../components/AmbientBackdrop'
 
 // First-run onboarding wizard: linear, can't be skipped, each
 // step validated before moving on. Every step is also independently
 // reachable later from Settings — nothing here is a one-time-only choice.
-const STEPS = ['Admin account', 'Media types', 'Library paths', 'Connect services', 'Indexers & Search', 'Usenet provider', 'Quality & naming', 'Media server', 'Done'] as const
+const STEPS = [t('Admin account'), t('Media types'), t('Library paths'), t('Connect services'), t('Indexers & Search'), t('Usenet provider'), t('Quality & naming'), t('Media server'), t('Done')] as const
 const S = { admin: 0, types: 1, paths: 2, services: 3, sources: 4, usenet: 5, quality: 6, server: 7, done: 8 } as const
 
 // The setting each folder box is saved to.
@@ -57,19 +61,19 @@ const SETTING_FIELD = {
 } as const
 
 const FOLDER_REQUIRED: Record<FolderKind, string> = {
-  movies: 'Add the folder your movies go in, for example /movies.',
-  tv: 'Add the folder your TV shows go in, for example /tv.',
-  music: 'Add the folder your music goes in, for example /music.',
-  ebooks: 'Add the folder your ebooks go in, for example /books.',
-  audiobooks: 'Add the folder your audiobooks go in, for example /audiobooks.',
-  downloads: 'Add the folder downloads are saved in, for example /downloads.',
+  movies: t('Add the folder your movies go in, for example /movies.'),
+  tv: t('Add the folder your TV shows go in, for example /tv.'),
+  music: t('Add the folder your music goes in, for example /music.'),
+  ebooks: t('Add the folder your ebooks go in, for example /books.'),
+  audiobooks: t('Add the folder your audiobooks go in, for example /audiobooks.'),
+  downloads: t('Add the folder downloads are saved in, for example /downloads.'),
 }
 
 const NAMING_CHOICES = [
-  { id: 'plex', name: 'Plex', text: 'Title and year, for example "Night Harbour (2021)". Works with Plex and most other players.' },
-  { id: 'jellyfin', name: 'Jellyfin / Emby', text: 'Title and year plus the quality in brackets, for example "[1080p]". For Jellyfin or Emby.' },
-  { id: 'kodi', name: 'Kodi', text: 'Title and year plus quality and source, for example "[1080p Bluray]". For Kodi.' },
-  { id: 'minimal', name: 'Simple', text: "Just the title, with episodes as S01E02. For when you don't use a media player." },
+  { id: 'plex', name: 'Plex', text: t('Title and year, for example "Night Harbour (2021)". Works with Plex and most other players.') },
+  { id: 'jellyfin', name: 'Jellyfin / Emby', text: t('Title and year plus the quality in brackets, for example "[1080p]". For Jellyfin or Emby.') },
+  { id: 'kodi', name: 'Kodi', text: t('Title and year plus quality and source, for example "[1080p Bluray]". For Kodi.') },
+  { id: 'minimal', name: t('Simple'), text: t("Just the title, with episodes as S01E02. For when you don't use a media player.") },
 ]
 
 // What the settings say each folder is right now.
@@ -99,7 +103,7 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
   const navigate = useNavigate()
   const [step, setStep] = useState(startStep)
   useEffect(() => {
-    document.title = titleFor('Set up')
+    document.title = titleFor(t('Set up'))
   }, [])
   const [error, setError] = useState('')
   // Each step opens at the top, whatever the last one was scrolled to.
@@ -186,12 +190,12 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
   }, [])
 
   const adminCheck = useValidation({
-    username: check.firstError(check.required(username, 'Choose a username to sign in with, at least 3 characters.'), check.username(username)),
-    name: check.maxLength(name, 100, 'Your name'),
+    username: check.firstError(check.required(username, t('Choose a username to sign in with, at least 3 characters.')), check.username(username)),
+    name: check.maxLength(name, 100, t('Your name')),
     email: check.email(email),
-    password: check.firstError(check.required(password, 'Choose a password of at least 8 characters.'), check.password(password)),
-    confirmPassword: check.firstError(check.required(confirmPassword, 'Type your password again to make sure it is right.'), check.passwordsMatch(password, confirmPassword)),
-    legal: legalOk ? null : 'Read the notice and tick the box to continue.',
+    password: check.firstError(check.required(password, t('Choose a password of at least 8 characters.')), check.password(password)),
+    confirmPassword: check.firstError(check.required(confirmPassword, t('Type your password again to make sure it is right.')), check.passwordsMatch(password, confirmPassword)),
+    legal: legalOk ? null : t('Read the notice and tick the box to continue.'),
   })
 
   const asked = foldersToAsk(chosen)
@@ -372,7 +376,7 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
   }
   const backButton = (
     <button className="btn-back" onClick={back}>
-      ← Back
+      ← {t('Back')}
     </button>
   )
 
@@ -398,100 +402,107 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
 
   return (
     <main className="wizard" ref={top}>
-      {step !== S.done && <h1 className="sr-only">Set up Mediarium: {STEPS[step]}</h1>}
+      <AmbientBackdrop level="full" />
+      {step !== S.done && <h1 className="sr-only">{t('Set up Mediarium: {step}', { step: STEPS[step] })}</h1>}
       <div className="auth-logo wizard-logo">
-        <BrandMark className="auth-mark" />
+        <LogoGlyph size={72} />
         <span>Mediarium</span>
       </div>
-      <div className="wizard-steps">
+      <ol className="wizard-steps" aria-label={t('Set up Mediarium')}>
         {STEPS.map((label, i) => (
-          <span key={label} className={i === step ? 'active' : ''}>
-            {i + 1}. {label}
-          </span>
+          <li key={label} className={i === step ? 'active' : i < step ? 'done' : ''} aria-current={i === step ? 'step' : undefined}>
+            <b>{String(i + 1).padStart(2, '0')}</b>
+            <span>{label}</span>
+          </li>
         ))}
-      </div>
+      </ol>
 
       {error && <p className="error-text">{error}</p>}
 
       {step === S.admin && (
         <div className="card grid-form">
-          <h2>Create your account</h2>
-          <p className="wizard-lead">This becomes the owner account.</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <h2>{t('Create your account')}</h2>
+            <select aria-label={t('App language')} value={currentLanguage()} onChange={(e) => chooseLanguage(e.target.value as Lang)} style={{ width: 'auto', fontSize: '0.85rem' }}>
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="wizard-lead">{t('This becomes the owner account.')}</p>
           <div className="form-cols admin-cols">
-            <label>
-              Username
-              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus {...adminCheck.bind('username', username, setUsername)} />
-              <FieldError v={adminCheck} name="username" />
-              <small className="field-hint">You sign in with this. At least 3 characters.</small>
-            </label>
-            <label>
-              Name
-              <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" {...adminCheck.bind('name', name, setName)} />
-              <FieldError v={adminCheck} name="name" />
-              <small className="field-hint">Optional. Used in your greeting.</small>
-            </label>
-            <label>
-              Email
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" {...adminCheck.bind('email', email, setEmail)} />
-              <FieldError v={adminCheck} name="email" />
-              <small className="field-hint">Optional. Used for notifications.</small>
-            </label>
-            <label>
-              Password
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" {...adminCheck.bind('password')} />
-              <FieldError v={adminCheck} name="password" />
-              <small className="field-hint">At least 8 characters.</small>
-            </label>
-            <label>
-              Password again
-              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" {...adminCheck.bind('confirmPassword')} />
-              <FieldError v={adminCheck} name="confirmPassword" />
-              <small className="field-hint">Type it once more to be sure.</small>
-            </label>
-            <div className="cell-check">
-              <span className="cell-label">Password strength</span>
-              {password ? <PasswordStrength password={password} /> : <small className="field-hint">Shows here as you type.</small>}
-            </div>
             {codeRequired && (
-              <label>
-                Setup code
+              <label className="setup-code">
+                {t('Setup code')}
                 <input value={setupCode} onChange={(e) => setSetupCode(e.target.value)} autoComplete="off" spellCheck={false} />
-                <small className="field-hint">
-                  You're not on your home network, so enter the one-time code from the log. With Docker, run: docker logs mediarium
-                </small>
+                <small className="field-hint">{t("You're not on your home network, so enter the one-time code from the log. With Docker, run: docker logs mediarium")}</small>
               </label>
             )}
+            <label>
+              {t('Username')}
+              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus {...adminCheck.bind('username', username, setUsername)} />
+              <FieldError v={adminCheck} name="username" />
+              <small className="field-hint">{t('You sign in with this. At least 3 characters.')}</small>
+            </label>
+            <label>
+              {t('Name')}
+              <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" {...adminCheck.bind('name', name, setName)} />
+              <FieldError v={adminCheck} name="name" />
+              <small className="field-hint">{t('Optional. Used in your greeting.')}</small>
+            </label>
+            <label>
+              {t('Email')}
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" {...adminCheck.bind('email', email, setEmail)} />
+              <FieldError v={adminCheck} name="email" />
+              <small className="field-hint">{t('Optional. Used for notifications.')}</small>
+            </label>
+            <label>
+              {t('Password')}
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" {...adminCheck.bind('password')} />
+              <FieldError v={adminCheck} name="password" />
+              <small className="field-hint">{t('At least 8 characters.')}</small>
+            </label>
+            <label>
+              {t('Password again')}
+              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" {...adminCheck.bind('confirmPassword')} />
+              <FieldError v={adminCheck} name="confirmPassword" />
+              <small className="field-hint">{t('Type it once more to be sure.')}</small>
+            </label>
+            <div className="cell-check">
+              <span className="cell-label">{t('Password strength')}</span>
+              {password ? <PasswordStrength password={password} /> : <small className="field-hint">{t('Shows here as you type.')}</small>}
+            </div>
           </div>
           <div className="legal-box">
-            <strong>Before you start</strong>
+            <strong>{t('Before you start')}</strong>
             <p>
-              Mediarium is an automation and organising tool. It does not host, index or supply any content. It is meant for material you have the legal
-              right to get: your own backups, public-domain and freely licensed works, and content you are licensed to use. You alone are responsible for
-              what you download and for following your country&apos;s laws and your providers&apos; terms. It comes for educational and personal use
-              with no warranty.
+              {t(
+                "Mediarium is an automation and organising tool. It does not host, index or supply any content. It is meant for material you have the legal right to get: your own backups, public-domain and freely licensed works, and content you are licensed to use. You alone are responsible for what you download and for following your country's laws and your providers' terms. It comes for educational and personal use with no warranty.",
+              )}
             </p>
             <label className="check-row">
-              <input type="checkbox" checked={legalOk} onChange={(e) => setLegalOk(e.target.checked)} {...adminCheck.bind('legal')} />I have read this and accept responsibility for how I use Mediarium.
+              <input type="checkbox" checked={legalOk} onChange={(e) => setLegalOk(e.target.checked)} {...adminCheck.bind('legal')} />
+              {t('I have read this and accept responsibility for how I use Mediarium.')}
             </label>
             <FieldError v={adminCheck} name="legal" />
           </div>
           <button className="primary" onClick={submitAdmin} disabled={busy}>
-            Continue
+            {t('Continue')}
           </button>
-          <FormProblem v={adminCheck} verb="continue" />
+          <FormProblem v={adminCheck} verb={t('continue')} />
         </div>
       )}
 
       {step === S.types && (
         <div className="card grid-form">
-          <h2>What do you want to manage?</h2>
-          <p className="wizard-lead">
-            Pick what you want to manage. The next steps only ask about these.
-          </p>
+          <h2>{t('What do you want to manage?')}</h2>
+          <p className="wizard-lead">{t('Pick what you want to manage. The next steps only ask about these.')}</p>
           <SetupMediaTypes chosen={chosen} onToggle={toggleType} lastOneHint={lastOneHint} />
           <div className="wizard-nav">
             <button className="primary" onClick={submitTypes} disabled={busy}>
-              Continue
+              {t('Continue')}
             </button>
           </div>
         </div>
@@ -499,10 +510,8 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
 
       {step === S.paths && (
         <div className="card grid-form">
-          <h2>Library paths</h2>
-          <p className="wizard-lead">
-            The boxes show the folders your compose file maps, so most people can just press Continue. These are paths inside the container.
-          </p>
+          <h2>{t('Library paths')}</h2>
+          <p className="wizard-lead">{t('The boxes show the folders your compose file maps, so most people can just press Continue. These are paths inside the container.')}</p>
           <SetupPaths
             chosen={chosen}
             values={folders}
@@ -511,65 +520,65 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
             inUse={svc ? foldersInUse(svc) : {}}
             v={pathCheck}
           />
-          <p className="wizard-small">Mediarium only adds files to these folders. It never deletes or overwrites what&apos;s already there unless you tell it to.</p>
+          <p className="wizard-small">{t("Mediarium only adds files to these folders. It never deletes or overwrites what's already there unless you tell it to.")}</p>
           <div className="wizard-nav">
             {backButton}
             <button className="primary" onClick={submitLibraryPath} disabled={busy}>
-              Continue
+              {t('Continue')}
             </button>
           </div>
-          <FormProblem v={pathCheck} verb="continue" />
+          <FormProblem v={pathCheck} verb={t('continue')} />
         </div>
       )}
 
       {step === S.services && (
         <div className="wizard-services">
           <div className="card">
-            <h2>Connect your services</h2>
+            <h2>{t('Connect your services')}</h2>
             {video ? (
               <p className="wizard-lead">
-                A few free services provide movie details, lists and subtitles. They&apos;re built in, so there&apos;s nothing to set up. If a shared limit is ever hit, the
-                dashboard tells you and you can add your own free key in Settings.
+                {t("A few free services provide movie details, lists and subtitles. They're built in, so there's nothing to set up. If a shared limit is ever hit, the dashboard tells you and you can add your own free key in Settings.")}
               </p>
             ) : (
-              <p className="wizard-lead">Music details come from MusicBrainz, which needs no account or key. Just press Continue.</p>
+              <p className="wizard-lead">{t('Music details come from MusicBrainz, which needs no account or key. Just press Continue.')}</p>
             )}
           </div>
-          {video && !svc && <p>Loading…</p>}
+          {video && !svc && <p>{t('Loading…')}</p>}
           {video && svc && (
             <>
               {svc.tmdbKeyBuiltIn ? (
                 <ConnectedServiceCard
                   icon="film"
                   title="TMDB"
-                  does="Movie and show details, posters, episode lists, Discover and the calendar."
-                  limits="TMDB's limit is generous enough for home use."
-                  own="Having trouble? Get a free key at themoviedb.org and add it under Settings > Info, lists and subtitles > Movie info and lists."
+                  does={t('Movie and show details, posters, episode lists, Discover and the calendar.')}
+                  limits={t("TMDB's limit is generous enough for home use.")}
+                  own={t('Having trouble? Get a free key at themoviedb.org and add it under Settings > Info, lists and subtitles > Movie and show info.')}
                 />
               ) : (
                 <ServiceKeyCard service="tmdb" {...TMDB_COPY} builtIn={false} configured={svc.hasTmdbApiKey} onSaved={loadSvc} />
               )}
+              <InfoLanguageCard />
               {svc.openSubtitlesKeyBuiltIn ? (
                 <ConnectedServiceCard
                   icon="chat"
                   title="OpenSubtitles"
-                  does="Finding and downloading subtitles."
-                  limits="Searching is free. Downloads are capped at about 5 a day per connection, or about 20 with a free OpenSubtitles account."
-                  own="Turn subtitles on under Settings > Info, lists and subtitles > Subtitles. Your own account or key goes there too."
+                  does={t('Finding and downloading subtitles.')}
+                  limits={t('Searching is free. Downloads are capped at about 5 a day per connection, or about 20 with a free OpenSubtitles account.')}
+                  own={t('Turn subtitles on under Settings > Info, lists and subtitles > Subtitles. Your own account or key goes there too.')}
                 />
               ) : (
                 <>
                   <ServiceKeyCard service="opensubtitles" {...OPENSUBTITLES_COPY} builtIn={false} configured={!!svc.hasOpenSubtitlesApiKey} onSaved={loadSvc} />
-                  <p style={{ color: 'var(--text-dim)' }}>Turn subtitles on under Settings &gt; Info, lists and subtitles &gt; Subtitles.</p>
+                  <p style={{ color: 'var(--text-dim)' }}>{t('Turn subtitles on under Settings > Info, lists and subtitles > Subtitles.')}</p>
                 </>
               )}
               {svc.traktClientIdBuiltIn ? (
                 <ConnectedServiceCard
                   icon="list"
                   title="Trakt"
-                  does="Imports public Trakt lists so you can add everything on a list in one go."
-                  limits="Everyone shares this key, and Trakt allows 500 requests every 5 minutes across all of them. List imports use very few."
-                  own="If Trakt starts refusing requests, get a free Client ID and add it under Settings > Info, lists and subtitles > Movie info and lists."
+                  does={t('Imports public Trakt lists so you can add everything on a list in one go.')}
+                  limits={t('Everyone shares this key, and Trakt allows 500 requests every 5 minutes across all of them. List imports use very few.')}
+                  own={t('If Trakt starts refusing requests, get a free Client ID and add it under Settings > Info, lists and subtitles > Import lists.')}
                 />
               ) : (
                 <ServiceKeyCard service="trakt" {...TRAKT_COPY} builtIn={false} configured={svc.hasTraktClientId} onSaved={loadSvc} />
@@ -579,7 +588,7 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
           <div className="wizard-nav">
             {backButton}
             <button className="primary" onClick={() => setStep(S.sources)}>
-              Continue
+              {t('Continue')}
             </button>
           </div>
         </div>
@@ -587,17 +596,17 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
 
       {step === S.sources && (
         <div className="card grid-form">
-          <h2>Add your indexers</h2>
-          <p className="wizard-lead">
-            Indexers are the sites Mediarium searches for downloads. Add at least one: choose Usenet or torrent, pick the indexer, paste its API key and click Add.
-          </p>
+          <h2>{t('Add your indexers')}</h2>
+          <p className="wizard-lead">{t('Indexers are the sites Mediarium searches for downloads. Add at least one: choose Usenet or torrent, pick the indexer, paste its API key and click Add.')}</p>
           <div className="wizard-indexers">
             <IndexerForm onAdded={loadIndexers} />
             <div className="wizard-added">
-              <strong>Added so far {indexers.length > 0 && <small>({indexers.length})</small>}</strong>
+              <strong>
+                {t('Added so far')} {indexers.length > 0 && <small>({indexers.length})</small>}
+              </strong>
               {indexers.length === 0 ? (
                 <p className="wizard-lead" style={{ margin: '6px 0 0' }}>
-                  Nothing yet.
+                  {t('Nothing yet.')}
                 </p>
               ) : (
                 <ul className="added-list">
@@ -615,7 +624,7 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
                           })
                         }
                       >
-                        Remove
+                        {t('Remove')}
                       </button>
                     </li>
                   ))}
@@ -626,25 +635,23 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
           <div className="wizard-nav">
             {backButton}
             <button className="primary" onClick={() => (indexers.length === 0 ? setAskNoIndexer(true) : setStep(S.usenet))}>
-              Continue
+              {t('Continue')}
             </button>
-            {indexers.length === 0 && <button onClick={() => setStep(S.usenet)}>Skip for now</button>}
+            {indexers.length === 0 && <button onClick={() => setStep(S.usenet)}>{t('Skip for now')}</button>}
           </div>
           {askNoIndexer && (
             <ConfirmDialog
-              title="Continue without an indexer?"
-              confirmLabel="Continue anyway"
-              cancelLabel="Add one now"
+              title={t('Continue without an indexer?')}
+              confirmLabel={t('Continue anyway')}
+              cancelLabel={t('Add one now')}
               onCancel={() => setAskNoIndexer(false)}
               onConfirm={() => {
                 setAskNoIndexer(false)
                 setStep(S.usenet)
               }}
             >
-              <p>
-                Without an indexer, Mediarium can&apos;t find anything to download.
-              </p>
-              <p>Add one any time under Settings &gt; Indexers &amp; Search. The dashboard will remind you.</p>
+              <p>{t("Without an indexer, Mediarium can't find anything to download.")}</p>
+              <p>{t('Add one any time under Settings > Indexers & Search. The dashboard will remind you.')}</p>
             </ConfirmDialog>
           )}
         </div>
@@ -652,29 +659,29 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
 
       {step === S.usenet && (
         <div className="card grid-form">
-          <h2>Add your Usenet provider</h2>
-          <p className="wizard-lead">
-            Mediarium downloads by itself, so all it needs is the news-server login from your Usenet provider. Skip this if you only use torrents.
-          </p>
+          <h2>{t('Add your Usenet provider')}</h2>
+          <p className="wizard-lead">{t('Mediarium downloads by itself, so all it needs is the news-server login from your Usenet provider. Skip this if you only use torrents.')}</p>
           <div className="wizard-indexers">
             <UsenetServerForm
               key={serverFormKey}
               initial={blankServer(servers.length === 0 ? 0 : 1)}
-              submitLabel="Add provider"
+              submitLabel={t('Add provider')}
               onSubmit={submitUsenetServer}
               showPriority={false}
             />
             <div className="wizard-added">
-              <strong>Added so far {servers.length > 0 && <small>({servers.length})</small>}</strong>
+              <strong>
+                {t('Added so far')} {servers.length > 0 && <small>({servers.length})</small>}
+              </strong>
               {servers.length === 0 ? (
                 <p className="wizard-lead" style={{ margin: '6px 0 0' }}>
-                  Nothing yet.
+                  {t('Nothing yet.')}
                 </p>
               ) : (
                 <ul className="added-list">
                   {servers.map((x) => (
                     <li key={x.id}>
-                      <span className="badge">{x.priority === 0 ? 'Main' : 'Backup'}</span>
+                      <span className="badge">{x.priority === 0 ? tc('server', 'Main') : tc('server', 'Backup')}</span>
                       <span className="added-name" title={x.host}>
                         {x.name || x.host}
                       </span>
@@ -688,35 +695,35 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
                           })
                         }
                       >
-                        Remove
+                        {t('Remove')}
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
-              {servers.length > 0 && <p className="wizard-small">Add another provider as a backup if you have one. It fills in anything the main one is missing.</p>}
+              {servers.length > 0 && <p className="wizard-small">{t('Add another provider as a backup if you have one. It fills in anything the main one is missing.')}</p>}
             </div>
           </div>
           <div className="wizard-nav">
             {backButton}
             <button className="primary" onClick={() => (servers.length === 0 ? setAskNoServer(true) : setStep(S.quality))}>
-              Continue
+              {t('Continue')}
             </button>
-            {servers.length === 0 && <button onClick={() => setStep(S.quality)}>Skip for now</button>}
+            {servers.length === 0 && <button onClick={() => setStep(S.quality)}>{t('Skip for now')}</button>}
           </div>
           {askNoServer && (
             <ConfirmDialog
-              title="Continue without a Usenet provider?"
-              confirmLabel="Continue anyway"
-              cancelLabel="Add one now"
+              title={t('Continue without a Usenet provider?')}
+              confirmLabel={t('Continue anyway')}
+              cancelLabel={t('Add one now')}
               onCancel={() => setAskNoServer(false)}
               onConfirm={() => {
                 setAskNoServer(false)
                 setStep(S.quality)
               }}
             >
-              <p>Without your Usenet provider&apos;s login, Usenet downloads can&apos;t start. Torrents will still work.</p>
-              <p>Add it any time under Settings &gt; Downloading &gt; Usenet and torrents. The dashboard will remind you.</p>
+              <p>{t("Without your Usenet provider's login, Usenet downloads can't start. Torrents will still work.")}</p>
+              <p>{t('Add it any time under Settings > Downloading > Usenet. The dashboard will remind you.')}</p>
             </ConfirmDialog>
           )}
         </div>
@@ -726,11 +733,14 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
         <div className="card grid-form">
           {video ? (
             <>
-              <h2>What quality do you want?</h2>
+              <h2>{t('What quality do you want?')}</h2>
               <p className="wizard-lead">
-                Pick the quality for {qualityFor} you add. <strong>1080p</strong> suits most people. Upgrades and your own profiles are under Settings &gt; Library &gt; Quality.
+                {tx('Pick the quality for {what} you add. {recommended} suits most people. Upgrades and your own profiles are under Settings > Library > Quality.', {
+                  what: qualityFor,
+                  recommended: <strong>1080p</strong>,
+                })}
               </p>
-              <div className="choice-grid" role="radiogroup" aria-label="Default quality">
+              <div className="choice-grid" role="radiogroup" aria-label={t('Default quality')}>
                 {profiles.map((p) => (
                   <button key={p.id} role="radio" aria-checked={profileId === p.id} className={`choice-card${profileId === p.id ? ' active' : ''}`} onClick={() => setProfileId(p.id)}>
                     <span className="choice-dot" aria-hidden="true" />
@@ -740,14 +750,12 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
                 ))}
                 {profiles.length === 0 && <div className="skeleton" style={{ height: 90, gridColumn: '1 / -1' }} />}
               </div>
-              {chosen.music && <p className="wizard-small">Music quality is under Settings &gt; Library &gt; Quality.</p>}
+              {chosen.music && <p className="wizard-small">{t('Music quality is under Settings > Library > Quality.')}</p>}
               <hr className="soft-rule" />
-              <h2>How should your files be named?</h2>
-              <p className="wizard-lead">
-                Every download is renamed and put in its own folder, so your media player shows the right poster, title and episode.
-              </p>
+              <h2>{t('How should your files be named?')}</h2>
+              <p className="wizard-lead">{t('Every download is renamed and put in its own folder, so your media player shows the right poster, title and episode.')}</p>
               <div className="player-pick">
-                <strong id="player-label">Which media player do you use?</strong>
+                <strong id="player-label">{t('Which media player do you use?')}</strong>
                 <div className="chip-row" role="radiogroup" aria-labelledby="player-label">
                   {MEDIA_PLAYERS.map((p) => (
                     <button key={p.id} type="button" role="radio" aria-checked={player === p.id} className={`chip${player === p.id ? ' active' : ''}`} onClick={() => choosePlayer(p.id)}>
@@ -755,9 +763,9 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
                     </button>
                   ))}
                 </div>
-                <small className="field-hint">The naming style below follows your choice. It only affects new downloads.</small>
+                <small className="field-hint">{t('The naming style below follows your choice. It only affects new downloads.')}</small>
               </div>
-              <div className="choice-grid" role="radiogroup" aria-label="Naming style">
+              <div className="choice-grid" role="radiogroup" aria-label={t('Naming style')}>
                 {NAMING_CHOICES.map((c) => (
                   <button key={c.id} role="radio" aria-checked={namingPreset === c.id} className={`choice-card${namingPreset === c.id ? ' active' : ''}`} onClick={() => setNamingPreset(c.id)}>
                     <span className="choice-dot" aria-hidden="true" />
@@ -767,43 +775,44 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
                 ))}
               </div>
               <div>
-                <strong style={{ display: 'block', marginBottom: 6 }}>What a movie will look like</strong>
+                <strong style={{ display: 'block', marginBottom: 6 }}>{t('What a movie will look like')}</strong>
                 <NamingPreview preset={namingPreset} />
               </div>
             </>
           ) : (
             <>
-              <h2>Quality &amp; naming</h2>
-              <p className="wizard-lead">
-                Music quality and file names are under Settings &gt; Library. Nothing to pick here, so press Continue.
-              </p>
+              <h2>{t('Quality & naming')}</h2>
+              <p className="wizard-lead">{t('Music quality and file names are under Settings > Library. Nothing to pick here, so press Continue.')}</p>
             </>
           )}
           <div className="wizard-nav">
             {backButton}
             <button className="primary" onClick={submitNaming} disabled={busy}>
-              Continue
+              {t('Continue')}
             </button>
-            {video && <button onClick={() => setStep(S.server)}>Skip for now</button>}
+            {video && <button onClick={() => setStep(S.server)}>{t('Skip for now')}</button>}
           </div>
         </div>
       )}
 
       {step === S.server && (
         <div className="card grid-form">
-          <h2>Connect your media server</h2>
+          <h2>{t('Connect your media server')}</h2>
           <p className="wizard-lead">
-            Optional. Connect Plex, Jellyfin or Emby to get &quot;Watch in&quot; links and have new files show up there on their own. Or do it later under
-            Settings &gt; Connections &gt; Media servers.
+            {t('Optional. Connect Plex, Jellyfin or Emby to get "Watch in" links and have new files show up there on their own. Or do it later under Settings > Connections > Media servers.')}
           </p>
           {(player === 'kodi' || player === 'other') && (
-            <p className="wizard-small">{player === 'kodi' ? "Kodi doesn't" : "Other players don't"} need connecting. Press Continue, or connect one of these anyway.</p>
+            <p className="wizard-small">
+              {player === 'kodi'
+                ? t("Kodi doesn't need connecting. Press Continue, or connect one of these anyway.")
+                : t("Other players don't need connecting. Press Continue, or connect one of these anyway.")}
+            </p>
           )}
           <SetupMediaServer preferred={preferredServer} servers={mediaServers} onAdded={loadMediaServers} />
           <div className="wizard-nav">
             {backButton}
             <button className="primary" onClick={() => setStep(S.done)}>
-              {mediaServers.length > 0 ? 'Continue' : 'Skip for now'}
+              {mediaServers.length > 0 ? t('Continue') : t('Skip for now')}
             </button>
           </div>
         </div>
@@ -818,34 +827,30 @@ export default function Onboarding({ startStep = 0 }: { startStep?: number }) {
             ))}
           </div>
           <BrandMark className="finish-mark" />
-          <h1>
-            Welcome to <span>Mediarium</span>
-          </h1>
+          <h1>{tx('Welcome to {name}', { name: <span>Mediarium</span> })}</h1>
           {gaps === null ? (
-            <p>Checking your setup…</p>
+            <p>{t('Checking your setup…')}</p>
           ) : requiredGaps(gaps).length === 0 ? (
-            <p>
-              Everything is set up for {mediaPhrase(chosen)}. Search for something to add, browse Discover, or import what you already have.
-            </p>
+            <p>{t('Everything is set up for {what}. Search for something to add, browse Discover, or import what you already have.', { what: mediaPhrase(chosen) })}</p>
           ) : (
-            <p>Your account is ready, but Mediarium can&apos;t find or download anything yet. Here&apos;s what&apos;s left, or do it later from the dashboard.</p>
+            <p>{t("Your account is ready, but Mediarium can't find or download anything yet. Here's what's left, or do it later from the dashboard.")}</p>
           )}
           {gaps !== null && gaps.length > 0 && <SetupGaps gaps={gaps} onGo={(to) => void finish(to)} />}
           <div className="finish-points">
             <span>
-              <Icon name="search" size={16} /> Find it
+              <Icon name="search" size={16} /> {t('Find it')}
             </span>
             <span>
-              <Icon name="download" size={16} /> Download it
+              <Icon name="download" size={16} /> {t('Download it')}
             </span>
             <span>
-              <Icon name="folder" size={16} /> Filed and ready to watch
+              <Icon name="folder" size={16} /> {t('Filed and ready to watch')}
             </span>
           </div>
           <div className="wizard-nav">
             {backButton}
             <button className="primary big" onClick={() => void finish()} disabled={busy}>
-              Open Mediarium
+              {t('Open Mediarium')}
             </button>
           </div>
         </div>

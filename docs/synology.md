@@ -168,7 +168,7 @@ services:
 5. **Connect services** needs nothing from you. On **Indexers** and **Usenet provider** you can choose **Skip for now** if you plan to bring them over from Prowlarr and SABnzbd ([Move from other apps](./migrate.md)).
 6. **Quality & naming** asks which media player you use, so your files are named the way it likes. **Media server** is optional. It connects Plex, Jellyfin or Emby, so "Watch in" links work from day one.
 
-Downloads run **one at a time**. Each is downloaded, repaired, unpacked and moved into your library before the next starts. To allow more, use **Settings > Downloading > Usenet and torrents > Downloads at the same time**. See [Downloads](./downloads.md#downloads-at-the-same-time-the-download-line).
+Downloads run **one at a time**. Each is downloaded, repaired, unpacked and moved into your library before the next starts. To allow more, use **Settings > Downloading > Download rules > Downloads at the same time**. See [Downloads](./downloads.md#downloads-at-the-same-time-the-download-line).
 
 ## 7. Troubleshooting
 
@@ -201,7 +201,7 @@ Music, ebooks and audiobooks each switch on under **Settings, Media types**. If 
 
 - **Inside your one shared folder:** create the folder (for example `Music`), add `MUSIC_DIR=/data/Music`, `EBOOKS_DIR=/data/Ebooks` or `AUDIOBOOKS_DIR=/data/Audiobooks` to the `environment:` lines, then stop the project, choose **Action, Build** and **Start**. Nothing else to map.
 - **A folder somewhere else:** add a line under `volumes:`, for example `- /volume1/music:/music`, and rebuild the same way. No `environment:` line is needed when the right side is `/music`, `/ebooks` or `/audiobooks`.
-- Then switch the type on in **Settings, Media types** and check the folder in **Settings, Library, Folders and file names**.
+- Then switch the type on in **Settings, Media types** and check the folder in **Settings, Library, Folders**.
 
 ## Reach it from outside your home
 
@@ -257,12 +257,12 @@ sudo docker compose up -d
 
 Your settings and library are kept, and Mediarium updates its database when it starts. Read the [changelog](../CHANGELOG.md) first and back up before a big update.
 
-When a new version is out, administrators see a card on the dashboard and on **Settings > System > Server and backup**. If the release is signed, the card also has an **Update now** button, which installs it without using Container Manager. See [Update now](./INSTALL.md#update-now-docker-image).
+When a new version is out, administrators see a card on the dashboard and on **Settings > General**. If the release is signed, the card also has an **Update now** button, which installs it without using Container Manager. See [Update now](./INSTALL.md#update-now-docker-image).
 
 ## Backing up
 
 - **Hyper Backup:** include the `docker/mediarium` folder in a backup task. It holds everything that isn't a media file (`app.db` and `secret.key`; keep the two together).
-- **From the app:** **Settings, System, Server and backup** can download a backup zip. It contains your encryption key, so keep it private.
+- **From the app:** **Settings, System, Backup and restore** can download a backup zip. It contains your encryption key, so keep it private.
 
 ---
 

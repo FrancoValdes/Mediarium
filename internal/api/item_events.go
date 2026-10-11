@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -210,8 +211,28 @@ func qualityReason(profile quality.Profile, title string) string {
 // (keep), then quality through the profile chain. With upgradeFrom set only
 // the item's own profile counts and a release must be an upgrade.
 func judgeSearch(results []indexers.Result, blocked map[string]bool, sources string, profile quality.Profile,
-	keep func(indexers.Result) (bool, string), upgradeFrom quality.Tier) searchVerdict {
+	keep func(indexers.Result) (bool, string), upgradeFrom quality.Tier, upgradeRelease string) searchVerdict {
+	return judgeSearchLimited(results, blocked, sources, profile, keep, upgradeFrom, upgradeRelease, nil)
+}
+
+// judgeSearchLimited is judgeSearch with one more check after the quality
+// one: limit gives the reason a release that fits the profile is still not
+// taken (outside the size limits, held back by the delay profile), "" when
+// nothing stops it. A nil limit allows everything.
+func judgeSearchLimited(results []indexers.Result, blocked map[string]bool, sources string, profile quality.Profile,
+	keep func(indexers.Result) (bool, string), upgradeFrom quality.Tier, upgradeRelease string, limit func(indexers.Result) string) searchVerdict {
 	v := searchVerdict{total: len(results)}
+	// accept counts a release as acceptable unless a limit still stops it.
+	accept := func(res indexers.Result) bool {
+		if limit != nil {
+			if why := limit(res); why != "" {
+				v.reject(why)
+				return false
+			}
+		}
+		v.acceptable++
+		return true
+	}
 	for _, res := range results {
 		switch {
 		case blocked[blocklist.Key(res.Title)]:
@@ -229,10 +250,10 @@ func judgeSearch(results []indexers.Result, blocked map[string]bool, sources str
 			switch {
 			case !profile.AcceptsTitle(res.Title):
 				v.reject(qualityReason(profile, res.Title))
-			case !profile.IsUpgradeOverTier(upgradeFrom, parser.Parse(res.Title)):
+			case !profile.IsUpgradeOver(upgradeFrom, upgradeRelease, res.Title):
 				v.reject("not an upgrade over " + string(upgradeFrom))
 			default:
-				v.acceptable++
+				accept(res)
 			}
 			continue
 		}
@@ -241,14 +262,22 @@ func judgeSearch(results []indexers.Result, blocked map[string]bool, sources str
 		case !ok:
 			v.reject(qualityReason(profile, res.Title))
 		case fallback:
-			v.acceptable++
-			v.fallbackOnly++
+			if accept(res) {
+				v.fallbackOnly++
+			}
 		default:
-			v.acceptable++
+			accept(res)
 		}
 	}
 	return v
 }
+
+// Reasons a release that fits the profile is still not taken, as they read in
+// a search's note.
+const (
+	reasonSize  = "outside the size limits"
+	reasonDelay = "held back by the delay profile"
+)
 
 // pickedText names the release automation chose and the profile that took it.
 func pickedText(profile quality.Profile, best *indexers.Result) string {
@@ -268,7 +297,11 @@ func pickedText(profile quality.Profile, best *indexers.Result) string {
 // noteMovieSearch records one automatic search for a movie: how many
 // releases, how many acceptable, why none was, and what was picked.
 // upgradeFrom is the tier on disk for an upgrade search, "" otherwise.
-func (s *Server) noteMovieSearch(m library.Movie, outcomes []indexers.Outcome, blocked map[string]bool, sources string,
+//
+// mode is how the search was limited: a search started by hand (limitManual)
+// ignores the delay profile, an automatic one does not. The note applies the
+// same size limits and delay as the grab did, without recording anything.
+func (s *Server) noteMovieSearch(ctx context.Context, mode limitMode, m library.Movie, outcomes []indexers.Outcome, blocked map[string]bool, sources string,
 	profile quality.Profile, best *indexers.Result, upgradeFrom quality.Tier) {
 	keep := func(res indexers.Result) (bool, string) {
 		rel := parser.Parse(res.Title)
@@ -280,7 +313,21 @@ func (s *Server) noteMovieSearch(m library.Movie, outcomes []indexers.Outcome, b
 		}
 		return true, ""
 	}
-	v := judgeSearch(indexers.MergeResults(outcomes), blocked, sources, profile, keep, upgradeFrom)
+	fresh, expired := s.freshResults(indexers.MergeResults(outcomes))
+	sizeWhy := s.movieSizeRejections(ctx, m, profile)
+	limit := func(res indexers.Result) string {
+		if len(sizeWhy(res.Title, res.SizeBytes)) > 0 {
+			return reasonSize
+		}
+		if mode != limitManual {
+			if _, rep := s.limitMovie(ctx, m, profile, limitDry, []indexers.Result{res}); !rep.until.IsZero() {
+				return reasonDelay
+			}
+		}
+		return ""
+	}
+	v := judgeSearchLimited(fresh, blocked, sources, profile, keep, upgradeFrom, m.ReleaseTitle, limit)
+	v.addExpired(expired, s.retentionDays())
 	v.failedIndexers = failedIndexers(outcomes)
 	what := "Searched"
 	if upgradeFrom != "" {
@@ -293,16 +340,21 @@ func (s *Server) noteMovieSearch(m library.Movie, outcomes []indexers.Outcome, b
 // noteTVSearch records one automatic search for a season pack (episode 0)
 // or an episode of a show. It judges the results the way pickTVResult does
 // for something not downloaded yet.
-func (s *Server) noteTVSearch(series library.Series, season, episode int, outcomes []indexers.Outcome) {
+//
+// The numbering is read through the show's scene or anime numbering, and the
+// size limits and the delay profile (unless force says a person started the
+// search) apply as they did to the grab.
+func (s *Server) noteTVSearch(ctx context.Context, force bool, series library.Series, season, episode int, outcomes []indexers.Outcome) {
 	profiles, err := s.loadProfiles()
 	if err != nil {
 		slog.Warn("api: record tv search", "series", series.Title, "err", err)
 		return
 	}
+	mapper := s.releaseMapper(series)
 	keep := func(res indexers.Result) (bool, string) {
-		rel := parser.Parse(res.Title)
+		rel := parseFor(mapper, res.Title)
 		switch {
-		case !matchesShow(res.Title, series):
+		case !matchesShowFor(res.Title, series, season):
 			return false, "for another show"
 		case !coversTarget(rel, season, episode), episode > 0 && len(rel.Episodes) == 0:
 			if episode > 0 {
@@ -312,8 +364,22 @@ func (s *Server) noteTVSearch(series library.Series, season, episode int, outcom
 		}
 		return true, ""
 	}
-	profile := profiles.resolve(series.ProfileID)
-	v := judgeSearch(indexers.MergeResults(outcomes), s.blockedKeys(), s.sourcesFor(series.SourcePref), profile, keep, "")
+	profile := s.profileForSeries(profiles, series)
+	fresh, expired := s.freshResults(indexers.MergeResults(outcomes))
+	sizeWhy := s.tvSizeRejections(ctx, series, profile)
+	limit := func(res indexers.Result) string {
+		if len(sizeWhy(res.Title, res.SizeBytes)) > 0 {
+			return reasonSize
+		}
+		if !force {
+			if _, rep := s.limitTV(series, season, episode, profile, nil, limitDry, []indexers.Result{res}); !rep.until.IsZero() {
+				return reasonDelay
+			}
+		}
+		return ""
+	}
+	v := judgeSearchLimited(fresh, s.blockedKeys(), s.sourcesFor(series.SourcePref), profile, keep, "", "", limit)
+	v.addExpired(expired, s.retentionDays())
 	v.failedIndexers = failedIndexers(outcomes)
 	what := fmt.Sprintf("Searched for season %d", season)
 	if episode > 0 {

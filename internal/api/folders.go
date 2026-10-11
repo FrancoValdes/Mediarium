@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,7 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rdborg/mediarium/internal/fileperms"
 	"github.com/rdborg/mediarium/internal/fsinfo"
+	"github.com/rdborg/mediarium/internal/library"
 	"github.com/rdborg/mediarium/internal/settings"
 )
 
@@ -21,6 +24,146 @@ func (s *Server) moviesRoot() string {
 		return v
 	}
 	return s.cfg.MoviesDir
+}
+
+// movieCopiesRoot and tvCopiesRoot are where second copies go (a 4K copy
+// of a film kept next to the 1080p one): a folder of their own, so the two
+// never collide and a media server can show them as a separate library.
+// "" until set, and then second copies can't be added.
+func (s *Server) movieCopiesRoot() string {
+	v, _ := s.Settings.Get(settings.KeyMovieCopiesPath)
+	return v
+}
+
+func (s *Server) tvCopiesRoot() string {
+	v, _ := s.Settings.Get(settings.KeyTVCopiesPath)
+	return v
+}
+
+// extraFolders are the folders added next to the main one for a kind of media
+// (Settings > Library > Folders), tidied and without repeats.
+func (s *Server) extraFolders(key, main string) []string {
+	v, _ := s.Settings.Get(key)
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal([]byte(v), &list); err != nil {
+		return nil
+	}
+	seen := map[string]bool{filepath.Clean(main): true}
+	var out []string
+	for _, p := range list {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		c := filepath.Clean(p)
+		if !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// movieFolders are the folders a movie can be kept in: the main movies folder
+// first, then the ones added next to it.
+func (s *Server) movieFolders() []string {
+	main := s.moviesRoot()
+	out := []string{}
+	if main != "" {
+		out = append(out, main)
+	}
+	return append(out, s.extraFolders(settings.KeyMoviesExtraPaths, main)...)
+}
+
+// tvFolders is movieFolders for shows.
+func (s *Server) tvFolders() []string {
+	main := s.tvRoot()
+	out := []string{}
+	if main != "" {
+		out = append(out, main)
+	}
+	return append(out, s.extraFolders(settings.KeyTVExtraPaths, main)...)
+}
+
+// chosenFolder returns want when it is one of the folders on offer, else def.
+func chosenFolder(want string, offered []string, def string) string {
+	if want == "" {
+		return def
+	}
+	c := filepath.Clean(want)
+	for _, f := range offered {
+		if filepath.Clean(f) == c {
+			return f
+		}
+	}
+	return def
+}
+
+// rootContaining is the folder out of roots that holds path ("" when none does).
+func rootContaining(roots []string, path string) string {
+	for _, r := range roots {
+		if r == "" {
+			continue
+		}
+		if rel, err := filepath.Rel(r, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return r
+		}
+	}
+	return ""
+}
+
+// movieRootFor is the library folder a movie's file belongs in: the copies
+// folder for a second copy, the folder chosen for the movie, else the main
+// movies folder.
+func (s *Server) movieRootFor(m library.Movie) string {
+	if m.CopyOf != 0 {
+		return s.movieCopiesRoot()
+	}
+	return chosenFolder(m.RootPath, s.movieFolders(), s.moviesRoot())
+}
+
+// seriesRootFor is movieRootFor for a show.
+func (s *Server) seriesRootFor(sr library.Series) string {
+	if sr.CopyOf != 0 {
+		return s.tvCopiesRoot()
+	}
+	return chosenFolder(sr.RootPath, s.tvFolders(), s.tvRoot())
+}
+
+// videoRoots are the movie and TV library folders, extra and copies folders included.
+func (s *Server) videoRoots() []string {
+	out := append(s.movieFolders(), s.tvFolders()...)
+	for _, r := range []string{s.movieCopiesRoot(), s.tvCopiesRoot()} {
+		if r != "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// checkCopiesFolder refuses a copies folder that would mix with a main
+// library folder: the same folder, or one inside the other, would put a
+// copy where the main file is.
+func checkCopiesFolder(copies string, mains ...string) error {
+	if copies == "" {
+		return nil
+	}
+	if !filepath.IsAbs(copies) {
+		return errors.New("the folder for second copies has to be a full path, starting with /")
+	}
+	c := filepath.Clean(copies)
+	for _, m := range mains {
+		if m == "" {
+			continue
+		}
+		m = filepath.Clean(m)
+		if c == m || strings.HasPrefix(c+string(filepath.Separator), m+string(filepath.Separator)) || strings.HasPrefix(m+string(filepath.Separator), c+string(filepath.Separator)) {
+			return fmt.Errorf("the folder for second copies has to be separate from %s, not the same folder or one inside it", m)
+		}
+	}
+	return nil
 }
 
 // downloadsRoot is the parent of the incomplete/ working folder.
@@ -136,24 +279,51 @@ const insideCacheMax = 64
 
 // unwritableInside is fsinfo.UnwritableInside, remembered for a few minutes
 // so the health list doesn't walk a big library on every visit.
+//
+// The walk looks at up to 5000 folders, which on a network drive takes seconds.
+// It never blocks anyone but the first caller: once an answer has been kept, an
+// older one is still handed out at once while a single fresh walk runs in the
+// background, and the walk does not hold the lock, so other pages are not held
+// up by it.
 func unwritableInside(root string) ([]string, int) {
 	insideCache.Lock()
-	defer insideCache.Unlock()
-	if c, ok := insideCache.byRoot[root]; ok && time.Since(c.at) < 10*time.Minute {
+	c, ok := insideCache.byRoot[root]
+	if ok && time.Since(c.at) < 10*time.Minute {
+		insideCache.Unlock()
 		return c.bad, c.checked
 	}
+	if ok {
+		if !c.refreshing {
+			c.refreshing = true
+			insideCache.byRoot[root] = c
+			go func() {
+				bad, checked := fsinfo.UnwritableInside(root, 5000)
+				rememberInside(root, bad, checked)
+			}()
+		}
+		insideCache.Unlock()
+		return c.bad, c.checked
+	}
+	insideCache.Unlock()
 	bad, checked := fsinfo.UnwritableInside(root, 5000)
+	rememberInside(root, bad, checked)
+	return bad, checked
+}
+
+func rememberInside(root string, bad []string, checked int) {
+	insideCache.Lock()
+	defer insideCache.Unlock()
 	if insideCache.byRoot == nil || len(insideCache.byRoot) >= insideCacheMax {
 		insideCache.byRoot = map[string]insideResult{}
 	}
 	insideCache.byRoot[root] = insideResult{bad: bad, checked: checked, at: time.Now()}
-	return bad, checked
 }
 
 type insideResult struct {
-	bad     []string
-	checked int
-	at      time.Time
+	bad        []string
+	checked    int
+	at         time.Time
+	refreshing bool // a fresh walk is on its way
 }
 
 var insideCache struct {
@@ -225,6 +395,7 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Couldn't create %s: %v", path, err))
 		return
 	}
+	fileperms.ApplyDir(filepath.Clean(path))
 	writeJSON(w, http.StatusOK, s.folderPayloadFor(path))
 }
 

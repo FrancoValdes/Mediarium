@@ -3,6 +3,7 @@ package download
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rdborg/mediarium/internal/netguard"
+	"github.com/rdborg/mediarium/internal/netproxy"
 )
 
 // NNTPConn is a single connection to a Usenet server. The engine opens one
@@ -37,19 +38,26 @@ type NNTPError struct {
 func (e *NNTPError) Error() string { return fmt.Sprintf("nntp %d: %s", e.Code, e.Message) }
 
 // DialNNTP connects (optionally over TLS) and reads the server's greeting.
+// The connection goes through the proxy when one is set for Usenet.
 func DialNNTP(host string, port int, useSSL bool, timeout time.Duration) (*NNTPConn, error) {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	dialer := netguard.Dialer(timeout)
-
-	var conn net.Conn
-	var err error
-	if useSSL {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host})
-	} else {
-		conn, err = dialer.Dial("tcp", addr)
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
 	}
+	conn, err := netproxy.DialContext(ctx, netproxy.Usenet, timeout, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial nntp %s: %w", addr, err)
+	}
+	if useSSL {
+		tc := tls.Client(conn, &tls.Config{ServerName: host})
+		if err := tc.HandshakeContext(ctx); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("dial nntp %s: %w", addr, err)
+		}
+		conn = tc
 	}
 
 	c := &NNTPConn{conn: conn, reader: bufio.NewReader(conn)}
@@ -123,6 +131,27 @@ func (c *NNTPConn) FetchBody(messageID string) ([]byte, error) {
 		return nil, &NNTPError{Code: code, Message: msg}
 	}
 	return c.readDotTerminated()
+}
+
+// Stat asks whether the server has the article with this message-id, without
+// fetching it (STAT, RFC 3977 section 6.2.4: 223 = it has it, 430 = it does
+// not). Any other answer comes back as an *NNTPError: a server that does not
+// know the command says 500 or 501, one that wants a login 480.
+func (c *NNTPConn) Stat(messageID string) (bool, error) {
+	if !strings.HasPrefix(messageID, "<") {
+		messageID = "<" + messageID + ">"
+	}
+	code, msg, err := c.command("STAT " + messageID)
+	if err != nil {
+		return false, err
+	}
+	switch code {
+	case 223:
+		return true, nil
+	case 430:
+		return false, nil
+	}
+	return false, &NNTPError{Code: code, Message: msg}
 }
 
 // Quit says goodbye and closes the connection. It never waits long for the

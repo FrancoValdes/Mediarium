@@ -112,6 +112,11 @@ func actorName(r *http.Request) string {
 	return "an unknown account"
 }
 
+// RestartWanted reports whether the app is exiting to start again (an update,
+// a restore or the Restart button) rather than to stop; main then starts the
+// next program in the same process, so the container keeps running.
+func (s *Server) RestartWanted() bool { return s.restartInPlace.Load() }
+
 // restartSoon exits the app after a short pause, so the reply that was just
 // sent gets through. The container's restart policy (or the service manager)
 // starts it again; the entrypoint then picks the newest program.
@@ -219,6 +224,7 @@ func (s *Server) startInstall(actor string, auto bool) *updateError {
 			return
 		}
 		s.setJob("restarting", "")
+		s.restartInPlace.Store(true)
 		s.restartSoon(updateRestartDelay)
 	}()
 	return nil

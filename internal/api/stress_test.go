@@ -221,13 +221,11 @@ func TestNoStallUnderLoad(t *testing.T) {
 	}
 
 	// Movies to download, and a queue item for the bookkeeping hammer.
-	var downloads []library.Movie
 	for i := 0; i < 3; i++ {
-		m, err := server.MovieRepo.Add(library.Movie{TMDBID: 9000 + i, Title: fmt.Sprintf("Grab Movie %03d", i+1), Year: 2000, Monitored: true})
+		_, err := server.MovieRepo.Add(library.Movie{TMDBID: 9000 + i, Title: fmt.Sprintf("Grab Movie %03d", i+1), Year: 2000, Monitored: true})
 		if err != nil {
 			t.Fatalf("seed movie: %v", err)
 		}
-		downloads = append(downloads, m)
 	}
 	idle, err := server.MovieRepo.Add(library.Movie{TMDBID: 9100, Title: "Idle Movie", Year: 2000, Monitored: false})
 	if err != nil {

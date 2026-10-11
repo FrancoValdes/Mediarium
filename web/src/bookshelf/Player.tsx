@@ -4,6 +4,7 @@ import { api, type Book, type BookTrack } from '../api'
 import Icon from '../components/Icon'
 import { PosterFallback } from '../components/PosterCard'
 import { useDocumentTitle } from '../documentTitle'
+import { t, tc } from '../i18n'
 import { buildChapters, chapterAt, formatAudioPosition, formatClock, nextSpeed, overallPercent, parseAudioPosition } from './shelfMath'
 
 const SPEED_KEY = 'mediarium.player.speed'
@@ -40,7 +41,7 @@ export default function Player() {
   const [showChapters, setShowChapters] = useState(false)
   const resumeAt = useRef(0) // seconds to jump to once the track has loaded
   const lastSaved = useRef(0)
-  useDocumentTitle(book ? `${book.title} · Listening` : 'Listening')
+  useDocumentTitle(book ? t('{title} · Listening', { title: book.title }) : t('Listening'))
 
   useEffect(() => {
     let stale = false
@@ -206,23 +207,23 @@ export default function Player() {
     return (
       <div className="bks-message">
         <Icon name="headphones" size={44} />
-        <h1>Couldn't open this audiobook</h1>
+        <h1>{t("Couldn't open this audiobook")}</h1>
         <p>{error}</p>
         <Link className="btn-with-icon" to="/bookshelf">
-          <Icon name="chevron-left" size={16} /> Back to your books
+          <Icon name="chevron-left" size={16} /> {t('Back to your books')}
         </Link>
       </div>
     )
   }
-  if (!book || !tracks) return <div className="bks-loading">Opening…</div>
+  if (!book || !tracks) return <div className="bks-loading">{t('Opening…')}</div>
   if (tracks.length === 0) {
     return (
       <div className="bks-message">
         <Icon name="headphones" size={44} />
         <h1>{book.title}</h1>
-        <p>No audio files were found for this audiobook.</p>
+        <p>{t('No audio files were found for this audiobook.')}</p>
         <Link className="btn-with-icon" to="/bookshelf">
-          <Icon name="chevron-left" size={16} /> Back to your books
+          <Icon name="chevron-left" size={16} /> {t('Back to your books')}
         </Link>
       </div>
     )
@@ -232,14 +233,14 @@ export default function Player() {
   return (
     <div className="ply">
       <header className="rdr-top ply-top">
-        <Link className="icon-btn" to="/bookshelf" title="Back to your books" aria-label="Back to your books">
+        <Link className="icon-btn" to="/bookshelf" title={t('Back to your books')} aria-label={t('Back to your books')}>
           <Icon name="chevron-left" size={20} />
         </Link>
         <span className="rdr-title">
           <strong>{book.title}</strong>
-          <small>{[book.author, book.narrators && `read by ${book.narrators.split(',').slice(0, 2).join(',').trim()}`].filter(Boolean).join(' · ')}</small>
+          <small>{[book.author, book.narrators && t('read by {names}', { names: book.narrators.split(',').slice(0, 2).join(',').trim() })].filter(Boolean).join(' · ')}</small>
         </span>
-        <button className={`icon-btn${showChapters ? ' active' : ''}`} onClick={() => setShowChapters((v) => !v)} title="Chapters" aria-label="Chapters">
+        <button className={`icon-btn${showChapters ? ' active' : ''}`} onClick={() => setShowChapters((v) => !v)} title={t('Chapters')} aria-label={t('Chapters')}>
           <Icon name="list" size={18} />
         </button>
       </header>
@@ -250,7 +251,7 @@ export default function Player() {
           <div className="ply-chapter">
             <strong>{chapter?.title}</strong>
             <small>
-              Chapter {cur + 1} of {chapters.length} · {Math.round(percent)}% of the book
+              {t('Chapter {n} of {total} · {percent}% of the book', { n: cur + 1, total: chapters.length, percent: Math.round(percent) })}
             </small>
           </div>
           <div className="ply-scrub">
@@ -266,7 +267,7 @@ export default function Player() {
                 setTime(v)
                 if (audio.current) audio.current.currentTime = v
               }}
-              aria-label="Place in this chapter"
+              aria-label={t('Place in this chapter')}
             />
             <div className="ply-times">
               <span>{formatClock(Math.max(0, time - chStart))}</span>
@@ -274,28 +275,28 @@ export default function Player() {
             </div>
           </div>
           <div className="ply-controls">
-            <button className="icon-btn" onClick={() => goChapter(cur - 1)} disabled={cur === 0} title="Previous chapter" aria-label="Previous chapter">
+            <button className="icon-btn" onClick={() => goChapter(cur - 1)} disabled={cur === 0} title={t('Previous chapter')} aria-label={t('Previous chapter')}>
               <Icon name="chevron-left" size={22} />
             </button>
-            <button className="ply-skip" onClick={() => seekBy(-30)} title="Back 30 seconds" aria-label="Back 30 seconds">
+            <button className="ply-skip" onClick={() => seekBy(-30)} title={t('Back 30 seconds')} aria-label={t('Back 30 seconds')}>
               −30
             </button>
-            <button className="ply-play" onClick={() => (playing ? pause() : play())} aria-label={playing ? 'Pause' : 'Play'}>
+            <button className="ply-play" onClick={() => (playing ? pause() : play())} aria-label={playing ? tc('player', 'Pause') : tc('player', 'Play')}>
               <Icon name={playing ? 'pause' : 'play'} size={30} />
             </button>
-            <button className="ply-skip" onClick={() => seekBy(30)} title="Forward 30 seconds" aria-label="Forward 30 seconds">
+            <button className="ply-skip" onClick={() => seekBy(30)} title={t('Forward 30 seconds')} aria-label={t('Forward 30 seconds')}>
               +30
             </button>
-            <button className="icon-btn" onClick={() => goChapter(cur + 1)} disabled={cur >= chapters.length - 1} title="Next chapter" aria-label="Next chapter">
+            <button className="icon-btn" onClick={() => goChapter(cur + 1)} disabled={cur >= chapters.length - 1} title={t('Next chapter')} aria-label={t('Next chapter')}>
               <Icon name="chevron-right" size={22} />
             </button>
           </div>
           <div className="ply-extras">
-            <button className="btn-sm" onClick={() => setSpeed((s) => nextSpeed(s))} title="Playback speed">
+            <button className="btn-sm" onClick={() => setSpeed((s) => nextSpeed(s))} title={t('Playback speed')}>
               {speed}×
             </button>
-            <button className={`btn-sm btn-with-icon${sleep !== 0 ? ' primary' : ''}`} onClick={chooseSleep} title="Sleep timer">
-              <Icon name="moon" size={14} /> {sleep === 0 ? 'Sleep timer' : sleep === -1 ? 'End of chapter' : `${left} min`}
+            <button className={`btn-sm btn-with-icon${sleep !== 0 ? ' primary' : ''}`} onClick={chooseSleep} title={t('Sleep timer')}>
+              <Icon name="moon" size={14} /> {sleep === 0 ? t('Sleep timer') : sleep === -1 ? t('End of chapter') : `${left} min`}
             </button>
           </div>
         </div>

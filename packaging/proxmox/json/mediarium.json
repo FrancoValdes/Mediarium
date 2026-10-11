@@ -1,0 +1,49 @@
+{
+  "name": "Mediarium",
+  "slug": "mediarium",
+  "categories": [12],
+  "date_created": "2026-10-07",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 8264,
+  "documentation": "https://github.com/rdborg/Mediarium/tree/main/docs",
+  "website": "https://mediarium.app",
+  "repository": "https://github.com/rdborg/Mediarium",
+  "architectures": ["amd64", "arm64"],
+  "platforms": ["pve"],
+  "logo": "https://raw.githubusercontent.com/rdborg/Mediarium/main/branding/mediarium-icon-512.png",
+  "description": "One self-hosted app that finds, downloads and organises movies, TV, music, ebooks and audiobooks: the jobs of Radarr, Sonarr, Prowlarr and SABnzbd in one program, with a built-in Usenet downloader, torrent client, subtitles, request portal and family accounts.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/mediarium.sh",
+      "config_path": "/opt/mediarium/.env",
+      "resources": {
+        "cpu": 2,
+        "ram": 2048,
+        "hdd": 8,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "The first visit to the web page creates the administrator account and walks through setup.",
+      "type": "info"
+    },
+    {
+      "text": "Media folders are /mnt/media/downloads, /mnt/media/movies, /mnt/media/tv and /mnt/media/music. Bind-mount your storage at /mnt/media (keep downloads and libraries on the same storage so imports are instant hardlinks), or change the paths in /opt/mediarium/.env and restart the service.",
+      "type": "info"
+    },
+    {
+      "text": "Settings, the database and its encryption key live in /opt/mediarium/config. Back that folder up.",
+      "type": "warning"
+    }
+  ]
+}

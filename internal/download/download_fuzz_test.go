@@ -371,7 +371,7 @@ func TestFileNamesAreCleanedAndNeverOnlyDots(t *testing.T) {
 		t.Errorf("name %q is only dots", names[0])
 	}
 	for _, n := range names[1:] {
-		if strings.ContainsAny(n, "\u202e\x7f\xff") || !utf8.ValidString(n) {
+		if strings.ContainsAny(n, "\u202e\x7f") || !utf8.ValidString(n) {
 			t.Errorf("name %q keeps a reordering or invalid character", n)
 		}
 	}

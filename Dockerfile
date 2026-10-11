@@ -16,6 +16,8 @@ FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
+# The pages in docs/ are turned into the in-app user guide while the web app is built.
+COPY docs/ /src/docs/
 COPY web/ ./
 RUN npm run build
 
@@ -29,7 +31,7 @@ RUN npm run build
 # builds of compiled languages (see docker/buildx's own docs), and
 # meaningfully faster for a multi-arch build (linux/amd64 + linux/arm64)
 # than emulating the whole build.
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS build
 WORKDIR /src
 
 # Cache dependency downloads separately from source changes
@@ -81,6 +83,8 @@ ENV PUID=1000     PGID=1000     TZ=Etc/UTC     APP_PORT=8264     BUNDLED_FLARESO
 # from /config/update instead (docs/INSTALL.md, "Updating without rebuilding").
 ENV MEDIARIUM_IMAGE_BIN=/opt/mediarium/app
 COPY --from=build /out/app /opt/mediarium/app
+# Mediarium's licence and those of everything it is built on.
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/mediarium/
 COPY docker/entrypoint.sh /opt/mediarium/docker-entrypoint.sh
 COPY docker/run-full.sh /opt/mediarium/run-full.sh
 RUN chmod +x /opt/mediarium/app /opt/mediarium/docker-entrypoint.sh /opt/mediarium/run-full.sh
@@ -120,6 +124,8 @@ ENV PUID=1000 \
     MEDIARIUM_IMAGE_BIN=/app/app
 
 COPY --from=build /out/app /app/app
+# Mediarium's licence and those of everything it is built on.
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/mediarium/
 COPY docker/entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 

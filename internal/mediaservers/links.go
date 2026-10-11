@@ -21,7 +21,7 @@ type Link struct {
 func HomeLinks(servers []Server) []Link {
 	out := []Link{}
 	for _, s := range servers {
-		if !s.Enabled {
+		if !s.Enabled || s.Kind == KindWebhook {
 			continue
 		}
 		l := Link{ServerID: s.ID, Name: s.Name, Kind: s.Kind, URL: HomeURL(s)}
@@ -98,7 +98,7 @@ func (f *Finder) Links(ctx context.Context, servers []Server, kind MediaKind, tm
 		got []result
 	)
 	for i, s := range servers {
-		if !s.Enabled {
+		if !s.Enabled || s.Kind == KindWebhook {
 			continue
 		}
 		wg.Add(1)

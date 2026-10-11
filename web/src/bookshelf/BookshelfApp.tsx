@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import Shelf from './Shelf'
+import { t } from '../i18n'
 import './bookshelf.css'
+import { withBase } from '../base'
 
 // The reader brings in the EPUB library, so it loads only when a book is opened.
 const Reader = lazy(() => import('./Reader'))
@@ -14,7 +16,7 @@ export default function BookshelfApp() {
   useEffect(() => {
     const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]')
     const before = link?.getAttribute('href') ?? null
-    link?.setAttribute('href', '/bookshelf.webmanifest')
+    link?.setAttribute('href', withBase('/bookshelf.webmanifest'))
     document.documentElement.classList.add('bookshelf-mode')
     return () => {
       if (link && before) link.setAttribute('href', before)
@@ -24,7 +26,7 @@ export default function BookshelfApp() {
 
   return (
     <div className="bks">
-      <Suspense fallback={<div className="bks-loading">Opening…</div>}>
+      <Suspense fallback={<div className="bks-loading">{t('Opening…')}</div>}>
         <Routes>
           <Route index element={<Shelf />} />
           <Route path="read/:id" element={<Reader />} />

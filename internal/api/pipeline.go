@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/rdborg/mediarium/internal/indexers"
 	"github.com/rdborg/mediarium/internal/library"
 	"github.com/rdborg/mediarium/internal/netguard"
+	"github.com/rdborg/mediarium/internal/netproxy"
 	"github.com/rdborg/mediarium/internal/notify"
 	"github.com/rdborg/mediarium/internal/organizer"
 	"github.com/rdborg/mediarium/internal/parser"
@@ -59,6 +61,13 @@ func (s *Server) runPipeline(queueID, movieID int64, movieTitle string, movieYea
 		if handled, err := s.settleInterrupted(queueID, run); handled {
 			return err // paused or stopped by a person: not a failure
 		}
+		if dup := asDuplicate(stepErr); dup != nil {
+			s.settleDuplicate(queueID, dup)
+			if !dup.holdsTitle() {
+				_ = s.MovieRepo.SetStatus(movieID, restoreStatus, "", "")
+			}
+			return stepErr
+		}
 		// The person reads this message; the raw error goes to the log only
 		// (noteDownloadFailure keeps it as the technical detail).
 		plain := plainerror.Message(stepErr)
@@ -87,12 +96,22 @@ func (s *Server) runPipeline(queueID, movieID int64, movieTitle string, movieYea
 		return fail(err)
 	}
 
-	videoFile, err := organizer.FindLargestVideoFile(incompleteDir)
+	videoFile, err := largestVideoFile(incompleteDir)
 	if err != nil {
 		return fail(badRelease(fmt.Errorf("couldn't find the movie file in the finished download: %w", err)))
 	}
 
-	destPath, err := s.buildDestPath(s.moviesRoot(), movieTitle, movieYear, tmdbID, releaseTitle, videoFile)
+	root := s.moviesRoot()
+	if m, err := s.MovieRepo.Get(movieID); err == nil {
+		if m.CopyOf != 0 {
+			if root = s.movieCopiesRoot(); root == "" {
+				return fail(errors.New("the folder for second copies isn't set. Choose one in Settings > Library > Folders"))
+			}
+		} else {
+			root = s.movieRootFor(m) // the folder chosen for this movie, else the main one
+		}
+	}
+	destPath, err := s.buildDestPath(root, movieTitle, movieYear, tmdbID, releaseTitle, videoFile)
 	if err != nil {
 		return fail(err)
 	}
@@ -116,7 +135,7 @@ func (s *Server) runPipeline(queueID, movieID int64, movieTitle string, movieYea
 		earlierFile = cur.FilePath
 	}
 	replaceEarlier := replacesOldFiles(policy, isBetter)
-	result, err := organizer.Import(videoFile, destPath, policy, isBetter)
+	result, err := s.importDownloaded(videoFile, destPath, policy, isBetter)
 	if err != nil {
 		return fail(fmt.Errorf("couldn't move the file into your library: %w", err))
 	}
@@ -132,19 +151,21 @@ func (s *Server) runPipeline(queueID, movieID int64, movieTitle string, movieYea
 			s.notifyItem("conflict", conflictItem)
 			return nil
 		}
-		return fail(fmt.Errorf("a file already exists at %s. Remove it, or change \"If a file already exists\" in Settings > Library > Folders and file names", destPath))
+		return fail(fmt.Errorf("a file already exists at %s. Remove it, or change \"If a file already exists\" in Settings > Library > Folders", destPath))
 	}
 
-	if err := s.MovieRepo.SetStatus(movieID, library.StatusDownloaded, string(tier), result.DestPath); err != nil {
+	if err := s.MovieRepo.SetStatus(movieID, library.StatusDownloaded, string(tier), result.DestPath); err == nil {
+		s.afterMovieImported(movieID, releaseTitle)
+	} else {
 		return fail(err)
 	}
 	if replaceEarlier {
 		// The new file has another name than the one it replaces: the old one goes.
-		s.removeReplacedFile(s.moviesRoot(), earlierFile, result.DestPath, movieID, 0, movieTitle)
+		s.removeReplacedFile(root, earlierFile, result.DestPath, movieID, 0, movieTitle)
 	}
 	// Subtitles that came with the release go next to the movie before any
 	// download is considered, so they count as already there.
-	s.importSidecarSubtitles(sidecarsIn(incompleteDir), result.DestPath, movieID, movieTitle)
+	s.importSidecarSubtitles(s.sidecarsIn(incompleteDir), result.DestPath, movieID, movieTitle)
 	s.autoSubtitlesFor(subtitleItem{kind: "movie", id: movieID, title: movieTitle, tmdbID: tmdbID, filePath: result.DestPath})
 	if err := s.QueueRepo.SetStatus(queueID, queue.StatusCompleted, ""); err != nil {
 		return fail(err)
@@ -168,11 +189,23 @@ func (s *Server) runPipeline(queueID, movieID int64, movieTitle string, movieYea
 // imported. Callers own the downloading status transition and their own
 // failure handling.
 func (s *Server) prepareDownload(ctx context.Context, queueID int64, downloadURL string, protocol indexers.Protocol) (string, error) {
-	incompleteDir := filepath.Join(s.downloadsIncompleteDir(), fmt.Sprintf("queue-%d", queueID))
+	incompleteDir := s.workDirFor(queueID)
+	if protocol == indexers.ProtocolTorrent && !s.downloadClientOn() && !s.debridOn() {
+		// The built-in client files a torrent under its category's folder.
+		incompleteDir = s.assignTorrentDir(queueID)
+	}
+
+	// The same release for the same title (by name and size) is not fetched a
+	// second time, when that is switched on. The NZB itself is compared once it
+	// has been read (downloadUsenet).
+	if err := s.checkDuplicate(queueID, ""); err != nil {
+		return "", err
+	}
 
 	var (
 		downloadErr error
 		missing     int
+		viaClient   bool // the files stay in an external client's folder
 	)
 	// A retry of a failed Usenet download starts from the files it already
 	// has when they are still there and pass PAR2 (see reuseDownloaded).
@@ -182,12 +215,23 @@ func (s *Server) prepareDownload(ctx context.Context, queueID int64, downloadURL
 	}
 	switch {
 	case reused:
+	case protocol == indexers.ProtocolTorrent && s.downloadClientOn():
+		viaClient = true
+		downloadErr = s.downloadViaClient(ctx, queueID, downloadURL, incompleteDir)
+	case protocol == indexers.ProtocolTorrent && s.debridOn():
+		downloadErr = s.downloadDebrid(ctx, queueID, downloadURL, incompleteDir)
 	case protocol == indexers.ProtocolTorrent:
 		downloadErr = s.downloadTorrent(ctx, queueID, downloadURL, incompleteDir)
 	default:
 		missing, downloadErr = s.downloadUsenet(ctx, queueID, downloadURL, incompleteDir)
 	}
 	if downloadErr != nil {
+		// A release held back for what it contains, or as a duplicate, did not
+		// "fail": say what it is without the usual lead-in.
+		var unsafe *download.UnsafeFilesError
+		if errors.As(downloadErr, &unsafe) || asDuplicate(downloadErr) != nil {
+			return "", downloadErr
+		}
 		return "", fmt.Errorf("the download failed: %w", downloadErr)
 	}
 	if !reused && protocol != indexers.ProtocolTorrent {
@@ -200,14 +244,26 @@ func (s *Server) prepareDownload(ctx context.Context, queueID int64, downloadURL
 	if err := s.QueueRepo.SetStatus(queueID, queue.StatusImporting, ""); err != nil {
 		return "", err
 	}
-	if err := s.verifyStep(queueID, incompleteDir, missing); err != nil {
-		return "", badRelease(fmt.Errorf("repairing the download failed: %w", err))
+	// A download client's files are never repaired here: that would write to
+	// files the client may still be seeding.
+	if !viaClient {
+		if err := s.verifyStep(queueID, incompleteDir, missing); err != nil {
+			return "", badRelease(fmt.Errorf("repairing the download failed: %w", err))
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	// Archives are unpacked into the download's own folder (for a download
+	// client, next to the links to its files, never into the client's folder).
 	if err := s.unpackStep(queueID, incompleteDir); err != nil {
 		return "", unpackFailure(err)
+	}
+	// What came out of the archives (or came as it is) is looked at once more
+	// before anything is imported: a release with random file names only shows
+	// a program once it is unpacked.
+	if err := s.checkUnpackedSafe(incompleteDir); err != nil {
+		return "", err
 	}
 	return incompleteDir, nil
 }
@@ -230,17 +286,37 @@ func (s *Server) downloadUsenet(ctx context.Context, queueID int64, nzbURL, inco
 	if err != nil {
 		return 0, badRelease(fmt.Errorf("couldn't read the NZB file: %w", err))
 	}
+	// Before a single article is fetched: no programs or scripts in the file
+	// list, and not the same NZB as an earlier download of this title.
+	if err := s.checkNZBSafe(nzb); err != nil {
+		return 0, err
+	}
+	fingerprint := nzb.Fingerprint()
+	if err := s.QueueRepo.SetNZBHash(queueID, fingerprint); err != nil {
+		slog.Warn("api: save the NZB fingerprint", "queueId", queueID, "err", err)
+	}
+	if err := s.checkDuplicate(queueID, fingerprint); err != nil {
+		return 0, err
+	}
 
 	servers, err := s.ClientRepo.List()
 	if err != nil {
 		return 0, fmt.Errorf("couldn't load your Usenet servers: %w", err)
 	}
 	if len(servers) == 0 {
-		return 0, fmt.Errorf("no Usenet server is set up. Add your provider's server in Settings > Downloading > Usenet and torrents first")
+		return 0, fmt.Errorf("no Usenet server is set up. Add your provider's server in Settings > Downloading > Usenet first")
 	}
 	configs := make([]download.ClientConfig, len(servers))
 	for i, sc := range servers {
 		configs[i] = sc.Config
+	}
+
+	// A try that carries on from what it has already saved is not checked
+	// again: those articles are known to exist.
+	if s.precheckEnabled() && !keptResume(incompleteDir) {
+		if err := s.precheckArticles(ctx, queueID, configs, nzb); err != nil {
+			return 0, err
+		}
 	}
 
 	progress := newProgressSaver(func(pct float64) error { return s.QueueRepo.SetProgress(queueID, pct) })
@@ -249,6 +325,7 @@ func (s *Server) downloadUsenet(ctx context.Context, queueID int64, nzbURL, inco
 	if err != nil {
 		return 0, err
 	}
+	s.keepArchivePassword(queueID, nzb, incompleteDir)
 	return res.MissingSegments, nil
 }
 
@@ -272,6 +349,12 @@ func (s *Server) downloadTorrent(ctx context.Context, queueID int64, downloadURL
 	magnet, torrentFilePath, err := s.torrentSource(ctx, downloadURL, incompleteDir)
 	if err != nil {
 		return fmt.Errorf("couldn't get the torrent: %w", err)
+	}
+	// A .torrent file lists its files: no programs or scripts among them.
+	if torrentFilePath != "" {
+		if err := s.checkTorrentFileSafe(torrentFilePath); err != nil {
+			return err
+		}
 	}
 	tunnel, err := s.torrentTunnel()
 	if err != nil {
@@ -306,8 +389,17 @@ func (s *Server) downloadTorrent(ctx context.Context, queueID int64, downloadURL
 		return fmt.Errorf("couldn't add the torrent: %w", err)
 	}
 
+	// The choices made for this torrent: files left out, order, speed limits.
+	ctl := torrentclient.NewControl(t)
+	s.setUpDownloadControl(queueID, ctl)
+	if !s.torrents.attachControl(job, ctl) {
+		s.torrents.stop(job)
+		return context.Canceled
+	}
+	go ctl.Run(ctx)
+
 	progress := newProgressSaver(func(pct float64) error { return s.QueueRepo.SetProgress(queueID, pct) })
-	err = torrentclient.Download(ctx, t, progress.Report)
+	err = ctl.Download(ctx, s.torrentStall(false), progress.Report)
 	progress.Flush()
 	if err != nil {
 		s.torrents.stop(job)
@@ -320,10 +412,13 @@ func (s *Server) downloadTorrent(ctx context.Context, queueID int64, downloadURL
 		}
 		return err
 	}
+	// What was left out stays out of the import (see writeSkipped).
+	writeSkipped(incompleteDir, ctl.Skipped())
 
-	goal := torrentclient.SeedGoal{Ratio: s.torrentSeedRatioLimit(), Time: s.torrentSeedTimeLimit()}
+	goal := s.torrentSeedGoal(queueID)
+	size := ctl.WantedBytes()
 	go func() {
-		met := torrentclient.SeedUntilGoal(ctx, t, time.Now(), goal, seedCheckInterval)
+		met := torrentclient.SeedUntilGoalOf(ctx, t, size, time.Now(), goal, seedCheckInterval)
 		s.torrents.stop(job)
 		if met {
 			s.seedingGoalMet(queueID, incompleteDir)
@@ -374,12 +469,18 @@ func (s *Server) torrentTunnel() (torrentclient.TunnelDialer, error) {
 		if reason == "" {
 			reason = "It isn't connected yet."
 		}
-		return nil, fmt.Errorf("torrent downloads are waiting for your VPN (%s). %s Check Settings > Downloading > VPN protection, or press Disconnect to download without it", st.Label, reason)
+		return nil, fmt.Errorf("torrent downloads are waiting for your VPN (%s). %s Check Settings > Downloading > VPN and proxy, or press Disconnect to download without it", st.Label, reason)
+	}
+	if d := netproxy.For(netproxy.Torrents); d != nil {
+		// No VPN, but a proxy for torrents: peers and trackers go through
+		// it, with the same rules as the tunnel (no direct connections, no
+		// DHT or UDP).
+		return d, nil
 	}
 	if s.vpnRequiredForTorrents() {
 		// Fail closed: the setting says torrent traffic must go through the
 		// VPN and none is connected, so the grab does not proceed.
-		return nil, fmt.Errorf("torrent downloads need a VPN and none is connected. Connect one in Settings > Downloading > VPN protection")
+		return nil, fmt.Errorf("torrent downloads need a VPN or a proxy and neither is set up. Connect a VPN in Settings > Downloading > VPN and proxy, or set a proxy for torrents")
 	}
 	return nil, nil
 }
@@ -452,7 +553,7 @@ func (s *Server) resolveConflict(queueID int64, overwrite bool) error {
 		return s.MovieRepo.SetStatus(item.MovieID, library.StatusMissing, "", "")
 	}
 
-	result, err := organizer.Import(item.SourcePath, item.DestPath, organizer.ConflictOverwrite, nil)
+	result, err := s.importDownloaded(item.SourcePath, item.DestPath, organizer.ConflictOverwrite, nil)
 	if err != nil {
 		return fmt.Errorf("couldn't replace the existing file: %w", err)
 	}
@@ -460,6 +561,7 @@ func (s *Server) resolveConflict(queueID int64, overwrite bool) error {
 	if err := s.MovieRepo.SetStatus(item.MovieID, library.StatusDownloaded, string(tier), result.DestPath); err != nil {
 		return err
 	}
+	s.afterMovieImported(item.MovieID, item.ReleaseTitle)
 	if err := s.QueueRepo.SetStatus(queueID, queue.StatusCompleted, ""); err != nil {
 		return err
 	}
@@ -501,6 +603,13 @@ func (s *Server) torrentSource(ctx context.Context, downloadURL, destDir string)
 	switch {
 	case isMagnetURI(downloadURL):
 		return downloadURL, "", nil
+	case isUploadRef(downloadURL):
+		data, err := s.readUpload(downloadURL)
+		if err != nil {
+			return "", "", err
+		}
+		path, err := writeTorrentFile(data, destDir)
+		return "", path, err
 	case indexers.IsLinkRef(downloadURL):
 		dl, err := s.resolveIndexerLink(ctx, downloadURL)
 		if err != nil {
@@ -520,6 +629,9 @@ func (s *Server) torrentSource(ctx context.Context, downloadURL, destDir string)
 // fetchRelease downloads a release file (an NZB), resolving links from
 // definition-based indexers through their session.
 func (s *Server) fetchRelease(ctx context.Context, downloadURL string) ([]byte, error) {
+	if isUploadRef(downloadURL) {
+		return s.readUpload(downloadURL)
+	}
 	if !indexers.IsLinkRef(downloadURL) {
 		return fetchURL(ctx, downloadURL)
 	}
@@ -585,14 +697,21 @@ func percent(done, total int64) float64 {
 }
 
 func fetchURL(ctx context.Context, url string) ([]byte, error) {
+	return fetchURLLimit(ctx, url, 256<<20) // an NZB or torrent file is a few MB at most
+}
+
+// fetchURLLimit is fetchURL for a file of at most maxBytes.
+func fetchURLLimit(ctx context.Context, url string, maxBytes int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", indexers.UserAgent)
 	// Through the address check (no cloud metadata or link-local targets,
-	// even via a redirect); errors and messages never carry the link's
-	// query string, which holds the indexer key.
-	client := netguard.Client(30 * time.Second)
+	// even via a redirect), and the proxy when one is set for indexers;
+	// errors and messages never carry the link's query string, which holds
+	// the indexer key.
+	client := netproxy.Client(30*time.Second, netproxy.Indexers)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, netguard.CleanError(err)
@@ -601,13 +720,12 @@ func fetchURL(ctx context.Context, url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("the server answered with status %d for %s", resp.StatusCode, netguard.RedactURL(url))
 	}
-	const maxDownloadFile = 256 << 20 // an NZB or torrent file is a few MB at most
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxDownloadFile+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > maxDownloadFile {
-		return nil, fmt.Errorf("the file at %s is larger than %d MB", netguard.RedactURL(url), maxDownloadFile>>20)
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("the file at %s is larger than %d MB", netguard.RedactURL(url), maxBytes>>20)
 	}
 	return data, nil
 }
@@ -662,6 +780,7 @@ func verifyAndRepair(dir string, missing int) error {
 // returns organizer.ErrSevenZipMissing if one turns up without it).
 func unpackArchives(dir string) error {
 	extractor := organizer.NewExtractor()
+	extractor.Password = readArchivePassword(dir)
 	archives, err := organizer.FindPrimaryArchives(dir)
 	if err != nil {
 		return err
@@ -672,6 +791,37 @@ func unpackArchives(dir string) error {
 		}
 	}
 	return nil
+}
+
+// archivePasswordFile holds the password of a download's archives, inside the
+// download's own folder, so it goes away with the folder.
+const archivePasswordFile = ".mediarium-password"
+
+// keepArchivePassword saves the archive password the NZB carries (or the
+// {{password}} written after the release name) next to the download, for the
+// unpack step. It is never logged.
+func (s *Server) keepArchivePassword(queueID int64, nzb *download.NZB, dir string) {
+	pw := nzb.Password
+	if pw == "" {
+		if item, err := s.QueueRepo.Get(queueID); err == nil {
+			pw = download.PasswordFromTitle(item.ReleaseTitle)
+		}
+	}
+	if pw == "" {
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, archivePasswordFile), []byte(pw), 0o600); err != nil {
+		slog.Warn("api: save the archive password", "queueId", queueID, "err", err)
+	}
+}
+
+// readArchivePassword returns the password saved by keepArchivePassword, or "".
+func readArchivePassword(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, archivePasswordFile))
+	if err != nil || len(b) > 1024 {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // unpackFailure classifies an unpack error: a full disk or a missing 7z
@@ -719,7 +869,7 @@ func (s *Server) buildDestPath(root, movieTitle string, year, tmdbID int, releas
 		moviesPath = s.moviesRoot()
 	}
 	if moviesPath == "" {
-		return "", fmt.Errorf("the movies folder isn't set. Choose one in Settings > Library > Folders and file names")
+		return "", fmt.Errorf("the movies folder isn't set. Choose one in Settings > Library > Folders")
 	}
 
 	preset, err := s.Settings.Get(settings.KeyNamingPreset)

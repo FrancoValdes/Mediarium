@@ -53,6 +53,7 @@ func (s *Server) rebuildSubtitles() {
 	}
 	user, _ := s.Settings.Get(settings.KeyOpenSubtitlesUsername)
 	pass, _ := s.Settings.Get(settings.KeyOpenSubtitlesPassword)
+	subdlKey, _ := s.Settings.Get(settings.KeySubDLAPIKey)
 
 	s.subsMu.Lock()
 	defer s.subsMu.Unlock()
@@ -60,6 +61,7 @@ func (s *Server) rebuildSubtitles() {
 	next.SetCredentials(user, pass)
 	s.instrumentSubtitles(next)
 	s.subs = next
+	s.subdl = subtitles.NewSubDL(subdlKey)
 }
 
 // usingOwnKey reports whether the person saved their own key for a service
@@ -83,7 +85,7 @@ func (s *Server) SetOpenSubtitlesAccount(username, password string) error {
 }
 
 type testServiceRequest struct {
-	Service  string `json:"service"` // tmdb | opensubtitles | trakt
+	Service  string `json:"service"` // tmdb | opensubtitles | subdl | wizdom | trakt
 	Key      string `json:"key"`     // blank = test the key currently in use
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -142,6 +144,27 @@ func (s *Server) handleTestService(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeJSON(w, http.StatusOK, connTestResult{Message: plainerror.Message(err)})
 		}
+	case "subdl":
+		client := s.SubDL()
+		if req.Key != "" {
+			client = subtitles.NewSubDL(req.Key)
+		}
+		msg, err := client.Test(ctx)
+		switch {
+		case err == nil:
+			writeJSON(w, http.StatusOK, connTestResult{OK: true, Message: msg})
+		case errors.Is(err, subtitles.ErrNoAPIKey):
+			writeJSON(w, http.StatusOK, connTestResult{Message: "Enter a SubDL API key first."})
+		default:
+			writeJSON(w, http.StatusOK, connTestResult{Message: plainerror.Message(err)})
+		}
+	case "wizdom":
+		// No key to test: this only checks that the site answers.
+		if msg, err := s.wizdomClient().Test(ctx); err != nil {
+			writeJSON(w, http.StatusOK, connTestResult{Message: plainerror.Message(err)})
+		} else {
+			writeJSON(w, http.StatusOK, connTestResult{OK: true, Message: msg})
+		}
 	case "trakt":
 		client := s.Trakt()
 		if req.Key != "" {
@@ -156,7 +179,7 @@ func (s *Server) handleTestService(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, connTestResult{Message: plainerror.Message(err)})
 		}
 	default:
-		writeError(w, http.StatusBadRequest, `Choose which service to test: "tmdb", "opensubtitles" or "trakt".`)
+		writeError(w, http.StatusBadRequest, `Choose which service to test: "tmdb", "opensubtitles", "subdl", "wizdom" or "trakt".`)
 	}
 }
 

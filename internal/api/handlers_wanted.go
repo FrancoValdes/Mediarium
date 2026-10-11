@@ -12,16 +12,17 @@ import (
 	"github.com/rdborg/mediarium/internal/blocklist"
 	"github.com/rdborg/mediarium/internal/indexers"
 	"github.com/rdborg/mediarium/internal/library"
+	"github.com/rdborg/mediarium/internal/metadata"
 	"github.com/rdborg/mediarium/internal/parser"
 	"github.com/rdborg/mediarium/internal/quality"
-	"github.com/rdborg/mediarium/internal/queue"
 )
 
 // rejectionsFor explains why automation would not pick a release: quality
 // outside the profile, or (for something already downloaded) no better than
 // what is on disk. It only informs the interactive search list; grabbing a
 // rejected release by hand is always allowed.
-func rejectionsFor(title string, profile quality.Profile, downloaded bool, currentQuality string) []string {
+// currentRelease is the release the file came from ("" when unknown).
+func rejectionsFor(title string, profile quality.Profile, downloaded bool, currentQuality, currentRelease string) []string {
 	var out []string
 	rel := parser.Parse(title)
 	tier := quality.Classify(rel)
@@ -43,6 +44,10 @@ func rejectionsFor(title string, profile quality.Profile, downloaded bool, curre
 	}
 	if downloaded && tierKnown(currentQuality) && !profile.OnFallback(quality.Tier(currentQuality)) {
 		switch {
+		case profile.WantsFormatUpgrade(currentRelease) && profile.IsUpgradeOver(quality.Tier(currentQuality), currentRelease, title):
+			// same or better quality with a better custom-format score
+		case profile.ReachedCutoffTier(quality.Tier(currentQuality)) && profile.WantsFormatUpgrade(currentRelease):
+			out = append(out, "doesn't score higher with custom formats than the file you have")
 		case profile.ReachedCutoffTier(quality.Tier(currentQuality)):
 			out = append(out, fmt.Sprintf("already at the profile cutoff (%s)", currentQuality))
 		case quality.Rank(tier) <= quality.Rank(quality.Tier(currentQuality)):
@@ -50,6 +55,17 @@ func rejectionsFor(title string, profile quality.Profile, downloaded bool, curre
 		}
 	}
 	return out
+}
+
+// setFormatScore adds a release's custom-format score when the profile
+// scores formats.
+func setFormatScore(p *searchResultPayload, profile quality.Profile, title string) {
+	if len(profile.Formats) == 0 {
+		return
+	}
+	score, names := profile.FormatScore(title)
+	p.FormatScore = &score
+	p.Formats = names
 }
 
 // handleMovieSearch is the interactive search for one library movie: every
@@ -84,9 +100,11 @@ func (s *Server) handleMovieSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	profile := profiles.resolve(m.ProfileID)
+	profile := s.profileForMovie(profiles, m)
 	blocked := s.blockedKeys()
 
+	_, beforeHome := s.homeReleaseHold(r.Context(), m, profile)
+	sizeReasons := s.movieSizeRejections(r.Context(), m, profile)
 	outcomes := indexers.SearchAll(r.Context(), instances, m.Title, movieCategory)
 	merged := indexers.MergeResults(outcomes)
 	out := []searchResultPayload{}
@@ -96,10 +114,16 @@ func (s *Server) handleMovieSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		p := s.toSearchResultPayload(res)
 		p.Blocklisted = blocked[blocklist.Key(res.Title)]
-		p.Rejections = rejectionsFor(res.Title, profile, m.Status == library.StatusDownloaded, m.Quality)
+		p.Rejections = append(p.Rejections, rejectionsFor(res.Title, profile, m.Status == library.StatusDownloaded, m.Quality, m.ReleaseTitle)...)
+		p.Rejections = append(p.Rejections, sizeReasons(res.Title, res.SizeBytes)...)
+		if beforeHome && looksLikeHomeCopy(res.Title) {
+			p.Rejections = append(p.Rejections, cinemaCopyWarning)
+		}
+		setFormatScore(&p, profile, res.Title)
 		p.AcceptedBy = acceptedBy(profile, res.Title)
 		out = append(out, p)
 	}
+	s.markCachedPayloads(r.Context(), out)
 	writeSearch(w, r, out, len(instances), outcomes)
 }
 
@@ -159,8 +183,18 @@ func (s *Server) handleMovieSearchNow(w http.ResponseWriter, r *http.Request) {
 }
 
 type seriesSearchNowRequest struct {
-	Season  int `json:"season"`
-	Episode int `json:"episode"`
+	Season  *int `json:"season"` // 0 is the specials; leave it out for the whole show
+	Episode int  `json:"episode"`
+}
+
+// searchNowScope turns a search-now request into what to look for.
+func searchNowScope(seriesID int64, req seriesSearchNowRequest) tvScope {
+	sc := tvScope{seriesID: seriesID, episode: req.Episode, force: true}
+	if req.Season != nil {
+		sc.season = *req.Season
+		sc.specials = *req.Season == 0
+	}
+	return sc
 }
 
 // handleSeriesSearchNow searches for everything wanted in a series (or one
@@ -189,8 +223,8 @@ func (s *Server) handleSeriesSearchNow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	n := s.autoGrabTV(s.targetedTVSearcher(r.Context(), instances, maxTVSearchesPerHunt), "search-now", profiles,
-		tvScope{seriesID: id, season: req.Season, episode: req.Episode, force: true})
+	n := s.autoGrabTV(s.targetedTVSearcher(r.Context(), instances, maxTVSearchesPerHunt, true), "search-now", profiles,
+		searchNowScope(id, req))
 	msg := "Nothing suitable was found right now."
 	if n > 0 {
 		msg = fmt.Sprintf("Started %s. You can follow the progress in Activity.", plural(n, "download"))
@@ -212,20 +246,21 @@ type wantedItemPayload struct {
 	Quality     string `json:"quality,omitempty"`
 	Cutoff      string `json:"cutoff,omitempty"`
 	ProfileName string `json:"profileName,omitempty"`
+	Copy        bool   `json:"copy,omitempty"` // a second copy of the title
+	Year        int    `json:"year,omitempty"`
+	PosterURL   string `json:"posterUrl,omitempty"`
 	// The latest automatic search for this title, in plain words, so a
 	// title waiting for a release says why ("100 releases, none acceptable: …").
 	LastSearch   string `json:"lastSearch,omitempty"`
 	LastSearchAt string `json:"lastSearchAt,omitempty"`
 }
 
-// lastSearch returns the newest "searched" event among events (newest first).
-func lastSearch(events []queue.Event) (string, string) {
-	for _, e := range events {
-		if e.Kind == "searched" {
-			return e.Message, e.At
-		}
+// wantedPoster is a poster's address, empty when the title has none.
+func wantedPoster(posterPath string) string {
+	if posterPath == "" {
+		return ""
 	}
-	return "", ""
+	return metadata.PosterURL(posterPath)
 }
 
 // handleWanted lists what automation is still looking for: "missing"
@@ -247,71 +282,88 @@ func (s *Server) handleWanted(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []wantedItemPayload{}
 
-	movies, err := s.MovieRepo.List()
+	// Ask the database only for the monitored titles that could be wanted
+	// (missing ones, or downloaded ones for the cutoff list), then apply the
+	// rules that need the profile or the disk.
+	status := library.StatusMissing
+	if kind == "cutoff" {
+		status = library.StatusDownloaded
+	}
+	movies, err := s.MovieRepo.ListMonitoredWithStatus(status)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	var movieIDs []int64
+	var movieAt []int // where in out each movie sits
 	for _, m := range movies {
-		if !m.Monitored {
-			continue
-		}
 		p := profiles.resolve(m.ProfileID)
 		switch {
 		case kind == "missing" && movieWantedMissing(m),
-			kind == "cutoff" && m.Status == library.StatusDownloaded && !m.NoUpgrade && wantsUpgrade(p, m.Quality):
-			item := wantedItemPayload{Kind: "movie", ID: m.ID, MovieID: m.ID, TMDBID: m.TMDBID, Title: m.Title, Date: m.ReleaseDate, ProfileName: p.Name}
-			if events, err := s.QueueRepo.MovieEvents(m.ID, 40); err == nil {
-				item.LastSearch, item.LastSearchAt = lastSearch(events)
+			kind == "cutoff" && m.Status == library.StatusDownloaded && !m.NoUpgrade && wantsUpgrade(p, m.Quality, m.ReleaseTitle):
+			item := wantedItemPayload{Kind: "movie", ID: m.ID, MovieID: m.ID, TMDBID: m.TMDBID, Title: m.Title, Date: m.ReleaseDate, ProfileName: p.Name, Copy: m.CopyOf != 0, Year: m.Year, PosterURL: wantedPoster(m.PosterPath)}
+			if item.Copy {
+				item.Subtitle = "Second copy"
 			}
 			if kind == "cutoff" {
 				item.Quality, item.Cutoff = m.Quality, string(p.Cutoff)
 			}
+			movieIDs = append(movieIDs, m.ID)
+			movieAt = append(movieAt, len(out))
 			out = append(out, item)
 		}
 	}
+	if searches, err := s.QueueRepo.LastMovieSearches(movieIDs); err == nil {
+		for i, id := range movieIDs {
+			if e, ok := searches[id]; ok {
+				out[movieAt[i]].LastSearch, out[movieAt[i]].LastSearchAt = e.Message, e.At
+			}
+		}
+	}
 
-	seriesList, err := s.MovieRepo.ListSeries()
+	today := time.Now().UTC().Format("2006-01-02")
+	episodes, err := s.MovieRepo.ListWantedEpisodes(status, today)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	today := time.Now().UTC().Format("2006-01-02")
-	for _, sr := range seriesList {
-		if !sr.Monitored {
+	var seriesIDs []int64
+	seenSeries := map[int64]bool{}
+	var episodeAt []int
+	for _, ep := range episodes {
+		p := profiles.resolve(ep.ProfileID)
+		if kind == "missing" && fileExists(ep.FilePath) {
+			continue // marked missing, but the file is there
+		}
+		if kind == "cutoff" && !wantsUpgrade(p, ep.Quality, ep.ReleaseTitle) {
 			continue
 		}
-		p := profiles.resolve(sr.ProfileID)
-		var seriesSearch, seriesSearchAt string
-		if events, err := s.QueueRepo.SeriesEvents(sr.ID, 40); err == nil {
-			seriesSearch, seriesSearchAt = lastSearch(events)
+		label := fmt.Sprintf("S%02dE%02d", ep.Season, ep.Episode.Episode)
+		if ep.Title != "" {
+			label += " · " + ep.Title
 		}
-		eps, err := s.MovieRepo.ListEpisodes(sr.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+		if ep.CopyOf != 0 {
+			label = "Second copy · " + label
 		}
-		for _, ep := range eps {
-			if !ep.Monitored {
-				continue
+		item := wantedItemPayload{
+			Kind: "episode", ID: ep.ID, SeriesID: ep.SeriesID, Season: ep.Season, Episode: ep.Episode.Episode,
+			Title: ep.SeriesTitle, Subtitle: label, Date: ep.AirDate, ProfileName: p.Name, Copy: ep.CopyOf != 0, Year: ep.SeriesYear, PosterURL: wantedPoster(ep.SeriesPoster),
+		}
+		if kind == "cutoff" {
+			item.Quality, item.Cutoff = ep.Quality, string(p.Cutoff)
+		}
+		if !seenSeries[ep.SeriesID] {
+			seenSeries[ep.SeriesID] = true
+			seriesIDs = append(seriesIDs, ep.SeriesID)
+		}
+		episodeAt = append(episodeAt, len(out))
+		out = append(out, item)
+	}
+	if searches, err := s.QueueRepo.LastSeriesSearches(seriesIDs); err == nil {
+		for _, at := range episodeAt {
+			if e, ok := searches[out[at].SeriesID]; ok {
+				out[at].LastSearch, out[at].LastSearchAt = e.Message, e.At
 			}
-			if !(kind == "missing" && episodeWantedMissing(sr, ep, today)) &&
-				!(kind == "cutoff" && ep.Status == library.StatusDownloaded && !sr.NoUpgrade && wantsUpgrade(p, ep.Quality)) {
-				continue
-			}
-			label := fmt.Sprintf("S%02dE%02d", ep.Season, ep.Episode)
-			if ep.Title != "" {
-				label += " · " + ep.Title
-			}
-			item := wantedItemPayload{
-				Kind: "episode", ID: ep.ID, SeriesID: sr.ID, Season: ep.Season, Episode: ep.Episode,
-				Title: sr.Title, Subtitle: label, Date: ep.AirDate, ProfileName: p.Name,
-				LastSearch: seriesSearch, LastSearchAt: seriesSearchAt,
-			}
-			if kind == "cutoff" {
-				item.Quality, item.Cutoff = ep.Quality, string(p.Cutoff)
-			}
-			out = append(out, item)
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

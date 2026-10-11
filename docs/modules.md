@@ -23,7 +23,7 @@ Mediarium looks after several kinds of media, and each kind is a module. **Setti
 - Each card says **On** or **Off**, and its switch reads **Switched on** or **Switched off**.
 - The last module that's on can't be switched off. Its switch is locked, with a note that Mediarium needs at least one kind of media.
 - All five cards look alike: an icon, the name, a one-line description and the switch.
-- The music folder and the **Import my existing collection** button are on the **Folders and file names** page, with the movie, TV and downloads folders (see [music.md](./music.md#importing-an-existing-collection)). The music folder shows there even while Music is off, greyed out with a note to switch Music on first. The Ebooks and Audiobooks folders work the same way: greyed out while their format is off, starting from `EBOOKS_DIR` and `AUDIOBOOKS_DIR` (or the one you set in the setup wizard).
+- The music folder and the **Import my existing collection** button are on the **Folders** page, with the movie, TV and downloads folders (see [music.md](./music.md#importing-an-existing-collection)). The music folder shows there even while Music is off, greyed out with a note to switch Music on first. The Ebooks and Audiobooks folders work the same way: greyed out while their format is off, starting from `EBOOKS_DIR` and `AUDIOBOOKS_DIR` (or the one you set in the setup wizard).
 
 Every signed-in account, basic users included, sees only the modules that are on. The Movies, TV and Music tabs in the Library and Discover, and the music pages, appear and disappear with the switches.
 
@@ -55,13 +55,13 @@ Downloads use `DOWNLOADS_DIR` (`/downloads`, setting `library.downloads_path`). 
 
 ### Adding music, ebooks or audiobooks later
 
-**The easy way:** if your movies, TV and downloads already share one mapped folder (for example `/data/Movies`, `/data/tv` and `/data/downloads`), there's nothing to change in your compose file. Under **Settings > Library > Folders and file names**, a folder that isn't found offers **Use /data/Ebooks** (or Music, Audiobooks), which creates it next to the others and fills in the box. Then press **Save**. A missing folder inside a mapped one also gets a **Create this folder** button, and the setup wizard offers **create it now**. Mediarium only creates a folder one level inside a folder that is mapped to your device and writable, so nothing ends up inside the container where an update would lose it.
+**The easy way:** if your movies, TV and downloads already share one mapped folder (for example `/data/Movies`, `/data/tv` and `/data/downloads`), there's nothing to change in your compose file. Under **Settings > Library > Folders**, a folder that isn't found offers **Use /data/Ebooks** (or Music, Audiobooks), which creates it next to the others and fills in the box. Then press **Save**. A missing folder inside a mapped one also gets a **Create this folder** button, and the setup wizard offers **create it now**. Mediarium only creates a folder one level inside a folder that is mapped to your device and writable, so nothing ends up inside the container where an update would lose it.
 
 **Otherwise:**
 
 1. Create the folder on your server (on a NAS, before the next step, or Docker won't start).
 2. Give it to the container: either a `*_DIR` line in `environment` pointing inside your `/data` folder (for example `MUSIC_DIR=/data/music`), or a `volumes` line such as `- /path/to/music:/music`. Then recreate the container ([INSTALL.md](./INSTALL.md#optional-folders-music-ebooks-and-audiobooks)).
-3. Switch the type on under **Settings > Media types** (music today), and check the folder under **Settings > Library > Folders and file names**, which shows whether it's **Mapped to your device**.
+3. Switch the type on under **Settings > Media types** (music today), and check the folder under **Settings > Library > Folders**, which shows whether it's **Mapped to your device**.
 
 ## On the dashboard
 
@@ -71,7 +71,7 @@ The top row of the dashboard has a card for every kind of media (Movies, TV show
 
 *The Server card opened in place: load and uptimes, what Mediarium itself uses, and one bar per folder. Press it again to close it.*
 
-The full picture (bars for CPU, memory and storage side by side, load, uptimes and the disk of each folder) is on the Server card of the **Server and backup** settings page.
+The full picture (bars for CPU, memory and storage side by side, load, uptimes and the disk of each folder) is on the Server card of the **Server** settings page (Settings > System).
 
 The numbers come from `GET /api/system/stats` (administrators only).
 

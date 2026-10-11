@@ -48,6 +48,15 @@ type Config struct {
 	// instead of the host network. See New's
 	// doc comment for exactly what that does and doesn't cover.
 	Tunnel TunnelDialer
+
+	// PortMapping asks the router to open the listen port (UPnP, then
+	// NAT-PMP). Never done with a Tunnel, whatever this says.
+	PortMapping bool
+
+	// AllowLocalAddresses lets trackers, web seeds and magnet metadata
+	// addresses be on the home network or this machine. Off by default: those
+	// addresses come from torrents anyone can write.
+	AllowLocalAddresses bool
 }
 
 // Client is one running torrent engine. Many torrents share it, each saved
@@ -63,6 +72,8 @@ type Client struct {
 	// lastIncoming is when a peer last connected to us (UnixNano; 0 = never):
 	// proof that the listen port is reachable from outside.
 	lastIncoming atomic.Int64
+
+	pm *portMapper // asks the router to open the listen port; nil with a tunnel
 }
 
 // New starts the embedded torrent engine. When cfg.Tunnel is set, this is a
@@ -94,7 +105,12 @@ func New(cfg Config) (*Client, error) {
 	tcfg.ListenPort = cfg.ListenPort
 	// The download speed limit set in Settings, shared with Usenet.
 	tcfg.DownloadRateLimiter = speed.Limiter()
+	// The upload limit has its own setting.
+	tcfg.UploadRateLimiter = speed.UploadLimiter()
 	tcfg.Seed = true
+	// Opening the port on the router is done here (see portMapper), not by the
+	// engine, so its result can be shown.
+	tcfg.NoDefaultPortForwarding = true
 	if cfg.Tunnel != nil {
 		tcfg.DisableTCP = true
 		tcfg.DisableUTP = true
@@ -107,7 +123,8 @@ func New(cfg Config) (*Client, error) {
 			c.lastIncoming.Store(time.Now().UnixNano())
 		}
 	})
-	applyNetworkPolicy(tcfg, cfg.Tunnel)
+	tcfg.Callbacks.PeerConnReadExtensionMessage = append(tcfg.Callbacks.PeerConnReadExtensionMessage, guardMetadataMessage)
+	applyNetworkPolicy(tcfg, cfg.Tunnel, cfg.AllowLocalAddresses)
 	tc, err := torrent.NewClient(tcfg)
 	if err != nil {
 		return nil, fmt.Errorf("create torrent client: %w", err)
@@ -116,11 +133,41 @@ func New(cfg Config) (*Client, error) {
 		tc.AddDialer(torrent.NetworkDialer{Network: "tcp", Dialer: cfg.Tunnel})
 	}
 	c.tc = tc
+	if cfg.Tunnel == nil {
+		c.pm = newPortMapper(tc.LocalPort)
+		if cfg.PortMapping {
+			c.pm.Start()
+		}
+	}
 	return c, nil
+}
+
+// SetPortMapping switches asking the router to open the listen port on or off.
+// It has no effect on an engine that runs through a tunnel.
+func (c *Client) SetPortMapping(on bool) {
+	if c.pm == nil {
+		return
+	}
+	if on {
+		c.pm.Start()
+	} else {
+		c.pm.Stop()
+	}
+}
+
+// PortMapping says whether the router opened the listen port.
+func (c *Client) PortMapping() PortMapStatus {
+	if c.pm == nil {
+		return PortMapStatus{State: MapOff}
+	}
+	return c.pm.Status()
 }
 
 // Close stops the engine and every torrent in it.
 func (c *Client) Close() {
+	if c.pm != nil {
+		c.pm.Stop()
+	}
 	c.tc.Close()
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -263,33 +310,18 @@ type ProgressFunc func(bytesDone, bytesTotal int64)
 // control to the pipeline (import, etc.) as soon as the download itself
 // finishes.
 func Download(ctx context.Context, t *torrent.Torrent, onProgress ProgressFunc) error {
-	t.DownloadAll()
-	total := t.Length()
+	return DownloadStalling(ctx, t, StallAfter, onProgress)
+}
 
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	last, lastMoved := t.BytesCompleted(), time.Now()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-t.Complete().On():
-			if onProgress != nil {
-				onProgress(total, total)
-			}
-			return nil
-		case <-ticker.C:
-			done := t.BytesCompleted()
-			if onProgress != nil {
-				onProgress(done, total)
-			}
-			if done > last {
-				last, lastMoved = done, time.Now()
-			} else if StallAfter > 0 && time.Since(lastMoved) >= StallAfter {
-				return ErrStalled
-			}
-		}
+// DownloadStalling is Download with its own stall limit: how long the torrent
+// may go without a byte before ErrStalled. Zero means never give up.
+func DownloadStalling(ctx context.Context, t *torrent.Torrent, stallAfter time.Duration, onProgress ProgressFunc) error {
+	select {
+	case <-t.GotInfo():
+	case <-ctx.Done():
+		return ctx.Err()
 	}
+	return NewControl(t).Download(ctx, stallAfter, onProgress)
 }
 
 // StallAfter is how long a torrent may go without receiving a single byte
@@ -325,9 +357,15 @@ func (g SeedGoal) Met(uploaded, size int64, seeding time.Duration) bool {
 // and reports true when it was; it returns false as soon as ctx is done or
 // t is removed. It does not stop t: the caller does that (Remove).
 func SeedUntilGoal(ctx context.Context, t *torrent.Torrent, startedAt time.Time, goal SeedGoal, interval time.Duration) bool {
+	return SeedUntilGoalOf(ctx, t, t.Length(), startedAt, goal, interval)
+}
+
+// SeedUntilGoalOf is SeedUntilGoal for a torrent of which only size bytes were
+// downloaded (some files left out): the ratio counts against that size.
+func SeedUntilGoalOf(ctx context.Context, t *torrent.Torrent, size int64, startedAt time.Time, goal SeedGoal, interval time.Duration) bool {
 	check := func() bool {
 		stats := t.Stats()
-		return goal.Met(stats.BytesWrittenData.Int64(), t.Length(), time.Since(startedAt))
+		return goal.Met(stats.BytesWrittenData.Int64(), size, time.Since(startedAt))
 	}
 	if !goal.Unlimited() && check() {
 		return true

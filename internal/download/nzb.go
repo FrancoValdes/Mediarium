@@ -20,6 +20,9 @@ import (
 // numbered article segments that must be fetched and reassembled in order.
 type NZB struct {
 	Files []NZBFile
+	// Password is the archive password the poster put in the NZB's head
+	// (<meta type="password">), or empty.
+	Password string
 }
 
 type NZBFile struct {
@@ -49,7 +52,13 @@ func (n NZB) TotalBytes() int64 {
 
 type nzbXML struct {
 	XMLName xml.Name     `xml:"nzb"`
-	Files   []nzbFileXML `xml:"file"`
+	Head    struct {
+		Meta []struct {
+			Type  string `xml:"type,attr"`
+			Value string `xml:",chardata"`
+		} `xml:"meta"`
+	} `xml:"head"`
+	Files []nzbFileXML `xml:"file"`
 }
 
 type nzbFileXML struct {
@@ -89,6 +98,11 @@ func ParseNZB(data []byte) (*NZB, error) {
 	}
 
 	nzb := &NZB{Files: make([]NZBFile, len(raw.Files))}
+	for _, m := range raw.Head.Meta {
+		if strings.EqualFold(m.Type, "password") && nzb.Password == "" {
+			nzb.Password = cleanArchivePassword(m.Value)
+		}
+	}
 	for i, rf := range raw.Files {
 		groups := make([]string, 0, len(rf.Groups))
 		for _, g := range rf.Groups {
@@ -190,4 +204,38 @@ func charsetReader(name string, input io.Reader) (io.Reader, error) {
 		}
 		return input, nil
 	}
+}
+
+// maxArchivePasswordLen keeps a hostile NZB from handing the unpacker a huge
+// "password".
+const maxArchivePasswordLen = 256
+
+// cleanArchivePassword trims a password read from an NZB or a release name and
+// drops one that is empty, too long or holds control characters.
+func cleanArchivePassword(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" || len(p) > maxArchivePasswordLen {
+		return ""
+	}
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f {
+			return ""
+		}
+	}
+	return p
+}
+
+// PasswordFromTitle returns the archive password written after a release name
+// as {{password}}, the way NZBGet and SABnzbd read it ("My.Movie.2024{{secret}}").
+func PasswordFromTitle(title string) string {
+	i := strings.LastIndex(title, "{{")
+	if i < 0 {
+		return ""
+	}
+	rest := title[i+2:]
+	j := strings.Index(rest, "}}")
+	if j < 0 {
+		return ""
+	}
+	return cleanArchivePassword(rest[:j])
 }

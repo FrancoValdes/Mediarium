@@ -108,7 +108,7 @@ type Option struct {
 type Field struct {
 	Name        string   `json:"name"`
 	Label       string   `json:"label"`
-	Kind        string   `json:"kind"` // text | password | number | select
+	Kind        string   `json:"kind"` // text | password | number | select | push (filled in by the browser)
 	Required    bool     `json:"required"`
 	Placeholder string   `json:"placeholder,omitempty"`
 	Default     string   `json:"default,omitempty"`
@@ -117,7 +117,7 @@ type Field struct {
 }
 
 // Secret fields are stored encrypted and never returned by the API.
-func (f Field) Secret() bool { return f.Kind == "password" }
+func (f Field) Secret() bool { return f.Kind == "password" || f.Kind == "push" }
 
 // TypeInfo describes one kind of notification target.
 type TypeInfo struct {
@@ -183,6 +183,42 @@ func Types() []TypeInfo {
 			{Name: "chatId", Label: "Chat ID", Kind: "text", Required: true, Placeholder: "123456789",
 				Help: "Send your new bot any message, then open https://api.telegram.org/bot<token>/getUpdates and copy the number after \"chat\":{\"id\":."},
 		}},
+		{Type: string(TargetMatrix), Label: "Matrix", Fields: []Field{
+			{Name: "url", Label: "Homeserver address", Kind: "text", Required: true, Placeholder: "https://matrix.example.org",
+				Help: "The address of your Matrix server, for example https://matrix.org. It is the one Element shows under Settings > General."},
+			{Name: "roomId", Label: "Room ID", Kind: "text", Required: true, Placeholder: "!abcdefg:example.org",
+				Help: "In Element open the room's settings > Advanced and copy the internal room ID. It starts with an exclamation mark. A room alias like #room:example.org will not work."},
+			{Name: "accessToken", Label: "Access token", Kind: "password", Required: true,
+				Help: "From the account that should post. In Element: Settings > Help & About > Advanced > Access Token. That account must already have joined the room. A separate bot account is best."},
+		}},
+		{Type: string(TargetHomeAssistant), Label: "Home Assistant", Fields: []Field{
+			{Name: "url", Label: "Home Assistant address", Kind: "text", Required: true, Placeholder: "http://homeassistant.local:8123",
+				Help: "The address you open Home Assistant at."},
+			{Name: "service", Label: "Notify service", Kind: "text", Placeholder: "notify", Default: "notify",
+				Help: "The name after notify. in Developer tools > Actions, for example mobile_app_your_phone. Leave it as notify to use notify.notify. Not used with a webhook."},
+			{Name: "token", Label: "Long-lived access token", Kind: "password",
+				Help: "Create one at the bottom of your profile page in Home Assistant. Needed unless you use a webhook."},
+			{Name: "webhookId", Label: "Webhook ID", Kind: "password",
+				Help: "Optional. To trigger an automation instead, give its webhook ID. Mediarium then posts the message to /api/webhook/<id> and needs no token."},
+		}},
+		{Type: string(TargetApprise), Label: "Apprise", Fields: []Field{
+			{Name: "server", Label: "Apprise API address", Kind: "text", Required: true, Placeholder: "http://apprise:8000",
+				Help: "The address of your Apprise API server."},
+			{Name: "key", Label: "Configuration key", Kind: "password",
+				Help: "Use this if you saved your services on the Apprise server under a key. Otherwise leave it empty and fill in the addresses below."},
+			{Name: "urls", Label: "Service addresses", Kind: "password", Placeholder: "discord://webhook_id/token,mailto://user:pass@gmail.com",
+				Help: "One or more Apprise addresses, like discord://... or tgram://..., separated by commas. They hold tokens, so they are stored encrypted. Not used when you give a key."},
+			{Name: "tag", Label: "Tag", Kind: "text", Placeholder: "mediarium",
+				Help: "Optional. Only send to the services with this tag. Separate several with commas."},
+			{Name: "username", Label: "Username", Kind: "text",
+				Help: "Only if your Apprise server asks for a login. Empty if not."},
+			{Name: "password", Label: "Password", Kind: "password",
+				Help: "The password for that username."},
+		}},
+		{Type: string(TargetPush), Label: "Push to this device", Fields: []Field{
+			{Name: "subscription", Label: "This device", Kind: "push", Required: true,
+				Help: "Press Allow on the phone or computer that should get the notifications. On an iPhone or iPad, add Mediarium to the Home Screen first and open it from there."},
+		}},
 		{Type: string(TargetWebhook), Label: "Webhook", Fields: []Field{
 			{Name: "url", Label: "URL", Kind: "password", Required: true, Placeholder: "https://example.com/hook",
 				Help: "Receives an HTTP POST with a JSON body."},
@@ -235,8 +271,9 @@ func Validate(typeName string, cfg map[string]string) error {
 		if len(get(f.Name)) > maxFieldLen {
 			return fmt.Errorf("%s is too long. Check that you pasted the right thing.", f.Label)
 		}
-		// A secret that is an address is checked as an address further down.
-		if f.Secret() && f.Name != "url" {
+		// A secret that is an address is checked as an address further down,
+		// and a push subscription by ParsePushSubscription.
+		if f.Secret() && f.Name != "url" && f.Name != "urls" && f.Kind != "push" {
 			if msg := inputcheck.APIKey(get(f.Name)); msg != "" {
 				return fmt.Errorf("%s: %s", f.Label, msg)
 			}
@@ -285,6 +322,54 @@ func Validate(typeName string, cfg map[string]string) error {
 		return checkHTTPURL("https://hooks.slack.com/services/...", get("url"))
 	case TargetDiscord:
 		return checkHTTPURL("https://discord.com/api/webhooks/...", get("url"))
+	case TargetMatrix:
+		if err := checkHTTPURL("https://matrix.example.org", get("url")); err != nil {
+			return err
+		}
+		if !matrixRoomID.MatchString(get("roomId")) {
+			return errors.New("The room ID should look like !abcdefg:example.org. Aliases that start with # won't work: copy the internal room ID from the room's advanced settings.")
+		}
+	case TargetHomeAssistant:
+		if err := checkHTTPURL("http://homeassistant.local:8123", get("url")); err != nil {
+			return err
+		}
+		if svc := get("service"); svc != "" && !haServiceName.MatchString(svc) {
+			return errors.New("The notify service can only have lowercase letters, numbers and underscores, for example mobile_app_your_phone.")
+		}
+		if id := get("webhookId"); id != "" && !haWebhookID.MatchString(id) {
+			return errors.New("The webhook ID can only have letters, numbers, dashes and underscores.")
+		}
+		if get("webhookId") == "" && get("token") == "" {
+			return errors.New("Add a long-lived access token, or a webhook ID if you want to trigger an automation.")
+		}
+	case TargetApprise:
+		if err := checkHTTPURL("http://apprise:8000", get("server")); err != nil {
+			return err
+		}
+		key, urls := get("key"), get("urls")
+		switch {
+		case key != "" && urls != "":
+			return errors.New("Use either a configuration key or service addresses, not both.")
+		case key == "" && urls == "":
+			return errors.New("Add the service addresses to send to, or the key of a configuration saved on your Apprise server.")
+		case key != "" && !appriseKey.MatchString(key):
+			return errors.New("The configuration key can only have letters, numbers, dashes and underscores, up to 64 characters.")
+		}
+		for _, u := range SplitAppriseURLs(urls) {
+			if !appriseURL.MatchString(u) {
+				return fmt.Errorf("%q isn't an Apprise address. They look like discord://id/token, with the service name first, and are separated by commas.", clipPlain(u, 30))
+			}
+		}
+		if t := get("tag"); len(t) > 100 || strings.ContainsAny(t, "\r\n") {
+			return errors.New("Keep the tag on one line and under 100 characters.")
+		}
+		if (get("username") == "") != (get("password") == "") {
+			return errors.New("Fill in both the username and the password, or leave both empty.")
+		}
+	case TargetPush:
+		if _, err := ParsePushSubscription(get("subscription")); err != nil {
+			return err
+		}
 	case TargetTelegram:
 		if !telegramChatID.MatchString(get("chatId")) {
 			return errors.New("The chat ID should be a number, like 123456789 (groups start with a minus sign), or a channel name like @mychannel.")
@@ -324,6 +409,28 @@ const maxFieldLen = 4000
 
 // telegramChatID is a numeric chat id (negative for groups) or an @channel name.
 var telegramChatID = regexp.MustCompile(`^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{3,31})$`)
+
+// matrixRoomID is a Matrix room id: !opaque:server.
+var matrixRoomID = regexp.MustCompile(`^![^\s:/]+:[A-Za-z0-9.\-\[\]:]+$`)
+
+// haServiceName is the part after "notify." in a Home Assistant service name.
+var haServiceName = regexp.MustCompile(`^[a-z0-9_]{1,100}$`)
+
+// haWebhookID is what Home Assistant allows in a webhook id.
+var haWebhookID = regexp.MustCompile(`^[A-Za-z0-9_\-]{1,255}$`)
+
+// appriseKey is a configuration key on an Apprise API server.
+var appriseKey = regexp.MustCompile(`^[A-Za-z0-9_\-]{1,64}$`)
+
+// appriseURL is an Apprise service address: a schema, then ://, then something.
+var appriseURL = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.\-]*://\S+$`)
+
+func clipPlain(s string, n int) string {
+	if len([]rune(s)) <= n {
+		return s
+	}
+	return string([]rune(s)[:n]) + "..."
+}
 
 // checkHTTPURL wants a full web address that starts with http:// or https://.
 func checkHTTPURL(example, raw string) error {

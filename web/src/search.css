@@ -1,0 +1,47 @@
+/* Search: two tabs for what you are looking for (titles or releases), one
+   large search bar, and a release table as rows on the page. Scoped to
+   .search-page. */
+
+.search-modes { display: inline-flex; gap: 3px; padding: 3px; margin: 0 0 14px; border-radius: 13px; background: color-mix(in srgb, var(--text) 6%, transparent); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25); }
+.search-modes a { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 4px 10px 10px 10px; color: var(--text-dim); font-weight: 600; text-decoration: none; transition: background 0.2s var(--ease), color 0.2s var(--ease); }
+.search-modes a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); text-decoration: none; }
+.search-modes a.active { color: var(--text); background: var(--surface); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px var(--rim), 0 4px 12px -4px var(--lift); }
+.search-modes a.active .ico, .search-modes a.active svg { color: var(--sec, var(--accent)); }
+
+.search-bar {
+  display: flex; align-items: center; gap: 12px; margin: 0 0 22px; padding: 6px 8px 6px 18px;
+  border-radius: 6px 22px 22px 22px; background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px var(--rim), 0 20px 34px -26px var(--lift);
+  transition: box-shadow 0.16s var(--ease);
+}
+.search-bar:focus-within { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent), 0 0 0 6px color-mix(in srgb, var(--accent) 12%, transparent), 0 20px 34px -26px var(--lift); }
+.search-bar > svg, .search-bar > .ico { flex: none; color: var(--text-faint); }
+.search-bar:focus-within > svg, .search-bar:focus-within > .ico { color: var(--accent); }
+.search-page .search-bar input {
+  flex: 1 1 auto; min-width: 0; max-width: none; height: 52px; padding: 0 6px; border: 0; border-radius: 0; background: none; box-shadow: none;
+  font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; letter-spacing: -0.015em; color: var(--text);
+}
+.search-page .search-bar input:focus, .search-page .search-bar input:focus-visible { box-shadow: none; background: none; border: 0; }
+.search-page .search-bar input::placeholder { color: var(--text-faint); font-weight: 500; }
+.search-page .search-bar button { flex: none; height: 44px; padding: 0 18px; border-radius: 4px 16px 16px 16px; }
+.search-lede { margin: 0 0 14px; max-width: 80ch; color: var(--text-dim); }
+
+.search-hint { display: flex; align-items: center; gap: 16px; padding: 18px 20px; border-radius: 4px 16px 16px 16px; color: var(--text-dim); background: color-mix(in srgb, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 1px var(--rim); }
+.search-hint p { margin: 0; }
+.search-hint-shapes { display: flex; gap: 6px; flex: none; }
+.search-hint-shapes .kind-glyph:first-child { color: var(--c-movie); transform: rotate(-8deg); }
+.search-hint-shapes .kind-glyph:last-child { color: var(--c-tv); transform: rotate(6deg); }
+
+.search-page .rail-head h2 { font-size: 1.25rem; letter-spacing: -0.02em; }
+.search-page .rail-head > span { font-family: var(--font-mono); font-size: 0.8rem; flex: 0 0 auto; }
+
+/* release results */
+.search-page .toolbar { margin-bottom: 8px; }
+.search-page .toolbar > span:first-child { font-family: var(--font-mono); font-size: 0.8rem; }
+.search-page table { width: 100%; border-collapse: separate; border-spacing: 0 6px; }
+.search-page table th { text-align: left; font-family: var(--font-mono); font-size: 0.68rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); padding: 0 10px 2px; border: 0; background: none; }
+.search-page table td { padding: 10px; border: 0; background: color-mix(in srgb, var(--text) 3.5%, transparent); vertical-align: middle; }
+.search-page table td:first-child { border-radius: 4px 0 0 12px; font-family: var(--font-mono); font-size: 0.8rem; overflow-wrap: anywhere; }
+.search-page table td:last-child { border-radius: 0 12px 12px 0; text-align: right; }
+.search-page table tr:hover > td { background: color-mix(in srgb, var(--text) 5.5%, transparent); }
+.search-page table .badge { font-family: var(--font-mono); font-size: 0.64rem; font-weight: 500; letter-spacing: 0.06em; border-radius: 3px 8px 8px 8px; }

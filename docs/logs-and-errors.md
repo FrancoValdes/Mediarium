@@ -29,10 +29,10 @@ Every kind has a fixed name (a code, such as `usenet.too_many_connections`). The
 
 - **Cards** at the top count errors and warnings today (since midnight) and in the last 7 days. An error is something that failed and didn't fix itself. A warning is something that went wrong but Mediarium worked around, or that may pass by itself.
 - **Filters** narrow the list by level, by part of the app, by time (a preset or your own dates), by words (**Search the log** looks in the message, the technical detail and the name of the movie or show) and to **Only unread**. **Clear filters** puts them back.
-- **Each row** shows the level, the part of the app, a plain title, when it last happened, how many times, and the movie or show it was about (a link). A red **New** tag stays until you mark it as read.
-- **Open a row** to see **What happened**, **What to try** (with a button to the settings page where it can be fixed) and **Technical detail** (with a **Copy** button). Activity and the title pages use plain words. The exact error text is here. A problem the page has no help for yet shows its own message and the detail.
-- **Mark as read** on a row, or **Mark all as read** at the top, clears the **New** tags.
-- The list shows 50 problems at a time. **Show more** adds 50.
+- **Each problem** is a card with the level, the part of the app, a plain title, when it last happened, how many times, the movie or show it was about and the download (links). A red **New** tag stays until you mark it as read. On a wide screen the cards sit three across, on a medium one two across, and on a phone one under the other.
+- **Open a card** (the arrow at its top right) to see **What happened**, **What to try** (with a button to the settings page where it can be fixed) and **Technical detail** (with a **Copy** button). Activity and the title pages use plain words. The exact error text is here. A problem the page has no help for yet shows its own message and the detail.
+- **Mark as read** on a card clears its **New** tag. **Mark all as read** at the top clears every unread problem that matches the filters you set (all of them when no filter is on), not only the ones on screen. It asks first and says how many it will mark.
+- The page loads 30 problems at a time and says how many there are in all ("Showing 30 of 412"). **Show 30 more** adds the next 30. The cards at the top always count everything, and marking a problem as read doesn't move the list.
 - The page stays up to date while it's open.
 
 The same problem happening again within 10 minutes is counted on the same row ("14 times, last 2 minutes ago") instead of adding a new one. When it is about a movie, show or album, the same problem for that title is also counted on one row for 24 hours, even when a different download caused it. A different indexer, server or title gets its own row.
@@ -44,10 +44,10 @@ The same problem happening again within 10 minutes is counted on the same row ("
 
 ## Copy for support and the log file
 
-- **Copy for support** copies the same report as **Settings > System > Server and backup > Help and support**: version, database, setup warnings, the latest problems from this page and the last 500 lines of the log.
-- **Download log file** saves the problems as a plain text file. It follows your filters, so to save everything, clear them first.
+- **Copy for support** copies the report you attach to a support request: version, database, setup warnings, the latest problems from this page and the last 500 lines of the log.
+- **Download log file** saves the problems as a plain text file. It holds every problem that matches your filters, not only the ones loaded on the page, so to save everything, clear the filters first.
 
-Passwords, API keys and tokens are taken out before anything is stored, so what you copy or download is safe to send.
+Passwords, API keys and tokens are taken out before anything is stored, so what you copy or download is safe to send. To send it straight from Mediarium, use the bug button at the bottom of the sidebar ([Report a problem or share an idea](report-a-problem.md)).
 
 ## Messages about errors
 
@@ -65,11 +65,11 @@ Lists that come from outside services don't raise it: Discover (TMDB, MusicBrain
 
 ## Examples
 
-**"Too many connections to your Usenet provider."** Your provider allows only so many connections at once for one login. If another program such as SABnzbd uses the same account, stop it, or lower the number of connections in **Settings > Downloading > Usenet and torrents**. Mediarium lowers the number itself while the provider complains, so downloads keep going, just slower.
+**"Too many connections to your Usenet provider."** Your provider allows only so many connections at once for one login. If another program such as SABnzbd uses the same account, stop it, or lower the number of connections in **Settings > Downloading > Usenet**. Mediarium lowers the number itself while the provider complains, so downloads keep going, just slower.
 
 **"Could not get a file from an indexer."** A download was chosen, but the indexer didn't hand over the file that starts it (the NZB or torrent). This is filed under **Indexers**, not Usenet, because your Usenet provider was never asked. Use **Test** on the indexer. If it works, retry the download in **Activity**.
 
-**"The disk is full."** Free some space, or run **Clean up now** on **Settings > System > Server and backup**. Then open **Activity** and retry the download.
+**"The disk is full."** Free some space, or run **Clean up now** on **Settings > System > Server**. Then open **Activity** and retry the download.
 
 **"Mediarium may not write to a folder."** Give the user Mediarium runs as (the `PUID` and `PGID` you set) read and write access to the folder. On a Synology, check the permissions of the shared folder.
 

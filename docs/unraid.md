@@ -1,6 +1,6 @@
 # Mediarium on Unraid
 
-Mediarium runs on Unraid as a normal Docker container. A one-click entry in **Community Applications** is coming soon; until then you add the container yourself with Unraid's **Add Container** form. It takes about five minutes.
+Mediarium runs on Unraid as a normal Docker container. You add the container yourself with Unraid's **Add Container** form, so nothing has to be listed in the Apps tab first. It takes about five minutes.
 
 General background (folders, hardlinks, updating) is in the main [install guide](./INSTALL.md).
 
@@ -72,7 +72,7 @@ Music, ebooks and audiobooks each switch on under **Settings → Media types**. 
 
 ### Adding one later
 
-Edit the container (Docker tab → the icon → **Edit**), add the variable or path, and **Apply**. Then switch the type on in Mediarium under **Settings → Media types** and check the folder under **Settings → Library → Folders and file names**.
+Edit the container (Docker tab → the icon → **Edit**), add the variable or path, and **Apply**. Then switch the type on in Mediarium under **Settings → Media types** and check the folder under **Settings → Library → Folders**.
 
 ## Running next to Radarr, Sonarr and SABnzbd
 
@@ -82,11 +82,11 @@ Mediarium runs beside your current apps. It has its own port (8264) and its own 
 
 On the **Docker** tab, click **Check for Updates** at the bottom. When Mediarium shows **update ready**, click it (or the icon → **Update**). Your settings and library are kept. Read the [changelog](../CHANGELOG.md) first and back up before a big update.
 
-When a new version is out, administrators see a card on the dashboard and on **Settings → System → Server and backup**. If the release is signed, the card also has an **Update now** button. See [Update now](./INSTALL.md#update-now-docker-image).
+When a new version is out, administrators see a card on the dashboard and on **Settings → General**. If the release is signed, the card also has an **Update now** button. See [Update now](./INSTALL.md#update-now-docker-image).
 
 ## Backing up
 
-Everything that is not a media file is in `/mnt/user/appdata/mediarium` (`app.db` and `secret.key`; keep them together). The **Appdata Backup** plugin can back it up on a schedule, or use **Settings → System → Server and backup** in Mediarium to download a backup zip.
+Everything that is not a media file is in `/mnt/user/appdata/mediarium` (`app.db` and `secret.key`; keep them together). The **Appdata Backup** plugin can back it up on a schedule, or use **Settings → System → Backup and restore** in Mediarium to download a backup zip.
 
 ## Troubleshooting
 

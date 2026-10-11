@@ -1,4 +1,8 @@
+import ExtraFolders from '../../components/ExtraFolders'
+import FilePermissionsCard from '../../components/FilePermissionsCard'
+import MetadataFilesCard from '../../components/MetadataFilesCard'
 import RenameCard from '../../components/RenameCard'
+import ScriptCard from '../../components/ScriptCard'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../../components/Toast'
@@ -12,23 +16,29 @@ import { useModules } from '../../ModulesContext'
 import { firstError, folderPath, required } from '../../validate'
 import { coreParent, pathInside, type FolderKind } from '../../setupHelpers'
 import { FieldError, FormProblem, useValidation } from '../../useValidation'
+import { t } from '../../i18n'
+import TipLabel from '../../components/TipLabel'
 
 // A quick check while typing; the full one (known tokens, padding, a title
 // in every name) comes from the server with the preview and on save.
 function namingFormat(value: string): string | null {
   const v = value.trim()
   if (v === '') return null
-  if (/[\\/]/.test(v)) return "A file name can't contain / or \\. Only write the name of the file, the folder is chosen for you."
+  if (/[\\/]/.test(v)) return t("A file name can't contain / or \\. Only write the name of the file, the folder is chosen for you.")
   const opens = (v.match(/\{/g) ?? []).length
   const closes = (v.match(/\}/g) ?? []).length
-  if (opens !== closes) return 'A { or } is missing. Wrap each token in curly braces, like {Movie Title}.'
+  if (opens !== closes) return t('A { or } is missing. Wrap each token in curly braces, like {Movie Title}.')
   return null
 }
 
-function LibrarySection() {
+// One of the two Library pages shares this form: the folders, or the naming rules.
+// Each page saves only its own fields.
+function LibrarySection({ part }: { part: 'folders' | 'naming' }) {
   const [settings, setSettings] = useState<SettingsData | null>(null)
   const [moviesPath, setMoviesPath] = useState('')
   const [tvPath, setTvPath] = useState('')
+  const [movieCopiesPath, setMovieCopiesPath] = useState('')
+  const [tvCopiesPath, setTvCopiesPath] = useState('')
   const [musicPath, setMusicPath] = useState('')
   const [ebooksPath, setEbooksPath] = useState('')
   const [audiobooksPath, setAudiobooksPath] = useState('')
@@ -47,25 +57,29 @@ function LibrarySection() {
   const musicOn = on('music')
   const ebooksOn = on('ebooks')
   const audiobooksOn = on('audiobooks')
-  const errors = {
-    moviesPath: firstError(required(moviesPath, 'Add the folder your movies live in, for example /movies.'), folderPath(moviesPath, '/movies')),
+  const pathErrors = {
+    moviesPath: firstError(required(moviesPath, t('Add the folder your movies live in, for example /movies.')), folderPath(moviesPath, '/movies')),
     tvPath: folderPath(tvPath, '/tv'),
+    movieCopiesPath: movieCopiesPath.trim() ? folderPath(movieCopiesPath, '/movies-4k') : null,
+    tvCopiesPath: tvCopiesPath.trim() ? folderPath(tvCopiesPath, '/tv-4k') : null,
     musicPath: musicOn ? folderPath(musicPath, '/music') : null,
-    ebooksPath: ebooksOn ? firstError(required(ebooksPath, 'Add the folder your ebooks go in, for example /books.'), folderPath(ebooksPath, '/books')) : null,
-    audiobooksPath: audiobooksOn ? firstError(required(audiobooksPath, 'Add the folder your audiobooks go in, for example /audiobooks.'), folderPath(audiobooksPath, '/audiobooks')) : null,
-    downloadsPath: firstError(required(downloadsPath, 'Add the folder downloads should go to, for example /downloads.'), folderPath(downloadsPath, '/downloads')),
-    customFormat: namingPreset === 'custom' ? firstError(required(customFormat, 'Add a naming format, for example {Movie Title} ({Year}).'), namingFormat(customFormat)) : null,
+    ebooksPath: ebooksOn ? firstError(required(ebooksPath, t('Add the folder your ebooks go in, for example /books.')), folderPath(ebooksPath, '/books')) : null,
+    audiobooksPath: audiobooksOn ? firstError(required(audiobooksPath, t('Add the folder your audiobooks go in, for example /audiobooks.')), folderPath(audiobooksPath, '/audiobooks')) : null,
+    downloadsPath: firstError(required(downloadsPath, t('Add the folder downloads should go to, for example /downloads.')), folderPath(downloadsPath, '/downloads')),
+  }
+  const namingErrors = {
+    customFormat: namingPreset === 'custom' ? firstError(required(customFormat, t('Add a naming format, for example {Movie Title} ({Year}).')), namingFormat(customFormat)) : null,
     episodeFormat: namingPreset === 'custom' ? namingFormat(episodeFormat) : null,
     illegalCharReplacement:
       illegalCharMode === 'replace'
         ? firstError(
-            required(illegalCharReplacement, 'Type the character to use instead, for example -.'),
+            required(illegalCharReplacement, t('Type the character to use instead, for example -.')),
             // eslint-disable-next-line no-control-regex
-            /[<>:"/\\|?*\u0000-\u001f]/.test(illegalCharReplacement) && "That character isn't allowed in file names either. Try - or _.",
+            /[<>:"/\\|?*\u0000-\u001f]/.test(illegalCharReplacement) && t("That character isn't allowed in file names either. Try - or _."),
           )
         : null,
   }
-  const v = useValidation(errors)
+  const v = useValidation(part === 'folders' ? pathErrors : namingErrors)
   // Where a missing folder could go instead: next to movies, TV and downloads
   // when they share one mapped folder (for example /data/Ebooks).
   const suggestFor = (kind: FolderKind) => {
@@ -81,6 +95,8 @@ function LibrarySection() {
         setSettings(s)
         setMoviesPath(s.moviesPath)
         setTvPath(s.tvPath ?? '')
+        setMovieCopiesPath(s.movieCopiesPath ?? '')
+        setTvCopiesPath(s.tvCopiesPath ?? '')
         setMusicPath(s.musicPath ?? '')
         setEbooksPath(s.ebooksPath ?? '')
         setAudiobooksPath(s.audiobooksPath ?? '')
@@ -100,22 +116,29 @@ function LibrarySection() {
     if (!v.attempt()) return
     setSaving(true)
     try {
-      const updated = await api.putSettings({
-        moviesPath,
-        tvPath,
-        musicPath: musicPath.trim(),
-        ebooksPath: ebooksPath.trim() || undefined,
-        audiobooksPath: audiobooksPath.trim() || undefined,
-        downloadsPath,
-        namingPreset,
-        movieNameFormat: customFormat,
-        episodeNameFormat: episodeFormat,
-        illegalCharMode,
-        illegalCharReplacement,
-        importConflictPolicy,
-      })
+      const updated = await api.putSettings(
+        part === 'folders'
+          ? {
+              moviesPath,
+              tvPath,
+              movieCopiesPath: movieCopiesPath.trim(),
+              tvCopiesPath: tvCopiesPath.trim(),
+              musicPath: musicPath.trim(),
+              ebooksPath: ebooksPath.trim() || undefined,
+              audiobooksPath: audiobooksPath.trim() || undefined,
+              downloadsPath,
+            }
+          : {
+              namingPreset,
+              movieNameFormat: customFormat,
+              episodeNameFormat: episodeFormat,
+              illegalCharMode,
+              illegalCharReplacement,
+              importConflictPolicy,
+            },
+      )
       setSettings(updated)
-      toast.success('Saved.')
+      toast.success(t('Saved.'))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
@@ -127,21 +150,31 @@ function LibrarySection() {
     return loadError ? (
       <section className="card span-all">
         <p className="error-text">{loadError}</p>
-        <button onClick={load}>Try again</button>
+        <button onClick={load}>{t('Try again')}</button>
       </section>
     ) : null
   }
 
-  return (
+  const saveRow = (
+    <div className="span-all" style={{ marginBottom: 6 }}>
+      <button className="primary" onClick={save} disabled={saving}>
+        {t('Save')}
+      </button>
+      <FormProblem v={v} />
+    </div>
+  )
+
+  if (part === 'folders') {
+    return (
     <>
       <fieldset className="group folders span-all">
         <legend>
-          <Icon name="folder" size={14} /> Library folders
+          <Icon name="folder" size={14} /> <TipLabel text={t('Keep downloads and libraries inside one shared parent folder, such as /data. Finished files are then hardlinked: instant, with no extra disk space.')} learnMore="install-docker#why-one-data-folder-hardlinks">{t('Library folders')}</TipLabel>
         </legend>
         <div className="path-cols">
           <div className="path-col">
             <label>
-              Movies folder
+              {t('Movies folder')}
               <input value={moviesPath} onChange={(e) => setMoviesPath(e.target.value)} {...v.bind('moviesPath', moviesPath, setMoviesPath)} />
               <FieldError v={v} name="moviesPath" />
             </label>
@@ -149,7 +182,7 @@ function LibrarySection() {
           </div>
           <div className="path-col">
             <label>
-              TV folder
+              {t('TV folder')}
               <input value={tvPath} onChange={(e) => setTvPath(e.target.value)} {...v.bind('tvPath', tvPath, setTvPath)} />
               <FieldError v={v} name="tvPath" />
             </label>
@@ -157,7 +190,7 @@ function LibrarySection() {
           </div>
           <div className={`path-col${musicOn ? '' : ' path-off'}`}>
             <label>
-              Music folder
+              {t('Music folder')}
               <input value={musicPath} onChange={(e) => setMusicPath(e.target.value)} placeholder="/music" spellCheck={false} disabled={!musicOn} {...v.bind('musicPath', musicPath, setMusicPath)} />
               <FieldError v={v} name="musicPath" />
             </label>
@@ -166,33 +199,33 @@ function LibrarySection() {
                 <FolderStatus path={musicPath} />
                 <div>
                   <button className="btn-sm btn-with-icon" onClick={() => navigate('/music/import')}>
-                    <Icon name="folder" size={15} /> Import my existing collection
+                    <Icon name="folder" size={15} /> {t('Import my existing collection')}
                   </button>
                 </div>
               </>
             ) : (
-              <small className="path-note">Turn on Music in Media types first.</small>
+              <small className="path-note">{t('Turn on Music in Media types first.')}</small>
             )}
           </div>
           <div className={`path-col${ebooksOn ? '' : ' path-off'}`}>
             <label>
-              Ebooks folder
+              {t('Ebooks folder')}
               <input value={ebooksPath} onChange={(e) => setEbooksPath(e.target.value)} placeholder="/books" spellCheck={false} disabled={!ebooksOn} {...v.bind('ebooksPath', ebooksPath, setEbooksPath)} />
               <FieldError v={v} name="ebooksPath" />
             </label>
-            {ebooksOn ? <FolderStatus path={ebooksPath} suggest={suggestFor('ebooks')} onUse={setEbooksPath} /> : <small className="path-note">Turn on Ebooks in Media types first.</small>}
+            {ebooksOn ? <FolderStatus path={ebooksPath} suggest={suggestFor('ebooks')} onUse={setEbooksPath} /> : <small className="path-note">{t('Turn on Ebooks in Media types first.')}</small>}
           </div>
           <div className={`path-col${audiobooksOn ? '' : ' path-off'}`}>
             <label>
-              Audiobooks folder
+              {t('Audiobooks folder')}
               <input value={audiobooksPath} onChange={(e) => setAudiobooksPath(e.target.value)} placeholder="/audiobooks" spellCheck={false} disabled={!audiobooksOn} {...v.bind('audiobooksPath', audiobooksPath, setAudiobooksPath)} />
               <FieldError v={v} name="audiobooksPath" />
             </label>
-            {audiobooksOn ? <FolderStatus path={audiobooksPath} suggest={suggestFor('audiobooks')} onUse={setAudiobooksPath} /> : <small className="path-note">Turn on Audiobooks in Media types first.</small>}
+            {audiobooksOn ? <FolderStatus path={audiobooksPath} suggest={suggestFor('audiobooks')} onUse={setAudiobooksPath} /> : <small className="path-note">{t('Turn on Audiobooks in Media types first.')}</small>}
           </div>
           <div className="path-col">
             <label>
-              Downloads folder
+              <TipLabel text={t('Where downloads are kept until they are imported. Put it next to your libraries so imports are hardlinks, not slow copies.')}>{t('Downloads folder')}</TipLabel>
               <input value={downloadsPath} onChange={(e) => setDownloadsPath(e.target.value)} {...v.bind('downloadsPath', downloadsPath, setDownloadsPath)} />
               <FieldError v={v} name="downloadsPath" />
             </label>
@@ -201,34 +234,81 @@ function LibrarySection() {
         </div>
         <HardlinkWarning
           libraries={[
-            { label: 'movies', path: moviesPath },
-            { label: 'TV shows', path: tvPath },
-            ...(musicOn ? [{ label: 'music', path: musicPath }] : []),
-            ...(ebooksOn ? [{ label: 'ebooks', path: ebooksPath }] : []),
-            ...(audiobooksOn ? [{ label: 'audiobooks', path: audiobooksPath }] : []),
+            { label: t('movies'), path: moviesPath },
+            { label: t('TV shows'), path: tvPath },
+            ...(musicOn ? [{ label: t('music'), path: musicPath }] : []),
+            ...(ebooksOn ? [{ label: t('ebooks'), path: ebooksPath }] : []),
+            ...(audiobooksOn ? [{ label: t('audiobooks'), path: audiobooksPath }] : []),
           ]}
           downloads={downloadsPath}
         />
       </fieldset>
 
+      <fieldset className="group folders span-all">
+        <legend>
+          <Icon name="folder" size={14} /> {t('More folders for other titles (optional)')}
+        </legend>
+        <p style={{ marginTop: 0, color: 'var(--text-dim)' }}>
+          {t('A place for different titles, such as a kids folder or a second drive. Each movie or show is kept in one folder: the one you pick when you add it (you can change it on its page). Add the folders to Plex, Jellyfin or Emby as libraries.')}
+        </p>
+        <div className="path-cols">
+          <ExtraFolders kind="movies" />
+          <ExtraFolders kind="tv" />
+        </div>
+      </fieldset>
+
+      <fieldset className="group folders span-all">
+        <legend>
+          <Icon name="folder" size={14} /> {t('Second copies of the same title (optional)')}
+        </legend>
+        <p style={{ marginTop: 0, color: 'var(--text-dim)' }}>
+          {t('The same title kept twice, in two qualities, such as a 4K copy for the big screen next to the 1080p one. The copies go in a folder of their own, so they never get mixed up with the main files. Add that folder to Plex, Jellyfin or Emby as its own library. Leave these empty to keep one copy of everything.')}
+        </p>
+        <div className="path-cols">
+          <div className="path-col">
+            <label>
+              {t('Folder for second copies of movies')}
+              <input value={movieCopiesPath} onChange={(e) => setMovieCopiesPath(e.target.value)} placeholder="/movies-4k" spellCheck={false} {...v.bind('movieCopiesPath', movieCopiesPath, setMovieCopiesPath)} />
+              <FieldError v={v} name="movieCopiesPath" />
+            </label>
+            {movieCopiesPath.trim() && <FolderStatus path={movieCopiesPath} />}
+          </div>
+          <div className="path-col">
+            <label>
+              {t('Folder for second copies of shows')}
+              <input value={tvCopiesPath} onChange={(e) => setTvCopiesPath(e.target.value)} placeholder="/tv-4k" spellCheck={false} {...v.bind('tvCopiesPath', tvCopiesPath, setTvCopiesPath)} />
+              <FieldError v={v} name="tvCopiesPath" />
+            </label>
+            {tvCopiesPath.trim() && <FolderStatus path={tvCopiesPath} />}
+          </div>
+        </div>
+        <small className="path-note">{t('For example /movies-4k and /tv-4k. Each title can then keep a second copy there, which you choose on its page.')}</small>
+      </fieldset>
+      {saveRow}
+    </>
+    )
+  }
+
+  return (
+    <>
       <fieldset className="group span-all">
         <legend>
-          <Icon name="list" size={14} /> Naming and importing
+          <Icon name="list" size={14} /> {t('Naming and importing')}
         </legend>
         <div className="triple-cols">
           <div className="grid-form">
             <label>
-              Naming preset
+              <TipLabel text={t('How imported files are named and filed, to suit your media player. Files already in the library keep their names until you rename them.')} learnMore="library#file-names">{t('Naming preset')}</TipLabel>
               <select value={namingPreset} onChange={(e) => setNamingPreset(e.target.value)}>
                 <option value="plex">Plex</option>
                 <option value="jellyfin">Jellyfin / Emby</option>
                 <option value="kodi">Kodi</option>
-                <option value="minimal">Simple</option>
-                <option value="custom">Custom</option>
+                <option value="minimal">{t('Simple')}</option>
+                <option value="custom">{t('Custom')}</option>
               </select>
             </label>
             {namingPreset === 'custom' ? (
-              <small style={{ color: 'var(--text-dim)' }}>Build your own movie and episode file names below.</small>
+              <small style={{ color: 'var(--text-dim)' }}>{t('Build your own movie and episode file names below.')}</small>
             ) : (
               <>
                 <NamingPreview preset={namingPreset} />
@@ -238,38 +318,38 @@ function LibrarySection() {
           </div>
           <div className="grid-form">
             <label>
-              Illegal characters in names
+              <TipLabel text={t('Some systems refuse characters like : ? and * in file names. Remove drops them from titles; Replace puts the character you choose in their place.')}>{t('Illegal characters in names')}</TipLabel>
               <select value={illegalCharMode} onChange={(e) => setIllegalCharMode(e.target.value)}>
-                <option value="strip">Remove them</option>
-                <option value="replace">Replace them</option>
+                <option value="strip">{t('Remove them')}</option>
+                <option value="replace">{t('Replace them')}</option>
               </select>
             </label>
             {illegalCharMode === 'replace' && (
               <label>
-                Replace with
+                {t('Replace with')}
                 <input value={illegalCharReplacement} onChange={(e) => setIllegalCharReplacement(e.target.value)} maxLength={3} {...v.bind('illegalCharReplacement', illegalCharReplacement, setIllegalCharReplacement)} />
                 <FieldError v={v} name="illegalCharReplacement" />
               </label>
             )}
-            <small style={{ color: 'var(--text-dim)' }}>Characters like : ? * aren't allowed in file names on some systems.</small>
+            <small style={{ color: 'var(--text-dim)' }}>{t("Characters like : ? * aren't allowed in file names on some systems.")}</small>
           </div>
           <div className="grid-form">
             <label>
-              If a file already exists
+              <TipLabel text={t('What to do when an import would replace a file already in your library. Ask me parks the download in Activity until you decide.')}>{t('If a file already exists')}</TipLabel>
               <select value={importConflictPolicy} onChange={(e) => setImportConflictPolicy(e.target.value)}>
-                <option value="skip">Skip (leave the existing file alone)</option>
-                <option value="overwrite">Always overwrite</option>
-                <option value="overwrite_if_better">Overwrite only if the new file is better</option>
-                <option value="ask">Ask me each time (in Activity)</option>
+                <option value="skip">{t('Skip (leave the existing file alone)')}</option>
+                <option value="overwrite">{t('Always overwrite')}</option>
+                <option value="overwrite_if_better">{t('Overwrite only if the new file is better')}</option>
+                <option value="ask">{t('Ask me each time (in Activity)')}</option>
               </select>
             </label>
-            <small style={{ color: 'var(--text-dim)' }}>What to do when a download would replace a file already in your library.</small>
+            <small style={{ color: 'var(--text-dim)' }}>{t('What to do when a download would replace a file already in your library.')}</small>
           </div>
         </div>
         {namingPreset === 'custom' && <NamingBuilder movieFormat={customFormat} setMovieFormat={setCustomFormat} episodeFormat={episodeFormat} setEpisodeFormat={setEpisodeFormat} v={v} />}
         <div style={{ marginTop: 14 }}>
           <button className="primary" onClick={save} disabled={saving}>
-            Save
+            {t('Save')}
           </button>
           <FormProblem v={v} />
         </div>
@@ -278,11 +358,25 @@ function LibrarySection() {
   )
 }
 
+// Settings > Library > Folders: where the files live.
 export default function MediaSettings() {
   return (
     <div className="settings-stack">
-      <LibrarySection />
+      <LibrarySection part="folders" />
+      <FilePermissionsCard />
+    </div>
+  )
+}
+
+// Settings > Library > File names and importing: how files are named and what
+// happens after a download, including the script that can run afterwards.
+export function NamingSettings() {
+  return (
+    <div className="settings-stack">
+      <LibrarySection part="naming" />
+      <MetadataFilesCard />
       <RenameCard />
+      <ScriptCard />
     </div>
   )
 }

@@ -4,6 +4,8 @@ import { api, type SearchResult } from '../api'
 import Icon from '../components/Icon'
 import ReleaseTable from '../components/ReleaseTable'
 import { useToast } from '../components/Toast'
+import { plural, t } from '../i18n'
+import '../search.css'
 
 // Search every indexer for a release by name, the way you would on the
 // indexer's own site, and download one. Mediarium works out the movie or show
@@ -36,7 +38,7 @@ export default function ReleaseSearch() {
     setGrabbing(r.downloadUrl)
     try {
       await api.searchGrab({ releaseTitle: r.title, downloadUrl: r.downloadUrl, sizeBytes: r.sizeBytes, protocol: r.protocol })
-      toast.success(`Added to the downloads: ${r.title}`)
+      toast.success(t('Added to the downloads: {title}', { title: r.title }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
@@ -46,26 +48,32 @@ export default function ReleaseSearch() {
 
   const shown = (results ?? []).filter((r) => !hideBlocked || !r.blocklisted)
   return (
-    <div>
+    <div className="search-page">
       <div className="page-header">
-        <h1>Search releases</h1>
-        <Link className="btn-link" to="/search">
-          <Icon name="film" size={15} /> Search movies and shows instead
-        </Link>
+        <h1>{t('Search releases')}</h1>
       </div>
-      <p style={{ color: 'var(--text-dim)', marginTop: 0 }}>
-        Type a release name, or part of one, and Mediarium asks all your indexers. Pick one to download: the movie or show it belongs to is added to your library if it isn&apos;t there yet.
+      <nav className="search-modes" aria-label={t('Search releases')}>
+        <Link to="/search">
+          <Icon name="film" size={15} /> {t('Movies and shows')}
+        </Link>
+        <Link to="/search/releases" className="active" aria-current="page">
+          <Icon name="list" size={15} /> {t('Releases')}
+        </Link>
+      </nav>
+      <p className="search-lede">
+        {t("Type a release name, or part of one, and Mediarium asks all your indexers. Pick one to download: the movie or show it belongs to is added to your library if it isn't there yet.")}
       </p>
       <form
-        className="toolbar"
+        className="search-bar"
         onSubmit={(e) => {
           e.preventDefault()
           void search()
         }}
       >
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="For example: Heat 1995 1080p" aria-label="Release name" style={{ flex: '1 1 320px' }} autoFocus />
+        <Icon name="search" size={22} />
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('For example: Heat 1995 1080p')} aria-label={t('Release name')} autoFocus />
         <button className="primary btn-with-icon" type="submit" disabled={searching || q.trim().length < 2}>
-          <Icon name="search" size={15} /> {searching ? 'Searching…' : 'Search'}
+          <Icon name="search" size={15} /> {searching ? t('Searching…') : t('Search')}
         </button>
       </form>
       {error && <p className="error-text">{error}</p>}
@@ -73,13 +81,13 @@ export default function ReleaseSearch() {
         <>
           <div className="toolbar">
             <span style={{ color: 'var(--text-dim)' }}>
-              {results.length === 0 ? 'Nothing found. Try fewer words, or check your indexers in Settings.' : `${shown.length} ${shown.length === 1 ? 'release' : 'releases'}`}
+              {results.length === 0 ? t('Nothing found. Try fewer words, or check your indexers in Settings.') : plural(shown.length, '{n} release', '{n} releases')}
             </span>
             <span className="spacer" />
             {results.some((r) => r.blocklisted) && (
               <label className="inline-field">
                 <input type="checkbox" checked={hideBlocked} onChange={(e) => setHideBlocked(e.target.checked)} />
-                Hide blocklisted releases
+                {t('Hide blocklisted releases')}
               </label>
             )}
           </div>

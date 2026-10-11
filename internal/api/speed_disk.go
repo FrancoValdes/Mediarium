@@ -74,13 +74,16 @@ func (s *Server) outsideDownloadHours() bool {
 	return ok && !inHours(time.Now().Hour(), from, to)
 }
 
-// applySpeedLimit sets the shared limit for this moment.
+// applySpeedLimit sets the download limit (Usenet and torrents) and the torrent
+// upload limit for this moment; both follow the same hours.
 func (s *Server) applySpeedLimit(now time.Time) {
 	mb := s.speedLimitMB()
+	upKB := s.torrentUploadLimitKB()
 	if from, to, ok := s.speedLimitHours(); ok && !inHours(now.Hour(), from, to) {
-		mb = 0
+		mb, upKB = 0, 0
 	}
 	speed.Set(int64(mb) << 20)
+	speed.SetUpload(int64(upKB) << 10)
 }
 
 // speedJob keeps the limit in step with the clock.

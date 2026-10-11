@@ -34,6 +34,11 @@ type indexerPayload struct {
 	LastTestError string         `json:"lastTestError,omitempty"`
 	LastTestAt    string         `json:"lastTestAt,omitempty"`
 	Priority      int            `json:"priority"` // 1 preferred, 2 normal, 3 last resort
+	// Back-off: set while searches skip the indexer after repeated failures.
+	Failures    int    `json:"failures,omitempty"`    // failures in a row
+	PausedUntil string `json:"pausedUntil,omitempty"` // RFC 3339; searches skip the indexer until then
+	PausedNote  string `json:"pausedNote,omitempty"`  // the same in plain words
+	PausedWhy   string `json:"pausedWhy,omitempty"`   // why the last failure happened, for example "it could not be reached"
 }
 
 // isCardigann reports whether a create/test request is for a
@@ -52,6 +57,7 @@ func (s *Server) toIndexerPayload(inst indexers.Instance) indexerPayload {
 	if !inst.LastTestAt.IsZero() {
 		p.LastTestAt = inst.LastTestAt.UTC().Format(time.RFC3339)
 	}
+	addPauseInfo(&p, inst)
 	if !inst.IsCardigann() {
 		return p
 	}

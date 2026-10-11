@@ -1,12 +1,12 @@
 annotations:
   min_scale_version: 24.10.2.2
-app_version: 2.1.0
+app_version: 3.0.0
 capabilities: []
 categories:
 - media
 changelog_url: https://github.com/rdborg/Mediarium/blob/main/CHANGELOG.md
 date_added: '2026-10-01'
-description: Mediarium is an all-in-one media manager for movies and TV that searches Usenet and torrent indexers, downloads, unpacks and organises your library.
+description: Mediarium is an all-in-one media manager for movies, TV, music, ebooks and audiobooks that searches Usenet and torrent indexers, downloads, unpacks and organises your library.
 home: https://github.com/rdborg/Mediarium
 host_mounts: []
 icon: https://media.sys.truenas.net/apps/mediarium/icons/icon.png
@@ -14,6 +14,9 @@ keywords:
 - media
 - movies
 - series
+- music
+- ebooks
+- audiobooks
 - usenet
 - torrent
 lib_version: 2.3.15

@@ -82,6 +82,23 @@ func (s *Server) trashRoots() map[string]string {
 	if t := s.tvRoot(); t != "" {
 		roots["tv"] = t
 	}
+	// The folders added next to the main ones have bins of their own.
+	if f := s.movieFolders(); len(f) > 1 {
+		for i, p := range f[1:] {
+			roots["movies-"+strconv.Itoa(i+2)] = p
+		}
+	}
+	if f := s.tvFolders(); len(f) > 1 {
+		for i, p := range f[1:] {
+			roots["tv-"+strconv.Itoa(i+2)] = p
+		}
+	}
+	if c := s.movieCopiesRoot(); c != "" {
+		roots["movie-copies"] = c
+	}
+	if c := s.tvCopiesRoot(); c != "" {
+		roots["tv-copies"] = c
+	}
 	if m := s.musicRoot(); m != "" {
 		roots["music"] = m
 	}

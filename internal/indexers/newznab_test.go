@@ -43,6 +43,10 @@ func TestNewznabSearch(t *testing.T) {
 		if r.URL.Query().Get("cat") != "2000" {
 			t.Fatalf("expected cat=2000, got %s", r.URL.Query().Get("cat"))
 		}
+		// Not Go's default, which Cloudflare rules often turn away with a 403.
+		if ua := r.Header.Get("User-Agent"); ua != indexers.UserAgent || strings.Contains(ua, "Go-http-client") {
+			t.Fatalf("search should say who it is, got User-Agent %q", ua)
+		}
 		w.Header().Set("Content-Type", "application/xml")
 		w.Write([]byte(fixtureRSS))
 	}))

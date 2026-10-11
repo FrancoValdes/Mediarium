@@ -51,6 +51,25 @@ func resetPassword(args []string) error {
 	return nil
 }
 
+// resetTwoStep switches two-step sign-in off for an account whose phone and
+// recovery codes are both lost: app reset-two-step <username>.
+func resetTwoStep(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: app reset-two-step <username>")
+	}
+	cfg := config.Load()
+	db, err := store.Open(cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("open database at %s: %w", cfg.DBPath, err)
+	}
+	defer db.Close()
+	if err := auth.New(db).DisableTwoStepByName(args[0]); err != nil {
+		return err
+	}
+	fmt.Printf("Two-step sign-in is off for %q. They sign in with their password alone and can set it up again from their profile.\n", args[0])
+	return nil
+}
+
 // promptPassword reads a line from stdin, hiding what's typed when stdin is
 // a terminal. Echo is toggled with stty rather than pulling in
 // golang.org/x/term for a single recovery command — if stty isn't

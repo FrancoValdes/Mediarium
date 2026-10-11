@@ -5,16 +5,18 @@ import SitePicker from './SitePicker'
 import { useToast } from './Toast'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
 import { apiKey as apiKeyCheck, firstError, maxLength, required, url as urlCheck } from '../validate'
+import { t, tx } from '../i18n'
+import TipLabel from './TipLabel'
 
 // Usenet indexers that are open to new members, offered as a quick fill for the
 // address. You still need your own account and API key on each one.
 export const KNOWN_USENET_INDEXERS = [
-  { name: 'NZBgeek', baseUrl: 'https://api.nzbgeek.info', note: 'registration opens periodically' },
-  { name: 'NZBFinder', baseUrl: 'https://nzbfinder.ws', note: 'open registration' },
-  { name: 'nzb.life', baseUrl: 'https://nzb.life', note: 'open registration' },
-  { name: 'NZBPlanet', baseUrl: 'https://api.nzbplanet.org', note: 'free tier available' },
-  { name: 'NZBIndex', baseUrl: 'https://nzbindex.com', note: 'no account needed' },
-  { name: 'AnimeTosho', baseUrl: 'https://feed.animetosho.org', note: 'anime only, no API key needed' },
+  { name: 'NZBgeek', baseUrl: 'https://api.nzbgeek.info', note: t('registration opens periodically') },
+  { name: 'NZBFinder', baseUrl: 'https://nzbfinder.ws', note: t('open registration') },
+  { name: 'nzb.life', baseUrl: 'https://nzb.life', note: t('open registration') },
+  { name: 'NZBPlanet', baseUrl: 'https://api.nzbplanet.org', note: t('free tier available') },
+  { name: 'NZBIndex', baseUrl: 'https://nzbindex.com', note: t('no account needed') },
+  { name: 'AnimeTosho', baseUrl: 'https://feed.animetosho.org', note: t('anime only, no API key needed') },
 ] as const
 
 type Protocol = 'usenet' | 'torrent'
@@ -39,9 +41,9 @@ export default function IndexerForm({ onAdded, torrentDisabled }: { onAdded: (i:
 
   const addressExample = protocol === 'usenet' ? 'https://api.example.com' : 'https://your-tracker.example/torznab'
   const v = useValidation({
-    name: firstError(required(name, 'Give this indexer a name, for example the name of the website.'), maxLength(name, 80, 'The name')),
-    baseUrl: firstError(required(baseUrl, `Add the address of the indexer, for example ${addressExample}.`), urlCheck(baseUrl, { requireScheme: true, example: addressExample })),
-    apiKey: needsKey ? firstError(required(apiKey, 'Add your API key, from your account page on that site.'), apiKeyCheck(apiKey)) : apiKeyCheck(apiKey),
+    name: firstError(required(name, t('Give this indexer a name, for example the name of the website.')), maxLength(name, 80, t('The name'))),
+    baseUrl: firstError(required(baseUrl, t('Add the address of the indexer, for example {example}.', { example: addressExample })), urlCheck(baseUrl, { requireScheme: true, example: addressExample })),
+    apiKey: needsKey ? firstError(required(apiKey, t('Add your API key, from your account page on that site.')), apiKeyCheck(apiKey)) : apiKeyCheck(apiKey),
   })
 
   function chooseProtocol(p: Protocol) {
@@ -84,7 +86,7 @@ export default function IndexerForm({ onAdded, torrentDisabled }: { onAdded: (i:
     setBusy(true)
     try {
       const created = await api.createIndexer({ name: name.trim(), definitionId: '', baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), protocol })
-      toast.success(`${created.name} added.`)
+      toast.success(t('{name} added.', { name: created.name }))
       setPreset('')
       setName('')
       setBaseUrl('')
@@ -101,7 +103,7 @@ export default function IndexerForm({ onAdded, torrentDisabled }: { onAdded: (i:
 
   return (
     <div className={`indexer-form proto-${protocol}`}>
-      <div className="kind-tabs" role="tablist" aria-label="Kind of indexer">
+      <div className="kind-tabs" role="tablist" aria-label={t('Kind of indexer')}>
         <button role="tab" aria-selected={protocol === 'usenet'} className={`kind-tab usenet${protocol === 'usenet' ? ' active' : ''}`} onClick={() => chooseProtocol('usenet')}>
           <Icon name="server" size={16} /> Usenet (NZB)
         </button>
@@ -110,14 +112,14 @@ export default function IndexerForm({ onAdded, torrentDisabled }: { onAdded: (i:
         </button>
       </div>
       <div className="kind-panel grid-form" role="tabpanel">
-      {protocol === 'torrent' && torrentDisabled && <div className="notice notice-warn">Torrents are off in Settings &gt; Downloading &gt; Usenet and torrents, so a torrent indexer is saved but not searched.</div>}
+      {protocol === 'torrent' && torrentDisabled && <div className="notice notice-warn">{t('Torrents are off in Settings > Downloading > Torrents, so a torrent indexer is saved but not searched.')}</div>}
       {protocol === 'torrent' && (
-        <div className="seg" role="radiogroup" aria-label="How to add">
+        <div className="seg" role="radiogroup" aria-label={t('How to add')}>
           <button role="radio" aria-checked={torrentMode === 'list'} className={torrentMode === 'list' ? 'active' : ''} onClick={() => setTorrentMode('list')}>
-            Pick a site from the list
+            {t('Pick a site from the list')}
           </button>
           <button role="radio" aria-checked={torrentMode === 'link'} className={torrentMode === 'link' ? 'active' : ''} onClick={() => setTorrentMode('link')}>
-            Paste a Torznab link
+            {t('Paste a Torznab link')}
           </button>
         </div>
       )}
@@ -129,24 +131,24 @@ export default function IndexerForm({ onAdded, torrentDisabled }: { onAdded: (i:
       <ol className="steps">
         {protocol === 'usenet' ? (
           <>
-            <li>Sign up on the indexer's website and copy your <strong>API key</strong> from your account page.</li>
-            <li>Pick the indexer below, or choose Other and type its address.</li>
+            <li>{tx("Sign up on the indexer's website and copy your {key} from your account page.", { key: <strong>{t('API key')}</strong> })}</li>
+            <li>{t('Pick the indexer below, or choose Other and type its address.')}</li>
           </>
         ) : (
           <>
-            <li>For sites that give you a <strong>Torznab</strong> link (some private trackers, or your own Prowlarr/Jackett), copy the link and your <strong>API key</strong>.</li>
-            <li>Paste both below. For most sites, use <strong>Pick a site from the list</strong> instead.</li>
+            <li>{tx('For sites that give you a {torznab} link (some private trackers, or your own Prowlarr/Jackett), copy the link and your {key}.', { torznab: <strong>Torznab</strong>, key: <strong>{t('API key')}</strong> })}</li>
+            <li>{tx('Paste both below. For most sites, use {pick} instead.', { pick: <strong>{t('Pick a site from the list')}</strong> })}</li>
           </>
         )}
       </ol>
 
       <div className="form-cols">
         <label>
-          Indexer
+          {t('Indexer')}
           <select value={preset || '__custom'} onChange={(e) => choosePreset(e.target.value)}>
             {protocol === 'usenet' && (
               <>
-                <option value="__custom">Other (type the address)</option>
+                <option value="__custom">{t('Other (type the address)')}</option>
                 {KNOWN_USENET_INDEXERS.map((k) => (
                   <option key={k.name} value={k.name}>
                     {k.name} ({k.note})
@@ -154,38 +156,38 @@ export default function IndexerForm({ onAdded, torrentDisabled }: { onAdded: (i:
                 ))}
               </>
             )}
-            {protocol === 'torrent' && <option value="__custom">Other (paste the Torznab address)</option>}
+            {protocol === 'torrent' && <option value="__custom">{t('Other (paste the Torznab address)')}</option>}
           </select>
         </label>
         <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="The name to show in the app" disabled={!custom} {...v.bind('name', name, setName)} />
+          {t('Name')}
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('The name to show in the app')} disabled={!custom} {...v.bind('name', name, setName)} />
           <FieldError v={v} name="name" />
         </label>
         <label>
-          Address
+          <TipLabel text={t('The address of the indexer\'s search service (its Newznab or Torznab link), usually found on your account or API page. It is not the home page.')}>{t('Address')}</TipLabel>
           <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={addressExample} disabled={!custom} {...v.bind('baseUrl', baseUrl, setBaseUrl)} />
           <FieldError v={v} name="baseUrl" />
         </label>
         <label>
-          API key {!needsKey && <small style={{ color: 'var(--text-dim)' }}>(not needed for this one)</small>}
+          <TipLabel text={t('Your personal key from the indexer\'s account page. It lets Mediarium search as you, so do not share it.')}>{t('API key')}</TipLabel> {!needsKey && <small style={{ color: 'var(--text-dim)' }}>{t('(not needed for this one)')}</small>}
           <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} autoComplete="off" spellCheck={false} {...v.bind('apiKey', apiKey, setApiKey)} />
           <FieldError v={v} name="apiKey" />
         </label>
       </div>
       <div className="test-add-row">
         <button className="btn-with-icon" onClick={() => void runTest()} disabled={test.state === 'running'}>
-          <Icon name="refresh" size={15} /> {test.state === 'running' ? 'Testing…' : 'Test connection'}
+          <Icon name="refresh" size={15} /> {test.state === 'running' ? t('Testing…') : t('Test connection')}
         </button>
-        <button className="primary btn-with-icon" onClick={() => void add()} disabled={!tested || busy} title={tested ? '' : 'Test the connection first'}>
-          <Icon name="plus" size={15} /> Add this indexer
+        <button className="primary btn-with-icon" onClick={() => void add()} disabled={!tested || busy} title={tested ? '' : t('Test the connection first')}>
+          <Icon name="plus" size={15} /> {t('Add this indexer')}
         </button>
-        {!tested && test.state !== 'fail' && <small className="test-hint">Test the connection to unlock Add.</small>}
+        {!tested && test.state !== 'fail' && <small className="test-hint">{t('Test the connection to unlock Add.')}</small>}
       </div>
-      <FormProblem v={v} verb="test the connection" />
+      <FormProblem v={v} verb={t('test the connection')} />
       {test.forKey === detailsKey && test.state === 'ok' && (
         <div className="test-result ok">
-          <Icon name="check" size={15} /> {test.message || 'Connected.'}
+          <Icon name="check" size={15} /> {test.message || t('Connected.')}
         </div>
       )}
       {test.forKey === detailsKey && test.state === 'fail' && (
@@ -206,11 +208,11 @@ export default function IndexerForm({ onAdded, torrentDisabled }: { onAdded: (i:
 export function friendlyIndexerError(raw: string): string {
   let m = raw.replace(/^(newznab|torznab) error from [^:]+:\s*/i, '').replace(/\s*\(code \d+\)\s*$/i, '').trim()
   // Network failures: say what went wrong in plain words instead of Go's error text.
-  if (/no such host|server misbehaving/i.test(m)) return 'That address couldn\'t be found. Check it for typos.'
-  if (/connection refused/i.test(m)) return 'The indexer refused the connection. Check the address and port.'
-  if (/timeout|deadline exceeded|i\/o timeout/i.test(m)) return 'The indexer didn\'t answer in time. It may be down, so try again in a few minutes.'
-  if (/x509|certificate/i.test(m)) return 'The indexer\'s security certificate isn\'t valid. Check the address (https vs http).'
-  if (/ip address .* not approved/i.test(m)) m += '. Add this address to the allowed IPs in your account on the indexer\'s website (changes can take a few minutes).'
-  else if (/incorrect user credentials|api key|unauthori[sz]ed|\b401\b/i.test(m)) m += '. Check that the API key is copied correctly.'
+  if (/no such host|server misbehaving/i.test(m)) return t("That address couldn't be found. Check it for typos.")
+  if (/connection refused/i.test(m)) return t('The indexer refused the connection. Check the address and port.')
+  if (/timeout|deadline exceeded|i\/o timeout/i.test(m)) return t("The indexer didn't answer in time. It may be down, so try again in a few minutes.")
+  if (/x509|certificate/i.test(m)) return t("The indexer's security certificate isn't valid. Check the address (https vs http).")
+  if (/ip address .* not approved/i.test(m)) m += '. ' + t("Add this address to the allowed IPs in your account on the indexer's website (changes can take a few minutes).")
+  else if (/incorrect user credentials|api key|unauthori[sz]ed|\b401\b/i.test(m)) m += '. ' + t('Check that the API key is copied correctly.')
   return m
 }

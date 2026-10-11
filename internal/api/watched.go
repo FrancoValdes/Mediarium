@@ -471,7 +471,7 @@ func (s *Server) cleanLibraryItem(it libraryCleanupItem) error {
 		}
 		// Only the episode's own file and the files named after it: never
 		// the show's folder, even when it is the last tracked file there.
-		if _, _, err := s.discardFileWithSidecars(s.tvRoot(), it.Path, seriesLabel(sh)); err != nil {
+		if _, _, err := s.discardFileWithSidecars(firstNonEmpty(rootContaining(s.tvFolders(), it.Path), s.tvRoot()), it.Path, seriesLabel(sh)); err != nil {
 			return err
 		}
 		ids := it.episodeIDs

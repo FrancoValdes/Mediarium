@@ -1,0 +1,202 @@
+/* Phones. Loaded last. The header becomes: menu, the page name, a search icon
+   and your avatar; the theme button and the coloured buttons live in the menu
+   drawer; long rows of filters scroll sideways instead of stacking up and
+   pushing the page off the screen. */
+
+.search-toggle, .top-search-close { display: none; }
+
+@media (max-width: 900px) {
+  .topbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+  .topbar .top-title {
+    position: static; width: auto; height: auto; margin: 0; padding: 0; overflow: hidden; clip: auto; border: 0;
+    flex: 1 1 auto; min-width: 0; font-size: 1.1rem; letter-spacing: -0.02em; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .topbar .top-title::before { width: 7px; height: 7px; }
+  .topbar .menu-button, .topbar .back-btn { flex: none; }
+  .topbar .back-btn span { display: none; }
+  .topbar .back-btn { padding: 0; width: 40px; justify-content: center; }
+
+  /* search: an icon, opening into a bar that covers the header */
+  .topbar .top-search { display: none; }
+  .topbar .top-search.open {
+    display: flex; align-items: center; gap: 8px; position: fixed; left: 0; right: 0; top: 0; z-index: 70; padding: 10px 12px;
+    background: var(--bg); box-shadow: 0 14px 30px -16px var(--lift);
+  }
+  .top-search.open .searchbox { flex: 1; max-width: none; min-width: 0; margin: 0; }
+  .top-search.open .top-search-close { display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; }
+  .top-search.open .searchbox-panel { position: fixed; left: 12px; right: 12px; top: 66px; width: auto; max-width: none; transform: none; max-height: calc(100dvh - 90px); overflow-y: auto; }
+  .search-toggle { display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; margin-left: auto; }
+
+  /* the console: just the avatar */
+  .top-actions { padding: 0; background: none; box-shadow: none; gap: 0; flex: none; margin-left: 0; }
+  .top-actions .top-theme, .top-actions .demo-chip { display: none; }
+
+  /* menu drawer: the theme button joins the coloured buttons */
+  .sidebar .side-tools .top-icon { width: 34px; height: 34px; min-height: 34px; border-radius: 10px; border: 0; color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 14%, transparent); }
+  .sidebar .side-tools { padding: 10px 6px 4px; }
+}
+
+@media (max-width: 700px) {
+  /* rows of tabs and chips scroll sideways in one line */
+  .page-header > .seg, .search-modes { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .page-header > .seg::-webkit-scrollbar { display: none; }
+  .page-header > .seg > button { flex: none; white-space: nowrap; }
+  .seg.kind-tabs, .chip-row.state-chips {
+    flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    margin-inline: -2px; padding-inline: 2px; padding-bottom: 2px;
+  }
+  .seg.kind-tabs::-webkit-scrollbar, .chip-row.state-chips::-webkit-scrollbar { display: none; }
+  .seg.kind-tabs > button, .chip-row.state-chips > * { flex: none; }
+  .lib-toolbar .poster-size { display: none; }
+  .lib-toolbar { padding: 12px; gap: 8px; }
+
+  /* the page itself */
+  .content { padding-left: 12px; padding-right: 12px; }
+  .page-header { gap: 8px; }
+  .page-header .btn-link { margin-left: 0; }
+}
+
+/* quality profiles: each one a plain card, not a table row */
+@media (max-width: 900px) {
+  .settings-content .profiles-table, .settings-content .profiles-table tbody, .settings-content .profiles-table tr, .settings-content .profiles-table td { display: block; width: 100%; min-width: 0; }
+  .settings-content .profiles-table { border-spacing: 0; }
+  .settings-content .profiles-table thead { display: none; }
+  .settings-content .profiles-table tr { padding: 12px 14px; margin-bottom: 10px; border-radius: 4px 14px 14px 14px; background: color-mix(in srgb, var(--text) 3.5%, transparent); }
+  .settings-content .profiles-table td { padding: 4px 0; background: none; border-radius: 0; }
+  .settings-content .profiles-table td:first-child { width: 100%; min-width: 0; }
+  .settings-content .profiles-table td:last-child { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; text-align: left; }
+  .settings-content .profiles-table tr.is-default { box-shadow: inset 2px 0 0 var(--accent); }
+}
+@media (max-width: 700px) {
+  /* any other table inside a settings panel scrolls rather than overflowing */
+  .settings-content .card table:not(.profiles-table) { display: block; overflow-x: auto; }
+}
+
+/* ---- Collapsible filters ---------------------------------------------- */
+.filters-toggle { display: none; }
+.toolbar.collapsible > .fold { display: contents; }
+.filters-toggle { align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 4px 12px 12px 12px; font-weight: 600; flex: none; }
+.filters-toggle .ico-chevron-down { transition: transform 0.2s var(--ease); }
+.filters-toggle.open .ico-chevron-down { transform: rotate(180deg); }
+.filters-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+@media (max-width: 700px) {
+  .toolbar.collapsible { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .toolbar.collapsible > .seg.kind-tabs { flex: 1 1 100%; order: 1; }
+  .toolbar.collapsible > input[type='search'] { flex: 1 1 80px; min-width: 0; order: 2; max-width: none; }
+  .toolbar.collapsible > .filters-toggle { display: inline-flex; order: 3; }
+  .toolbar.collapsible > .toolbar-add { order: 4; flex: none; }
+  .toolbar.collapsible > .fold { order: 5; display: none; flex: 1 1 100%; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
+  .toolbar.collapsible.filters-open > .fold { display: flex; }
+  .toolbar.collapsible > .fold > .toolbar-end { margin-left: 0; flex: 1 1 100%; flex-wrap: wrap; }
+  /* Discover has no search box: the toggle takes the row's width */
+  .filter-bar.collapsible > .filters-toggle { order: 2; flex: 1 1 auto; justify-content: center; }
+}
+
+/* Notches, rounded corners and the home bar: the header and the page keep
+   clear of them (on a phone in landscape, a foldable, an installed app). */
+@supports (padding: max(0px)) {
+  .topbar { padding-top: max(10px, env(safe-area-inset-top)); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .content { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  @media (max-width: 900px) {
+    .sidebar { padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); padding-left: max(8px, env(safe-area-inset-left)); }
+    .top-search.open { padding-top: max(10px, env(safe-area-inset-top)); }
+  }
+}
+
+/* A page never pans sideways on a phone. Whatever is too wide for the screen is a bug to fix where it is, but until
+   then it is cut off instead of dragging the whole page left (iOS Safari lets a finger do that). */
+@media (max-width: 900px) {
+  html, body { overflow-x: clip; max-width: 100%; overscroll-behavior-x: none; }
+  .app-shell, .main-area { max-width: 100%; min-width: 0; overflow-x: clip; }
+  .content { overflow-x: hidden; touch-action: pan-y pinch-zoom; overscroll-behavior-x: none; }
+  .content input, .content select, .content textarea { max-width: 100%; box-sizing: border-box; }
+  .content .card, .content section, .content .modal { min-width: 0; }
+  .content p, .content small, .content li, .content h1, .content h2, .content h3, .content label { overflow-wrap: anywhere; }
+  .content code, .content .mono-cell { overflow-wrap: anywhere; word-break: break-word; }
+  .row-actions { flex-wrap: wrap; }
+}
+
+/* ==== Smooth scrolling =================================================
+   What made long lists stutter: a blurred glass layer over everything that
+   scrolls (every poster's status pill, the top bar), shapes drifting in 3D
+   behind the page, and a few things that repaint forever (film grain, the
+   marching outline of wanted posters). Each is dropped where it costs the
+   most, and everywhere on a phone. */
+.pcard .pill, .pcard .state-tag { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(8, 10, 20, 0.84); }
+.ambient-item.far, .drift-item.far { filter: none; }
+.title-scene::after { animation: none; }
+.content { -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+@media (max-width: 900px), (hover: none) {
+  /* decoration behind the page: gone on a phone (it also floated half off the screen edge) */
+  .ambient, .hero-drift { display: none; }
+  .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--bg); }
+  .title-scene img, .title-scene::before, .title-scene::after, .title-hero .title-poster::before, .pcard-dash rect, .nav-count, .sidebar::before, .sidebar::after { animation: none; }
+  .skeleton { animation: none; }
+  .link-pill, .title-chips > span, .title-hero .kind-tag, .title-hero .state-tag { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .pcard, .pcard-art img { transition: none; }
+  .pcard:hover, .pcard:focus-within { transform: none; }
+}
+
+/* The profile menu fits the screen: as wide as the longest line needs (up to the screen), and lines wrap instead of being cut off. */
+.menu-pop { width: min(310px, calc(100vw - 20px)); max-height: calc(100dvh - 90px); overflow-y: auto; }
+.menu-pop a, .menu-pop button { white-space: normal; line-height: 1.25; }
+.menu-pop a svg, .menu-pop button svg { flex: none; }
+@media (max-width: 900px) {
+  .menu-pop { position: fixed; top: 64px; right: 10px; left: auto; }
+}
+
+/* ==== Layout pass: phones ================================================ */
+@media (max-width: 640px) {
+  /* "Just added" and "Added, still to come": three small posters in a row, not one huge one */
+  .recent-split .recent-row, .recent-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 8px; }
+  .recent-row > * { max-width: none; }
+  .recent-row .pcard-body { padding-inline: 5px; }
+  .recent-row .pcard-title { font-size: 0.78rem; }
+  .recent-row .pcard .pill, .recent-row .pcard .state-tag { font-size: 0.62rem; padding: 3px 6px; gap: 3px; max-width: calc(100% - 12px); }
+  .recent-row .pcard .pill svg { display: none; }
+}
+
+@media (max-width: 720px) {
+  /* Title pages: the name and its labels sit beside the poster instead of leaving a gap next to it */
+  .title-hero .title-info { display: contents; }
+  .title-hero .title-info > * { grid-column: 1 / -1; }
+  .title-hero .title-info > .title-kicker { grid-column: 2; grid-row: 1; align-self: end; }
+  .title-hero .title-kicker > * { white-space: nowrap; max-width: 100%; }
+  .title-hero .title-info > h1 { grid-column: 2; grid-row: 2; align-self: start; font-size: clamp(1.5rem, 7.4vw, 2rem); line-height: 1; text-wrap: balance; }
+  .title-hero > .title-side, .title-hero > .title-sleeve, .title-hero > .release-sleeve, .title-hero > .title-poster { grid-column: 1; grid-row: 1 / span 2; }
+}
+@media (max-width: 380px) {
+  .title-hero { grid-template-columns: 112px minmax(0, 1fr); }
+}
+
+@media (max-width: 700px) {
+  /* a page's own tabs and switches start at the left, like everything else on a phone */
+  .page-header { justify-content: flex-start; }
+}
+@media (max-width: 700px) {
+  /* opened filters: the pickers share the row and the reverse-order button sits beside them, not alone on the next line */
+  .toolbar.collapsible > .fold > .dropdown { flex: 1 1 120px; min-width: 0; }
+  .toolbar.collapsible > .fold > .dropdown .dropdown-btn { min-width: 0; }
+  .toolbar.collapsible > .fold > .icon-btn { flex: none; }
+}
+@media (max-width: 520px) {
+  /* the search box gets a row of its own so what it says is readable */
+  .toolbar.collapsible > input[type='search'] { flex: 1 1 100%; }
+  .toolbar.collapsible > .filters-toggle { flex: 1 1 auto; justify-content: center; }
+}
+
+@media (max-width: 700px) {
+  /* the episode list scrolls sideways inside its own box instead of being cut off at the screen edge */
+  .ep-table, .lib-list { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .ep-table th, .ep-table td { white-space: nowrap; }
+  .lib-list th { white-space: nowrap; }
+}
+
+/* Fingers: the small round buttons in rows and cards are at least 40px wide and tall. */
+@media (max-width: 700px) {
+  .wrow .icon-btn, .qrow .icon-btn, .qactions .icon-btn, .request-row .icon-btn, .pcard-actions .icon-btn { min-width: 40px; min-height: 40px; }
+  .pcard-footer .not-interested { width: 40px; height: 40px; min-height: 40px; }
+  .season-bar .chip { min-height: 38px; }
+  .title-links .pill-toggle { min-width: 40px; min-height: 40px; justify-content: center; }
+}

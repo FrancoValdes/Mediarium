@@ -36,6 +36,8 @@ It does the jobs of Radarr, Sonarr, Prowlarr, SABnzbd, a torrent client and Baza
 - **Move over from Radarr, Sonarr, Prowlarr, SABnzbd** and eight other apps without redoing your setup. They are only read, never changed.
 - Runs on **Synology, Unraid, QNAP, any Linux server** and 64-bit Raspberry Pi.
 
+**Privacy:** there are no ads, and Mediarium sends nothing about you or your library anywhere. It asks once whether you want to share a small anonymous message a day (a random ID, the version and rough device sizes) so the project can see which devices are popular: it is off until you say Yes, the numbers are public at [mediarium.app/stats](https://mediarium.app/stats/), and the code is open. [What exactly is sent](docs/usage-stats.md).
+
 Mediarium is new. Movies and TV work end to end, and so do music, ebooks and audiobooks once you switch them on. It's used daily, but expect some rough edges. [FEATURES.md](docs/FEATURES.md) says what works and what doesn't yet.
 
 ## Screenshots
@@ -74,16 +76,17 @@ The [install guide](docs/INSTALL.md) covers every line of [`docker-compose.yml`]
 
 Step-by-step guides: **[Synology](docs/synology.md)** (including running next to Radarr, Sonarr and SABnzbd) · **[Unraid](docs/unraid.md)** · **[QNAP](docs/qnap.md)** · **[Linux](docs/linux.md)**. Coming from the *arr apps? See [Move from Radarr, Sonarr, Prowlarr and SABnzbd](docs/migrate.md).
 
-### Other ways to install: coming soon
+### One image for every platform
 
-| Platform | Status |
+Mediarium comes as one Docker image, and everything that can run Docker runs the same image with the same settings. There is no separate build or app-store version to wait for.
+
+| Platform | How |
 |---|---|
-| Docker on Linux, NAS or Raspberry Pi (64-bit) | **Available now** |
-| Linux without Docker (`.deb`, `.rpm`, systemd) | Coming soon |
-| One-click apps: Unraid, TrueNAS, CasaOS/ZimaOS, Umbrel, Portainer | Coming soon |
-| Proxmox helper script, Helm chart | Coming soon |
+| Any 64-bit Linux server, NAS or Raspberry Pi (Intel/AMD or ARM64) | Docker Compose, or one `docker run` command (the image is on GitHub and on Docker Hub as `rdborg/mediarium`) |
+| Synology, QNAP, Unraid, TrueNAS SCALE, CasaOS/ZimaOS, OpenMediaVault, Portainer | Paste the same compose file into their Docker screen: [guides](docs/PLATFORMS.md) |
+| Windows PC or Mac | Docker Desktop, fine for trying it out |
 
-There are no separate Windows or macOS versions. On a Windows PC or a Mac, Mediarium runs in Docker Desktop.
+There are no one-click app-store entries for now, and no separate Windows or macOS versions.
 
 Details: [What runs where](docs/PLATFORMS.md).
 
@@ -93,7 +96,7 @@ Everything is in [`docs/`](docs/README.md): installing, indexers, downloads and 
 
 ## Getting help
 
-- **Something not working?** Check [troubleshooting](docs/INSTALL.md#troubleshooting), then [open an issue](https://github.com/rdborg/Mediarium/issues/new/choose). Include your version (Settings > System > About and credits), or better, the text that **Copy for support** puts on your clipboard (Settings > System > Server and backup > Help and support). It has no passwords or keys in it.
+- **Something not working?** Check [troubleshooting](docs/INSTALL.md#troubleshooting), then [open an issue](https://github.com/rdborg/Mediarium/issues/new/choose). Include your version (Settings > System > About and credits), or better, the text that **Copy for support** puts on your clipboard (Settings > System > Server and updates > Help and support). It has no passwords or keys in it.
 - **Security problem?** Report it privately, as described in [SECURITY.md](.github/SECURITY.md).
 - **Ideas and feature requests** are welcome as [issues](https://github.com/rdborg/Mediarium/issues/new/choose).
 
@@ -112,3 +115,7 @@ Mediarium does not host, provide or link to any content. It is a tool for managi
 ## Licence
 
 Mediarium is free software under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). You can use it, change it and share it. If you offer a changed version to others as a network service, you must share your source code under the same licence.
+
+### The name and logo
+
+The licence covers the code, not the name. "Mediarium" and the Mediarium logo are the names I use for this project. You're welcome to fork it, change it and share your version under the AGPL, but if you share a changed version, please give it a different name and logo so people can tell it apart from this one. Saying it's based on Mediarium is fine, and appreciated.

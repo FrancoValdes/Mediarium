@@ -82,6 +82,9 @@ func (s *Server) musicRejections(res indexers.Result, rel music.Release, artist 
 	if sources != sourcesBoth && sources != "" && res.Protocol != indexers.Protocol(sources) {
 		out = append(out, sourceReason(sources))
 	}
+	if why := s.retentionRejection(res); why != "" {
+		out = append(out, why)
+	}
 	return append(out, profile.Rejections(rel.Tier(), albumCurrentTier(album))...)
 }
 
@@ -226,9 +229,10 @@ func (s *Server) huntAlbum(ctx context.Context, artist music.Artist, album music
 		return false
 	}
 	outcomes := indexers.SearchAll(ctx, instances, albumQuery(artist, album), musicCategories)
-	results := indexers.MergeResults(outcomes)
+	results, expired := s.freshResults(indexers.MergeResults(outcomes))
 	sources := s.sourcesFor("")
 	best, verdict := pickMusicRelease(results, blocked, sources, artist, album, profile, current)
+	verdict.addExpired(expired, s.retentionDays())
 	verdict.failedIndexers = failedIndexers(outcomes)
 	what := "Searched"
 	if current != "" {

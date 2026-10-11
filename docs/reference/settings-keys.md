@@ -7,42 +7,77 @@ The keys the app stores in its settings table. You normally change these from th
 | Key | Notes |
 |---|---|
 | `audiobooks.path` | audiobooks library folder; falls back to the AUDIOBOOKS_DIR env default (/audiobooks) when unset |
+| `auth.ldap` | encrypted; sign-in with a directory (LDAP or Active Directory) (JSON: enabled, server, bind account and password, filters, attribute names, account rules). Off unless enabled is true. Only a signed-in browser session can read or set it, not an API key. MEDIARIUM_DISABLE_SSO=1 overrides it |
+| `auth.local_signin` | "0" turns the username and password form off (only possible once an administrator has signed in with another method); anything else (including unset) leaves it on |
+| `auth.oidc` | encrypted; single sign-on with an OpenID Connect provider (JSON: enabled, name, issuer, client id and secret, scopes, claim names, account rules). Off unless enabled is true. Only a signed-in browser session can read or set it, not an API key. MEDIARIUM_DISABLE_SSO=1 overrides it |
+| `auth.outside_signin` | when someone last signed in from outside the home network (RFC 3339; set by the app). Two-step sign-in is suggested for 30 days after |
+| `auth.passkeys` | "1" lets people sign in with a passkey; needs the public address (server.public_url). Unset or "0" leaves it off |
 | `auth.proxy_addresses` | where that proxy connects from: IP addresses or CIDR ranges, comma-separated ("private" is refused). The header is only believed from these |
 | `auth.proxy_header` | the header a trusted reverse proxy puts the signed-in user name in (for example Remote-User); unset or empty leaves it off. Only a signed-in browser session can set it, not an API key |
 | `automation.enabled` | "0" disables; anything else (including unset) enables |
 | `automation.hunt_interval_hours` | hours between searches for missing items and better versions: 1 to 168; unset = 6 |
 | `automation.release_check_minutes` | minutes between checks of each indexer's newest releases: 5 to 1440; unset = 15 |
 | `backup.auto` | "0" turns the nightly backup into /config/backups off; anything else (including unset) leaves it on |
+| `backup.cloud` | encrypted; copies of the nightly backup in S3-style storage or a WebDAV folder (JSON: enabled, kind, storage details, passphrase, keep). Off unless enabled is true. Only a signed-in browser session can read or set it, not an API key |
+| `backup.cloud_status` | what the last cloud copy did (JSON; set by the app, not user-editable) |
 | `backup.keep` | how many saved backups are kept in /config/backups; unset = 7 |
 | `books.hardcover_token` | encrypted; a personal Hardcover API token for better book series and release dates. Unset = Open Library only |
 | `cleanup.auto` | "0" turns the daily automatic clean-up off; anything else (including unset) leaves it on |
 | `cleanup.history_retention_days` | days finished downloads and activity are kept; unset = 90, "0" = forever |
 | `cleanup.last_run_at` | when clean-up last ran (RFC 3339; set by the app, not user-editable) |
 | `cleanup.rules` | the cleanup rules (JSON: enabled, moviesWatchedDays, moviesUnwatchedDays, episodesWatchedDays, keepTags); off unless enabled is true |
+| `debrid.api_key` | encrypted; the debrid service's API key |
+| `debrid.cached_lower_score` | "1" lets a cached release win over an uncached one of the same quality even when the profile's preferred terms score it lower; unset or "0" only breaks ties between equal scores |
+| `debrid.prefer_cached` | "0" stops asking TorBox which releases it already has (no tag, no ranking); "1" or unset (with TorBox as the service) asks and ranks a cached release ahead of an equal one that is not. Real-Debrid has no such check |
+| `debrid.service` | "" (off), "realdebrid" or "torbox": torrent releases go to that service instead of the built-in client |
+| `downloadclient.category` | the category torrents are added with; unset = "mediarium" |
+| `downloadclient.kind` | "" (off), "qbittorrent", "rdtclient" or "decypharr" |
+| `downloadclient.link_root` | symlinks from the client may be imported only when they lead into this folder (Decypharr's mount); unset = no symlinks |
+| `downloadclient.local_path` | path mapping: the same folder as Mediarium sees it, e.g. /data/torrents |
+| `downloadclient.password` | encrypted; never shown or logged |
+| `downloadclient.remote_path` | path mapping: a folder as the download client reports it, e.g. /downloads; unset = no mapping |
+| `downloadclient.remove_after_import` | "1" removes a torrent from the client once it's imported; unset or "0" leaves it seeding |
+| `downloadclient.url` | the client's web address, e.g. http://192.168.1.10:8080 |
+| `downloadclient.username` | the client's web login |
 | `downloads.concurrent` | how many downloads run at the same time, Usenet and torrents together: 1 to 5; unset = 1 |
 | `downloads.hours` | when new downloads may start, "1-7" (from 1:00 to 7:00, server time); outside it they wait in line. Unset = any time |
 | `downloads.min_free_gb` | no new download starts while the downloads folder has less free space than this many GB; unset = 5, "0" = off |
+| `downloads.precheck` | "1" asks the news servers whether a sample of an NZB's articles exist before downloading it, and gives up at once on a release the PAR2 files could not repair; unset or "0" leaves it off |
+| `downloads.reject_executables` | "0" lets releases that hold programs or scripts (.exe, .scr, .bat...) through; anything else (including unset) rejects them |
+| `downloads.retention_days` | Usenet releases posted longer ago than this many days are not taken (the provider no longer has them): 1 to 10000, "0" or unset = off |
+| `downloads.skip_duplicates` | "1" does not download a release twice (same NZB, or same name and size, for the same title); unset or "0" leaves it off |
 | `downloads.speed_limit_hours` | when the speed limit applies, "8-23" (from 8:00 to 23:00, server time); unset = all day |
 | `downloads.speed_limit_mb` | download speed limit in MB/s for Usenet and torrents together; unset or "0" = no limit |
+| `downloads.stall_hours` | hours a torrent may get no data before it is given up on (blocklisted and searched for again): 1 to 72, "0" = never; unset = 2 for the built-in client and 6 for a download client |
 | `ebooks.path` | ebooks library folder; falls back to the EBOOKS_DIR env default (/ebooks) when unset |
 | `flaresolverr.url` | e.g. http://flaresolverr:8191; unset = none |
+| `info.language` | the language titles, plots, genres and posters are read in, as a TMDB tag like "de-DE" (en-US when unset); file and folder names always use the English title |
 | `legal.acknowledged_at` |  |
 | `library.default_profile_id` | id of the stored quality profile used by items with no profile of their own |
 | `library.default_sources` | usenet \| torrent \| both (default both) |
 | `library.downloads_path` |  |
 | `library.episode_name_format` | token string, used when preset=custom |
 | `library.episode_quality_backfill` | "1" once it has run (set by the app, not user-editable) |
+| `library.file_mode` | three octal digits like "664" applied to files Mediarium puts in the library; unset = leave it to the container's umask |
+| `library.folder_mode` | the same for the folders it creates, like "775" |
 | `library.illegal_char_mode` | "strip" (default) \| "replace" |
 | `library.illegal_char_replacement` | used when mode=replace, e.g. "-" |
 | `library.import_added_backfill` | "1" once it has run (set by the app, not user-editable) |
 | `library.import_conflict_policy` | "skip" \| "overwrite" \| "overwrite_if_better" \| "ask" |
+| `library.metadata_files` | JSON: movies and tv, each {nfo, artwork}, and replace (true replaces files Mediarium wrote earlier); unset = nothing is written |
+| `library.movie_copies_path` | where second copies of movies go (a 4K copy next to the 1080p one); unset = second copies of movies are off |
 | `library.movie_name_format` | token string, used when preset=custom |
+| `library.movies_extra_paths` | more movie folders next to the main one (a JSON list of paths); each movie says which one its files go to |
 | `library.movies_path` |  |
 | `library.naming_preset` | plex\|jellyfin\|kodi\|minimal\|custom |
 | `library.presets_version` | revision of the built-in quality presets last applied; unset means never (set at start, not user-editable) |
 | `library.quality_profile` | legacy: an old preset key (any-1080p, ultra-hd, any); only read once to pick the initial default profile |
 | `library.trash_days` | days removed titles' files stay in the recycle bin (.mediarium-trash in the library folder); unset = 7, "0" = delete straight away |
+| `library.tv_copies_path` | the same for shows |
+| `library.tv_extra_paths` | the same for shows |
 | `library.tv_path` | falls back to the TV_DIR env default when unset |
+| `library.unmonitor_downloaded` | "1" stops monitoring a movie once it is downloaded; unset or "0" keeps it monitored |
+| `library.unmonitor_finished_shows` | "1" stops monitoring a show once it has ended and every monitored episode is in; unset or "0" keeps it monitored |
 | `mediaservers.client_id` | set by the app, not user-editable |
 | `metadata.tmdb_api_key` | encrypted |
 | `metadata.trakt_client_id` | encrypted |
@@ -54,26 +89,56 @@ The keys the app stores in its settings table. You normally change these from th
 | `monitor.interval_minutes` | minutes between connection checks of your Usenet providers and indexers; unset = 30, "0" = off, under 5 is raised to 5 |
 | `music.default_profile_id` | id of the music profile artists without one of their own use; unset = the first |
 | `music.enabled` | older name of modules.music; still honoured while modules.music is unset, and kept in step with it |
+| `music.lyrics_online` | "0" stops the player asking LRCLIB for lyrics a file doesn't have; anything else (including unset) leaves it on |
 | `music.path` | music library folder; falls back to the MUSIC_DIR env default (/music) when unset |
+| `network.proxy` | e.g. "socks5://user:pass@10.0.0.2:1080" |
+| `network.proxy_for` | e.g. "torrents,indexers" |
 | `notify.on_problems` | "1" sends a notification (to the targets that listen for Health) when a new error is added to the problem log; unset or "0" sends none |
 | `notify.quiet_hours` | hours when everyday messages wait, "23-7" (server time); unset = none. Problems are always sent at once |
+| `notify.vapid_key` | this server's key for push notifications (encrypted; made on first start) |
+| `numbering.lookup` | "0" stops Mediarium looking up scene and anime numbering (TheXEM, the anime lists, AniList) for anime on its own; on by default. The Refresh mapping button on a show's page still works |
 | `onboarding.done` | "1" once the first-run wizard completes |
 | `quality.language` | the audio language wanted, as a name like "English" (the default when unset); a release clearly in another language only is not picked automatically |
+| `quality.size_limits` | size limits per quality in MB per minute of runtime (JSON: enabled, limits); applied only while enabled is true |
+| `requests.options` | JSON: notifyRequester (tell people when their request or report is answered), quotaCount (requests per period, 0 = no limit), quotaPeriod (day or week), fourK (let people ask for a 4K copy), fourKProfileId (the quality profile of that copy), reports (let people report a problem with a title) |
 | `scripts.after_import` | JSON: script (a file name in /config/scripts; empty = off) and timeoutSec (default 300). Only a signed-in browser session can set it, not an API key |
 | `scripts.last_run` | what the last run did (JSON; set by the app, not user-editable) |
+| `search.delay_profile` | delay profile (JSON: preferredProtocol, usenetMinutes, torrentMinutes, bypassIfHighestQuality): automatic searches hold back releases of the less liked protocol for that many minutes; unset or 0 minutes = no wait |
 | `server.public_url` | the address you open Mediarium at from your own devices (like https://mediarium.example.com); links in notification messages use it; unset = no links |
+| `stats.choice` | the administrator's answer about sharing anonymous usage numbers: "yes", "no", or unset when not asked yet. Nothing is sent unless it is "yes" (see docs/usage-stats.md) |
+| `stats.install_id` | a random number made when the answer is yes, sent with the numbers so one install counts once; set by the app, cleared on "no" and by "Reset my ID" |
+| `stats.last_sent` | the day (UTC) the numbers were last sent; set by the app, not user-editable |
+| `subtitles.addons` | subtitle add-ons (JSON list of {id, name, url}; the url can hold the person's own key for a site, so it is stored encrypted) |
+| `subtitles.addons_enabled` | "0" switches every subtitle add-on off at once; on by default, and it only runs while at least one add-on is added |
 | `subtitles.auto_download` | "1" fetches subtitles automatically; unset or "0" only offers them ("ask me") |
+| `subtitles.count_embedded` | "0" stops counting subtitle tracks inside the video file (MKV, MP4) as already there; on by default |
 | `subtitles.enabled` | the master switch: "1" turns downloading subtitles on; unset or "0" leaves it off (upgrades from a version that had subtitles in use are switched on once, by a migration) |
 | `subtitles.languages` | comma-separated OpenSubtitles codes; default "en" |
 | `subtitles.opensubtitles_api_key` | encrypted |
+| `subtitles.opensubtitles_enabled` | "0" switches OpenSubtitles off as a subtitle source (never searched, no downloads counted); on by default, and it only runs with a key |
 | `subtitles.opensubtitles_password` | encrypted |
 | `subtitles.opensubtitles_username` | optional account for a higher download quota |
+| `subtitles.profiles` | per language, which kind of subtitle to look for (JSON such as {"en":{"full":"normal","forced":true}}); a language without an entry wants a normal or SDH subtitle |
+| `subtitles.subdl_api_key` | encrypted; SubDL, a second place to find subtitles. Unset leaves it out |
+| `subtitles.subdl_enabled` | "0" switches SubDL off as a subtitle source; on by default, and it only runs with a key |
 | `subtitles.upgrade` | "0" stops swapping a subtitle for one made for the exact video file later; on by default, and only while subtitles download automatically |
+| `subtitles.wizdom` | "1" also looks for Hebrew subtitles on Wizdom (wizdom.xyz, no key needed); off when unset |
 | `system.auto_restart_when_stuck` | "0" stops Mediarium restarting itself when it has not answered for three minutes; anything else (including unset) leaves it on |
+| `torrent.allow_local_addresses` | "1" lets trackers, web seeds and magnet metadata addresses of the built-in client be on the home network or this machine; anything else (including unset) refuses them, because those addresses come from torrents anyone can write. Read when the torrent client starts |
+| `torrent.categories` | JSON list of {name, subfolder}: categories for built-in torrents; the subfolder is made inside the downloads working folder. Unset = none |
+| `torrent.category_map` | JSON {movie, tv, music, book: category name}: the category each kind of grab gets; "" = no category |
 | `torrent.enabled` | "0" turns torrents off entirely; anything else (including unset) leaves them on |
 | `torrent.listen_port` | TCP+UDP port for incoming peers; unset or "0" = 58264 |
+| `torrent.pack_only_wanted` | "1" downloads only the episodes of the wanted show and season from a pack; unset or "0" = the whole pack |
+| `torrent.port_mapping` | "0" stops the built-in client asking the router (UPnP, NAT-PMP) to open its port; anything else (including unset) leaves it on. Never used with a VPN or proxy |
 | `torrent.seed_ratio_limit` | e.g. "2.0"; "0" = unlimited |
 | `torrent.seed_time_limit_h` | hours; "0" = unlimited |
+| `torrent.sequential_default` | "1" downloads every new built-in torrent in order (first to last piece) so a video can be previewed while it downloads; unset or "0" = off. A torrent can override it |
+| `torrent.skip_junk` | "0" downloads every file of a torrent; anything else (including unset) skips samples and .nfo, .txt, .exe, .url files |
+| `torrent.upload_limit_kb` | upload speed limit of the built-in client in KB/s; unset or "0" = no limit. Applies in the same hours as the download limit |
+| `ui.show_advanced` | "1" shows custom formats and format scores on the Quality page; unset follows whether any custom format exists |
+| `ui.trailer_background` | unset or "1" plays the trailer behind movie and show pages for everyone, unless a browser chose otherwise; "0" switches it off for everyone |
+| `ui.trailer_sound` | "1" starts the trailer behind a title page with its sound on, where the browser allows it; unset or "0" starts it muted |
 | `updates.allow_push` | "1" lets an administrator replace the program by uploading a file through the API; unset or "0" refuses. Only a signed-in browser session can switch it on, not an API key |
 | `updates.auto_install` | "1" installs a new, signed release overnight when nothing is downloading; unset or "0" leaves updating to you |
 | `updates.check` | "0" turns the daily check for a new version off; anything else (including unset) leaves it on |

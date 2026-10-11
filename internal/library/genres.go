@@ -43,7 +43,8 @@ func (r *Repo) setGenres(table string, id int64, genres []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := r.db.Exec(`UPDATE `+table+` SET genres = ? WHERE id = ?`, enc, id); err != nil {
+	// Second copies share the main title's genres.
+	if _, err := r.db.Exec(`UPDATE `+table+` SET genres = ? WHERE id = ? OR copy_of = ?`, enc, id, id); err != nil {
 		return fmt.Errorf("set %s %d genres: %w", table, id, err)
 	}
 	return nil
@@ -73,9 +74,9 @@ type GenreGap struct {
 func (r *Repo) MissingGenres(limit int) ([]GenreGap, error) {
 	rows, err := r.db.Query(`
 		SELECT kind, id, tmdb_id, title FROM (
-			SELECT 'movie' AS kind, id, tmdb_id, title, added_at, 0 AS ord FROM movies WHERE genres IS NULL
+			SELECT 'movie' AS kind, id, tmdb_id, title, added_at, 0 AS ord FROM movies WHERE genres IS NULL AND copy_of IS NULL
 			UNION ALL
-			SELECT 'series', id, tmdb_id, title, added_at, 1 FROM series WHERE genres IS NULL
+			SELECT 'series', id, tmdb_id, title, added_at, 1 FROM series WHERE genres IS NULL AND copy_of IS NULL
 		) ORDER BY ord, added_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list titles without genres: %w", err)

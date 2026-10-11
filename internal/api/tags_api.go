@@ -139,7 +139,7 @@ func (s *Server) pushTags(k library.TitleKind, tmdbID int, added, removed []stri
 		return
 	}
 	for _, m := range servers {
-		if !m.Enabled || m.Kind.BookServer() {
+		if !m.Enabled || m.Kind.BookServer() || m.Kind == mediaservers.KindWebhook {
 			continue
 		}
 		m := m

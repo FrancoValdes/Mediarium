@@ -21,6 +21,10 @@ const (
 	TargetGotify   TargetType = "gotify"
 	TargetPushover TargetType = "pushover"
 	TargetSlack    TargetType = "slack"
+
+	TargetMatrix        TargetType = "matrix"
+	TargetHomeAssistant TargetType = "homeassistant"
+	TargetApprise       TargetType = "apprise"
 )
 
 // Target is a configured notification destination.
@@ -302,6 +306,14 @@ func NewSender(t Target) (Sender, error) {
 		return NewGotifySender(cfg["url"], cfg["token"]), nil
 	case TargetPushover:
 		return NewPushoverSender(cfg["userKey"], cfg["token"]), nil
+	case TargetMatrix:
+		return NewMatrixSender(cfg["url"], cfg["roomId"], cfg["accessToken"]), nil
+	case TargetHomeAssistant:
+		return NewHomeAssistantSender(cfg["url"], cfg["service"], cfg["token"], cfg["webhookId"]), nil
+	case TargetApprise:
+		return NewAppriseSender(cfg["server"], cfg["key"], cfg["urls"], cfg["tag"], cfg["username"], cfg["password"]), nil
+	case TargetPush:
+		return newPushSender(cfg["subscription"])
 	case TargetEmail:
 		port, err := strconv.Atoi(cfg["port"])
 		if err != nil {

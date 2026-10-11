@@ -21,14 +21,20 @@ const maxSubtitleItemsPerRequest = 5000
 // subtitleQuotaPayload is the JSON shape of GET /api/subtitles/quota, also
 // embedded in the reply to POST /api/subtitles/get.
 type subtitleQuotaPayload struct {
-	HasKey      bool    `json:"hasKey"`
-	HasAccount  bool    `json:"hasAccount"`
-	Limit       int     `json:"limit"`
-	Used        int     `json:"used"`
-	Remaining   int     `json:"remaining"`
-	WindowHours int     `json:"windowHours"`
-	ResetsAt    *string `json:"resetsAt"`
-	Source      string  `json:"source"` // "reported" or "estimated"
+	// HasKey: OpenSubtitles is switched on and has a key, so its daily limit applies.
+	HasKey bool `json:"hasKey"`
+	// HasSource: at least one source (OpenSubtitles, SubDL, add-ons) is switched
+	// on. SourcesSetUp: at least one is set up, switched on or not; with
+	// HasSource false that means they were all switched off.
+	HasSource    bool    `json:"hasSource"`
+	SourcesSetUp bool    `json:"sourcesSetUp"`
+	HasAccount   bool    `json:"hasAccount"`
+	Limit        int     `json:"limit"`
+	Used         int     `json:"used"`
+	Remaining    int     `json:"remaining"`
+	WindowHours  int     `json:"windowHours"`
+	ResetsAt     *string `json:"resetsAt"`
+	Source       string  `json:"source"` // "reported" or "estimated"
 	// MissingItems is the downloaded titles missing a wanted-language subtitle
 	// (titles marked "no subtitles wanted" left out); MissingFiles counts
 	// title x language pairs.
@@ -77,9 +83,13 @@ func (s *Server) subtitleQuotaPayload() (subtitleQuotaPayload, error) {
 		return subtitleQuotaPayload{}, err
 	}
 	st := s.subtitleQuota()
-	hasKey, hasAccount := s.Subtitles().HasAPIKey(), s.Subtitles().HasCredentials()
+	src := s.subtitleSources()
+	// hasKey is true while OpenSubtitles is searched: its daily limit only
+	// matters then. Switched off, it counts for nothing.
+	hasKey, hasAccount := src.OpenSubtitles.On(), s.Subtitles().HasCredentials()
 	p := subtitleQuotaPayload{
 		HasKey: hasKey, HasAccount: hasAccount,
+		HasSource: src.Any(), SourcesSetUp: src.AnySetUp(),
 		Limit: st.Limit, Used: st.Used, Remaining: st.Remaining,
 		WindowHours: int(subtitles.QuotaWindow / time.Hour),
 		Source:      st.Source, Exceeded: st.Exceeded,
@@ -90,7 +100,9 @@ func (s *Server) subtitleQuotaPayload() (subtitleQuotaPayload, error) {
 		t := st.ResetsAt.UTC().Format(time.RFC3339)
 		p.ResetsAt = &t
 	}
-	if hasKey {
+	// The warning is about OpenSubtitles' small daily allowance. When SubDL or an
+	// add-on is on too, they carry on after it, so the warning would mislead.
+	if hasKey && !src.OthersThanOpenSubtitles() {
 		p.Message = quotaMessage(files, st, hasAccount)
 	}
 	return p, nil
@@ -198,8 +210,8 @@ func (s *Server) handleSubtitlesGet(w http.ResponseWriter, r *http.Request) {
 	if s.refuseIfSubtitlesOff(w) {
 		return
 	}
-	if !s.Subtitles().HasAPIKey() {
-		writeError(w, http.StatusPreconditionFailed, "Add your OpenSubtitles API key first (Settings > Info, lists and subtitles > Subtitles).")
+	if !s.hasSubtitleSource() {
+		writeError(w, http.StatusPreconditionFailed, s.noSubtitleSourceMessage())
 		return
 	}
 	var req subtitleItemsRequest
@@ -273,7 +285,7 @@ func subtitleGetMessage(res subtitleFetchResult, quota subtitleQuotaPayload) str
 		parts = append(parts, "No subtitles were downloaded.")
 	}
 	if res.notFound > 0 {
-		parts = append(parts, fmt.Sprintf("%d had no match on OpenSubtitles.", res.notFound))
+		parts = append(parts, fmt.Sprintf("%d had no match on the sources you use.", res.notFound))
 	}
 	if res.skipped > 0 {
 		parts = append(parts, fmt.Sprintf("%d skipped (marked as not wanted, or the video file is missing).", res.skipped))

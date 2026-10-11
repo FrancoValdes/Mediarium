@@ -34,6 +34,12 @@ type Request struct {
 	Note        string    `json:"note,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 	DecidedAt   string    `json:"decidedAt,omitempty"`
+	// FourK marks a request for the 4K second copy: the title as usual if it
+	// isn't in the library yet, and a copy of it in the 4K quality.
+	FourK bool `json:"fourK,omitempty"`
+	// AvailableAt is when the title was seen in the library after the request
+	// was approved ("" until then, "skipped" for requests older than the check).
+	AvailableAt string `json:"availableAt,omitempty"`
 }
 
 // Repo stores requests.
@@ -44,16 +50,18 @@ func NewRepo(db *sql.DB) *Repo { return &Repo{db: db} }
 
 const columns = `r.id, r.kind, r.title, r.year, r.poster, r.payload, COALESCE(r.requested_by, 0),
 	COALESCE(NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), ''), u.username, ''),
-	r.status, r.note, r.created_at, r.decided_at`
+	r.status, r.note, r.created_at, r.decided_at, r.four_k, r.available_at`
 
 func scan(sc interface{ Scan(...any) error }) (Request, error) {
 	var r Request
 	var created string
-	err := sc.Scan(&r.ID, &r.Kind, &r.Title, &r.Year, &r.Poster, &r.Payload, &r.RequestedBy, &r.Requester, &r.Status, &r.Note, &created, &r.DecidedAt)
+	var fourK int
+	err := sc.Scan(&r.ID, &r.Kind, &r.Title, &r.Year, &r.Poster, &r.Payload, &r.RequestedBy, &r.Requester, &r.Status, &r.Note, &created, &r.DecidedAt, &fourK, &r.AvailableAt)
 	if err != nil {
 		return r, err
 	}
 	r.CreatedAt, _ = time.Parse(time.RFC3339, created)
+	r.FourK = fourK != 0
 	return r, nil
 }
 
@@ -63,8 +71,12 @@ func (rp *Repo) Create(r Request) (Request, error) {
 	if r.RequestedBy > 0 {
 		by = r.RequestedBy
 	}
-	res, err := rp.db.Exec(`INSERT INTO requests (kind, title, year, poster, payload, requested_by) VALUES (?, ?, ?, ?, ?, ?)`,
-		r.Kind, r.Title, r.Year, r.Poster, r.Payload, by)
+	fourK := 0
+	if r.FourK {
+		fourK = 1
+	}
+	res, err := rp.db.Exec(`INSERT INTO requests (kind, title, year, poster, payload, requested_by, four_k) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		r.Kind, r.Title, r.Year, r.Poster, r.Payload, by, fourK)
 	if err != nil {
 		return Request{}, fmt.Errorf("save request: %w", err)
 	}
@@ -143,6 +155,44 @@ func (rp *Repo) Delete(id int64) error {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// CountSince counts the requests an account made since a moment (RFC 3339,
+// UTC) that still count against its quota: waiting and approved ones, not
+// declined ones. oldest is when the oldest of them was made ("" when none).
+func (rp *Repo) CountSince(by int64, since string) (n int, oldest string, err error) {
+	var first sql.NullString
+	if err := rp.db.QueryRow(`SELECT COUNT(*), MIN(created_at) FROM requests WHERE requested_by = ? AND status <> 'declined' AND created_at >= ?`, by, since).Scan(&n, &first); err != nil {
+		return 0, "", fmt.Errorf("count requests: %w", err)
+	}
+	return n, first.String, nil
+}
+
+// Unannounced returns approved requests whose title hasn't been seen in the
+// library yet.
+func (rp *Repo) Unannounced() ([]Request, error) {
+	rows, err := rp.db.Query(`SELECT ` + columns + ` FROM requests r LEFT JOIN users u ON u.id = r.requested_by WHERE r.status = 'approved' AND r.available_at = '' ORDER BY r.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list requests: %w", err)
+	}
+	defer rows.Close()
+	var out []Request
+	for rows.Next() {
+		r, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan request: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SetAvailable records when a request's title turned up in the library.
+func (rp *Repo) SetAvailable(id int64, stamp string) error {
+	if _, err := rp.db.Exec(`UPDATE requests SET available_at = ? WHERE id = ?`, stamp, id); err != nil {
+		return fmt.Errorf("mark request available: %w", err)
 	}
 	return nil
 }

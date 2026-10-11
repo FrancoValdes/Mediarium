@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rdborg/mediarium/internal/fileperms"
 )
 
 // ConflictPolicy governs what happens when the destination path already
@@ -55,22 +57,58 @@ func filepathExtLower(path string) string {
 	return ext
 }
 
+// FindOption changes what the Find functions count.
+type FindOption int
+
+// FollowLinks counts a symbolic link as the file it leads to. It is only for
+// a download Mediarium laid out itself as links to an external download
+// client's files: Import still refuses every link, and ImportClientFile
+// decides about each one.
+const FollowLinks FindOption = 1
+
+func followsLinks(opts []FindOption) bool {
+	for _, o := range opts {
+		if o == FollowLinks {
+			return true
+		}
+	}
+	return false
+}
+
+// fileInfo returns what a walked entry is as a file, or nil when it isn't
+// one: a folder, a device, or a link (unless links are followed, when a link
+// to a plain file counts as that file; a link to a folder never does).
+func fileInfo(path string, info os.FileInfo, links bool) os.FileInfo {
+	if info.Mode().IsRegular() {
+		return info
+	}
+	if !links || info.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	target, err := os.Stat(path)
+	if err != nil || !target.Mode().IsRegular() {
+		return nil
+	}
+	return target
+}
+
 // FindLargestVideoFile walks dir (after unpacking/PAR2 repair have already
 // run) and returns the largest video file found — the conventional
 // heuristic for "which file in this download is actually the movie"
 // (samples, extras, and NFO/subtitle files are typically much smaller).
-func FindLargestVideoFile(dir string) (string, error) {
+func FindLargestVideoFile(dir string, opts ...FindOption) (string, error) {
 	var (
 		best     string
 		bestSize int64
 	)
+	links := followsLinks(opts)
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		// Only real files count: a link named like a video would import
 		// whatever it points at (see Import).
-		if info.IsDir() || !info.Mode().IsRegular() || !IsVideoFile(path) {
+		if info = fileInfo(path, info, links); info == nil || !IsVideoFile(path) {
 			return nil
 		}
 		if info.Size() > bestSize {
@@ -91,13 +129,14 @@ func FindLargestVideoFile(dir string) (string, error) {
 // per episode), skipping "sample" clips — releases routinely ship a short
 // sample.mkv alongside the real files, and importing it as an episode would
 // be wrong. Results are sorted by path so imports are deterministic.
-func FindVideoFiles(dir string) ([]string, error) {
+func FindVideoFiles(dir string, opts ...FindOption) ([]string, error) {
 	var files []string
+	links := followsLinks(opts)
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || !info.Mode().IsRegular() || !IsVideoFile(path) {
+		if fileInfo(path, info, links) == nil || !IsVideoFile(path) {
 			return nil
 		}
 		// Judged by the path below dir: a folder called "sample" that dir
@@ -158,7 +197,18 @@ const stagingSuffix = ".mediarium-tmp"
 //
 // isBetter is only consulted when policy is ConflictOverwriteIfBetter and
 // a file already exists at destPath — nil is fine for any other policy.
+//
+// A file mode set in Settings is applied to the file that ends up in the
+// library and a folder mode to the folders made for it (see internal/fileperms).
 func Import(src, destPath string, policy ConflictPolicy, isBetter func() bool) (ImportResult, error) {
+	res, err := importPlace(src, destPath, policy, isBetter)
+	if err == nil && !res.Skipped {
+		_ = fileperms.ApplyFile(res.DestPath)
+	}
+	return res, err
+}
+
+func importPlace(src, destPath string, policy ConflictPolicy, isBetter func() bool) (ImportResult, error) {
 	// A download is only ever real files. A link (which a hostile archive could
 	// carry, pointing at the database or the encryption key) would be copied
 	// with its target's contents, so it is refused outright.
@@ -189,7 +239,7 @@ func Import(src, destPath string, policy ConflictPolicy, isBetter func() bool) (
 		return ImportResult{}, fmt.Errorf("stat destination %s: %w", destPath, err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	if err := fileperms.MkdirAll(filepath.Dir(destPath)); err != nil {
 		return ImportResult{}, fmt.Errorf("create destination dir: %w", err)
 	}
 

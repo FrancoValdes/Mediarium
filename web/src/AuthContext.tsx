@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { api, ApiError, type User } from './api'
+import { api, ApiError, startModulesEarly, type User } from './api'
 
 interface AuthState {
   loading: boolean
@@ -74,14 +74,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearTimeout(retry.current)
     setLoading(true)
     try {
-      const status = await withTimeout(api.onboardingStatus())
+      // The three answers are asked for together, not one after the other: each wait
+      // is a round trip to the server (a long one behind a reverse proxy), and the
+      // page cannot start before all of them. What is not needed (the account of a
+      // server that is still to be set up) is simply ignored.
+      const statusCall = withTimeout(api.onboardingStatus())
+      const meCall = withTimeout(api.me())
+      const settingsCall = withTimeout(api.getSettings())
+      meCall.catch(() => undefined)
+      settingsCall.catch(() => undefined)
+      startModulesEarly()
+      const status = await statusCall
       setFirstRunNeeded(status.firstRunNeeded)
       if (!status.firstRunNeeded) {
         try {
-          const me = await withTimeout(api.me())
+          const me = await meCall
           setUser(me)
           try {
-            setNeedsWizard(!(await withTimeout(api.getSettings())).onboardingDone)
+            setNeedsWizard(!(await settingsCall).onboardingDone)
           } catch {
             setNeedsWizard(false)
           }

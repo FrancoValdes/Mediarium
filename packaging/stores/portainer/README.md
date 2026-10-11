@@ -8,7 +8,7 @@ Portainer has no central store to submit to. Anyone can add a template file by U
 
 | File | What it is |
 |---|---|
-| `templates.json` | A Portainer v3 template file with one entry: a type 3 (Compose stack) template for Mediarium, with a form for the data folder, config folder, PUID, PGID, timezone, web port and the three library folders. |
+| `templates.json` | A Portainer template file (format version 2, the one Portainer documents) with one entry: a type 3 (Compose stack) template for Mediarium, with a form for the data folder, config folder, PUID, PGID, timezone, web port and the three library folders, the optional music, ebooks and audiobooks folders and an optional UMASK. |
 | `docker-compose.yml` | The stack it deploys (fetched by Portainer from this repository: `packaging/stores/portainer/docker-compose.yml`). |
 
 ## One-line instruction for users
@@ -22,7 +22,7 @@ Note that this **replaces** Portainer's own template list with this file (only M
 ## Requirements
 
 - [ ] The Mediarium repository is public (Portainer downloads `templates.json`, the stack file and the logo from it).
-- [ ] The image `ghcr.io/rdborg/mediarium:latest` is published and public.
+- [ ] The image `ghcr.io/rdborg/mediarium:latest` is published and public (the stack follows `latest`, so it needs no change per release).
 - [ ] Test once: add the URL in a Portainer 2.x instance, deploy the template, open port 8264.
 
 ## After that

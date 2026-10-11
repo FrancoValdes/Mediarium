@@ -2,14 +2,16 @@ import { useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { useToast } from './Toast'
 import TestButton from './TestButton'
+import { t, tx } from '../i18n'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
 import { apiKey as apiKeyCheck, firstError, required as requiredCheck } from '../validate'
 
-export type KeyService = 'tmdb' | 'opensubtitles' | 'trakt'
+export type KeyService = 'tmdb' | 'opensubtitles' | 'subdl' | 'trakt'
 
-const FIELD: Record<KeyService, 'tmdbApiKey' | 'openSubtitlesApiKey' | 'traktClientId'> = {
+const FIELD: Record<KeyService, 'tmdbApiKey' | 'openSubtitlesApiKey' | 'subdlApiKey' | 'traktClientId'> = {
   tmdb: 'tmdbApiKey',
   opensubtitles: 'openSubtitlesApiKey',
+  subdl: 'subdlApiKey',
   trakt: 'traktClientId',
 }
 
@@ -31,6 +33,7 @@ export default function ServiceKeyCard({
   allowOverride,
   usingOwnKey,
   limitNote,
+  embedded,
   children,
 }: {
   service: KeyService
@@ -48,6 +51,8 @@ export default function ServiceKeyCard({
   allowOverride?: boolean
   usingOwnKey?: boolean
   limitNote?: ReactNode
+  // Inside another card (the subtitle sources): no card, heading or badges of its own.
+  embedded?: boolean
   children?: ReactNode
 }) {
   const [key, setKey] = useState('')
@@ -55,7 +60,7 @@ export default function ServiceKeyCard({
   const toast = useToast()
   // "TMDB (movie and show information)" reads better in a toast as just "TMDB".
   const shortTitle = title.replace(/\s*\(.*\)\s*$/, '')
-  const emptyMessage = `Paste your ${fieldLabel} into the box first.`
+  const emptyMessage = t('Paste your {field} into the box first.', { field: fieldLabel })
   const v = useValidation({ key: firstError(requiredCheck(key, emptyMessage), apiKeyCheck(key)) })
 
   // The Test button also works with no new key typed when one is already saved.
@@ -71,7 +76,7 @@ export default function ServiceKeyCard({
     setBusy(true)
     try {
       await api.putSettings({ [FIELD[service]]: '' })
-      toast.success(`${shortTitle} is back on the shared key.`)
+      toast.success(t('{name} is back on the shared key.', { name: shortTitle }))
       onSaved()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -87,7 +92,7 @@ export default function ServiceKeyCard({
       await api.putSettings({ [FIELD[service]]: key.trim() })
       setKey('')
       v.reset()
-      toast.success(`${shortTitle} key saved.`)
+      toast.success(t('{name} key saved.', { name: shortTitle }))
       onSaved()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -96,23 +101,26 @@ export default function ServiceKeyCard({
     }
   }
 
+  const Root = embedded ? 'div' : 'section'
   return (
-    <section className={`card service-card ${builtIn ? 'is-included' : required ? 'is-required' : 'is-optional'}`}>
-      <h2>
-        {title}{' '}
-        {builtIn ? (
-          <span className="req-badge included">{allowOverride ? (usingOwnKey ? 'Your own key' : 'Connected') : 'Included'}</span>
-        ) : (
-          <span className={`req-badge ${required ? 'required' : 'optional'}`}>{required ? 'Required' : 'Optional'}</span>
-        )}{' '}
-        {builtIn ? null : (
-          <span className={`badge ${configured ? 'downloaded' : 'missing'}`}>{configured ? 'connected' : 'not set up'}</span>
-        )}
-      </h2>
-      <p style={{ color: 'var(--text-dim)' }}>{blurb}</p>
-      {!builtIn && !configured && (
+    <Root className={embedded ? 'service-embed' : `card service-card ${builtIn ? 'is-included' : required ? 'is-required' : 'is-optional'}`}>
+      {!embedded && (
+        <h2>
+          {title}{' '}
+          {builtIn ? (
+            <span className="req-badge included">{allowOverride ? (usingOwnKey ? t('Your own key') : t('Connected')) : t('Included')}</span>
+          ) : (
+            <span className={`req-badge ${required ? 'required' : 'optional'}`}>{required ? t('Required') : t('Optional')}</span>
+          )}{' '}
+          {builtIn ? null : (
+            <span className={`badge ${configured ? 'downloaded' : 'missing'}`}>{configured ? t('connected') : t('not set up')}</span>
+          )}
+        </h2>
+      )}
+      {!embedded && <p style={{ color: 'var(--text-dim)' }}>{blurb}</p>}
+      {!embedded && !builtIn && !configured && (
         <div className={`notice ${required ? 'notice-danger' : 'notice-warn'}`}>
-          <strong>Without it:</strong> {without}
+          <strong>{t('Without it:')}</strong> {without}
         </div>
       )}
       {builtIn ? (
@@ -121,17 +129,17 @@ export default function ServiceKeyCard({
             <div className="notice notice-info">
               {usingOwnKey ? (
                 <>
-                  Using <strong>your own key</strong> for {title}. <button className="btn-sm" disabled={busy} onClick={() => void switchToSharedKey()}>Switch back to the shared key</button>
+                  {tx('Using {own} for {title}.', { own: <strong>{t('your own key')}</strong>, title })} <button className="btn-sm" disabled={busy} onClick={() => void switchToSharedKey()}>{t('Switch back to the shared key')}</button>
                 </>
               ) : (
                 <>
-                  Connected with the key that comes with Mediarium. If you hit its shared limit, use your own free key below.
+                  {t('Connected with the key that comes with Mediarium. If you hit its shared limit, use your own free key below.')}
                 </>
               )}
             </div>
             {limitNote}
             <details className="own-key">
-              <summary>{usingOwnKey ? 'Replace my key' : 'Reaching a limit? Use my own free key'}</summary>
+              <summary>{usingOwnKey ? t('Replace my key') : t('Reaching a limit? Use my own free key')}</summary>
               <ol style={{ margin: '8px 0 14px', paddingLeft: 20 }}>
                 {steps.map((step, i) => (
                   <li key={i} style={{ marginBottom: 4 }}>
@@ -147,16 +155,16 @@ export default function ServiceKeyCard({
                 </label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button className="primary" disabled={busy} onClick={save}>
-                    Save
+                    {t('Save')}
                   </button>
-                  <TestButton label="Test it" run={testKey} />
+                  <TestButton label={t('Test it')} run={testKey} />
                 </div>
                 <FormProblem v={v} />
               </div>
             </details>
           </>
         ) : (
-          <div className="notice notice-info">This version of Mediarium includes a key for {title}.</div>
+          <div className="notice notice-info">{t('This version of Mediarium includes a key for {title}.', { title })}</div>
         )
       ) : (
         <>
@@ -169,21 +177,21 @@ export default function ServiceKeyCard({
           </ol>
           <div className="grid-form">
             <label>
-              {configured ? `Replace ${fieldLabel}` : fieldLabel}
+              {configured ? t('Replace {field}', { field: fieldLabel }) : fieldLabel}
               <input value={key} onChange={(e) => setKey(e.target.value)} placeholder={placeholder} autoComplete="off" spellCheck={false} {...v.bind('key', key, setKey)} />
               <FieldError v={v} name="key" />
             </label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <button className="primary" disabled={busy} onClick={save}>
-                Save
+                {t('Save')}
               </button>
-              <TestButton label="Test it" run={testKey} />
+              <TestButton label={t('Test it')} run={testKey} />
             </div>
             <FormProblem v={v} />
           </div>
         </>
       )}
       {children}
-    </section>
+    </Root>
   )
 }

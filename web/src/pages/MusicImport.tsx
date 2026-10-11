@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type MusicImportJob, type MusicImportResult } from '../api'
 import Icon from '../components/Icon'
+import KindGlyph from '../components/KindGlyph'
 import { useModules } from '../ModulesContext'
 import { required } from '../validate'
 import { FieldError, useValidation } from '../useValidation'
+import { plural, t, tx } from '../i18n'
+import '../import.css'
 
 const REASON: Record<string, string> = {
-  unmatched: 'Not found',
-  failed: 'Problem',
+  unmatched: t('Not found'),
+  failed: t('Problem'),
 }
 
 function ResultRow({ r }: { r: MusicImportResult }) {
@@ -22,9 +25,9 @@ function ResultRow({ r }: { r: MusicImportResult }) {
       <div className="mi-main">
         {found && r.artistId ? <Link to={`/music/artist/${r.artistId}`}>{title}</Link> : <strong>{title}</strong>}
         <small>
-          {r.files > 0 ? `${r.files} file${r.files === 1 ? '' : 's'}` : 'no audio files'}
-          {r.quality ? ` · ${r.quality === 'Unknown' ? 'quality unknown' : r.quality}` : ''}
-          {r.status === 'already' ? ' · already in your library' : ''}
+          {r.files > 0 ? plural(r.files, '{n} file', '{n} files') : t('no audio files')}
+          {r.quality ? ` · ${r.quality === 'Unknown' ? t('quality unknown') : r.quality}` : ''}
+          {r.status === 'already' ? ` · ${t('already in your library')}` : ''}
         </small>
         {!found && r.message && <small className="mi-why">{r.message}</small>}
         {!found && <code className="mi-folder">{r.folder}</code>}
@@ -44,7 +47,7 @@ export default function MusicImport() {
   const [error, setError] = useState('')
   const [starting, setStarting] = useState(false)
   const v = useValidation({
-    root: required(job?.root || root, 'Set your music folder under Settings > Media, then come back and scan.'),
+    root: required(job?.root || root, t('Set your music folder under Settings > Library > Folders, then come back and scan.')),
   })
 
   useEffect(() => {
@@ -87,37 +90,43 @@ export default function MusicImport() {
   const pct = job && job.total > 0 ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0
 
   return (
-    <div className="music-import">
+    <div className="music-import import-page">
       <div className="page-header">
-        <h1>Import my music collection</h1>
+        <h1>{t('Import my music collection')}</h1>
         <Link className="btn-link" to="/library?kind=music">
-          <Icon name="music" size={15} /> Back to Music
+          <Icon name="music" size={15} /> {t('Back to Music')}
         </Link>
       </div>
 
       {loaded && !on('music') && (
         <div className="notice notice-warn" style={{ marginBottom: 18 }}>
-          Music is switched off. <Link to="/settings/modules">Switch it on in Settings &gt; Media types</Link> first.
+          {tx('Music is switched off. {link} first.', { link: <Link to="/settings/modules">{t('Switch it on in Settings > Media types')}</Link> })}
         </div>
       )}
 
       <section className="card mi-start">
+        <span className={`mi-disc${running ? ' spinning' : ''}`} aria-hidden="true">
+          <KindGlyph kind="music" size={72} variant="solid" />
+        </span>
         <div className="mi-start-text">
-          <h2>Find the music you already have</h2>
+          <h2>{t('Find the music you already have')}</h2>
           <p>
-            Mediarium reads your music folder, expecting <code>Artist/Album/tracks</code> (a year in the album folder name helps, like <code>Album (1997)</code>), looks up each artist and album, and adds them <strong>right where they are</strong>. Nothing is moved, renamed or changed, and only the albums in your folder are monitored.
+            {tx(
+              'Mediarium reads your music folder, expecting {layout} (a year in the album folder name helps, like {example}), looks up each artist and album, and adds them {here}. Nothing is moved, renamed or changed, and only the albums in your folder are monitored.',
+              { layout: <code>Artist/Album/tracks</code>, example: <code>Album (1997)</code>, here: <strong>{t('right where they are')}</strong> },
+            )}
           </p>
           <p className="mi-folder-line">
-            <Icon name="folder" size={15} /> Music folder: <code>{job?.root || root || '(not set yet)'}</code>{' '}
-            <Link to="/settings/media">Change</Link>
+            <Icon name="folder" size={15} /> {tx('Music folder: {path}', { path: <code>{job?.root || root || t('(not set yet)')}</code> })}{' '}
+            <Link to="/settings/media">{t('Change')}</Link>
           </p>
           <FieldError v={v} name="root" />
         </div>
         <div className="mi-start-action">
           <button className="primary big btn-with-icon" onClick={() => void start()} disabled={starting || running || !on('music')}>
-            <Icon name="search" size={18} /> {starting ? 'Starting…' : running ? 'Scanning…' : job ? 'Scan again' : 'Start scanning'}
+            <Icon name="search" size={18} /> {starting ? t('Starting…') : running ? t('Scanning…') : job ? t('Scan again') : t('Start scanning')}
           </button>
-          <small>Safe to run again. Albums you&apos;ve added are listed as already in your library.</small>
+          <small>{t("Safe to run again. Albums you've added are listed as already in your library.")}</small>
         </div>
       </section>
 
@@ -126,43 +135,43 @@ export default function MusicImport() {
       {job && running && (
         <section className="card mi-progress" aria-live="polite">
           <div className="mi-progress-top">
-            <strong>{phase === 'scanning' ? 'Reading your folder…' : 'Looking up your albums…'}</strong>
-            <span>{phase === 'matching' && job.total > 0 ? `${job.done} of ${job.total} albums` : ''}</span>
+            <strong>{phase === 'scanning' ? t('Reading your folder…') : t('Looking up your albums…')}</strong>
+            <span>{phase === 'matching' && job.total > 0 ? plural(job.total, '{done} of {n} album', '{done} of {n} albums', { done: job.done }) : ''}</span>
           </div>
           <div className="bar active" role="progressbar" aria-valuenow={phase === 'matching' ? pct : undefined} aria-valuemin={0} aria-valuemax={100}>
             <span style={{ width: `${phase === 'scanning' ? 8 : Math.max(4, pct)}%` }} />
           </div>
-          <small className="mi-hint">The music database allows one lookup a second, so a big collection takes a while. The page can stay open in the background.</small>
+          <small className="mi-hint">{t('The music database allows one lookup a second, so a big collection takes a while. The page can stay open in the background.')}</small>
         </section>
       )}
 
-      {job && phase === 'failed' && <p className="error-text">The scan stopped: {job.error || 'something went wrong'}. Check the music folder and try again.</p>}
+      {job && phase === 'failed' && <p className="error-text">{t('The scan stopped: {error}. Check the music folder and try again.', { error: job.error || t('something went wrong') })}</p>}
 
       {job && phase === 'done' && (
         <>
           <div className="mi-summary">
             <div className="mi-stat good">
               <b>{job.summary.imported}</b>
-              <span>albums added</span>
+              <span>{t('albums added')}</span>
             </div>
             <div className="mi-stat">
               <b>{job.summary.already}</b>
-              <span>already in your library</span>
+              <span>{t('already in your library')}</span>
             </div>
             <div className="mi-stat warn">
               <b>{job.summary.unmatched}</b>
-              <span>not matched</span>
+              <span>{t('not matched')}</span>
             </div>
             <div className="mi-stat bad">
               <b>{job.summary.failed}</b>
-              <span>with a problem</span>
+              <span>{t('with a problem')}</span>
             </div>
           </div>
 
           {results.length === 0 && (
             <div className="empty-state">
               <Icon name="folder" size={44} />
-              <p>No albums were found in that folder. Check that it holds folders like <code>Artist/Album</code> with audio files inside.</p>
+              <p>{tx('No albums were found in that folder. Check that it holds folders like {example} with audio files inside.', { example: <code>Artist/Album</code> })}</p>
             </div>
           )}
 
@@ -170,10 +179,10 @@ export default function MusicImport() {
             <div className="half-cols mi-cols">
               <fieldset className="group mi-col found">
                 <legend>
-                  <Icon name="check" size={14} /> Added to your library ({added.length + already.length})
+                  <Icon name="check" size={14} /> {t('Added to your library ({n})', { n: added.length + already.length })}
                 </legend>
                 {added.length + already.length === 0 ? (
-                  <p className="mi-empty">Nothing matched.</p>
+                  <p className="mi-empty">{t('Nothing matched.')}</p>
                 ) : (
                   <ul className="mi-list">
                     {[...added, ...already].map((r) => (
@@ -184,10 +193,10 @@ export default function MusicImport() {
               </fieldset>
               <fieldset className="group mi-col lost">
                 <legend>
-                  <Icon name="search" size={14} /> Not matched ({missed.length})
+                  <Icon name="search" size={14} /> {t('Not matched ({n})', { n: missed.length })}
                 </legend>
                 {missed.length === 0 ? (
-                  <p className="mi-empty">Every folder was matched.</p>
+                  <p className="mi-empty">{t('Every folder was matched.')}</p>
                 ) : (
                   <ul className="mi-list">
                     {missed.map((r) => (
@@ -202,7 +211,7 @@ export default function MusicImport() {
           {added.length + already.length > 0 && (
             <div className="row-actions" style={{ marginTop: 18 }}>
               <Link className="btn-link primary-look" to="/library?kind=music">
-                <Icon name="music" size={16} /> See my music library
+                <Icon name="music" size={16} /> {t('See my music library')}
               </Link>
             </div>
           )}
