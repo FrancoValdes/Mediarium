@@ -250,13 +250,14 @@ func (c *Control) Download(ctx context.Context, stallAfter time.Duration, onProg
 	c.Apply()
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-	done, total := c.Progress()
+	done, _ := c.Progress()
 	last, lastMoved := done, time.Now()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			var total int64
 			done, total = c.Progress()
 			if c.Done() {
 				if onProgress != nil {

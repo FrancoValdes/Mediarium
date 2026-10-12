@@ -319,7 +319,7 @@ func TestLabel(t *testing.T) {
 			t.Errorf("Label(%q) = %q", kind, got)
 		}
 	}
-	if ValidKind("transmission") || !ValidKind(Decypharr) {
+	if !ValidKind("transmission") || !ValidKind(Decypharr) || ValidKind("deluge") {
 		t.Error("ValidKind")
 	}
 }

@@ -7,6 +7,7 @@ import TipLabel from './TipLabel'
 
 const LABEL: Record<Exclude<DownloadClientKind, ''>, string> = {
   qbittorrent: 'qBittorrent',
+  transmission: 'Transmission',
   rdtclient: 'RDT-Client',
   decypharr: 'Decypharr',
 }
@@ -103,10 +104,10 @@ export default function DownloadClientCard() {
   return (
     <fieldset className="group torrent">
       <legend>
-        <Icon name="server" size={14} /> <TipLabel help="downloads#download-clients-qbittorrent-rdt-client-decypharr">{t('Use your own torrent client')}</TipLabel>
+        <Icon name="server" size={14} /> <TipLabel help="downloads#download-clients-qbittorrent-transmission-rdt-client-decypharr">{t('Use your own torrent client')}</TipLabel>
       </legend>
       <p style={{ marginTop: 0 }}>
-        {t('Hand torrent releases to a download client you already run: qBittorrent, or a program that works like it, such as RDT-Client or Decypharr. The client downloads and seeds, and Mediarium imports the finished files from its folder without moving them.')}
+        {t('Hand torrent releases to a download client you already run: qBittorrent, Transmission, or a program that works like qBittorrent, such as RDT-Client or Decypharr. The client downloads and seeds, and Mediarium imports the finished files from its folder without moving them.')}
       </p>
       <p className="field-help">{t('Torrent releases go to one place only: the built-in client, a debrid service or this download client. Saving a client here turns the debrid service off.')}</p>
       <div className="form-cols">
@@ -115,6 +116,7 @@ export default function DownloadClientCard() {
           <select value={form.kind} onChange={(e) => set('kind', e.target.value as DownloadClientKind)}>
             <option value="">{t('None (download torrents here)')}</option>
             <option value="qbittorrent">qBittorrent</option>
+            <option value="transmission">Transmission</option>
             <option value="rdtclient">RDT-Client</option>
             <option value="decypharr">Decypharr</option>
           </select>
@@ -123,8 +125,8 @@ export default function DownloadClientCard() {
           <>
             <label>
               {t('Address')}
-              <input value={form.url} onChange={(e) => set('url', e.target.value)} placeholder="http://192.168.1.10:8080" autoComplete="off" spellCheck={false} />
-              <small className="field-help">{t('Where you open its web page.')}</small>
+              <input value={form.url} onChange={(e) => set('url', e.target.value)} placeholder={form.kind === 'transmission' ? 'http://192.168.1.10:9091' : 'http://192.168.1.10:8080'} autoComplete="off" spellCheck={false} />
+              <small className="field-help">{form.kind === 'transmission' ? t('Where you open its web page, for example http://192.168.1.10:9091. Mediarium adds /transmission/rpc itself.') : t('Where you open its web page.')}</small>
             </label>
             <label>
               {t('User name')}
@@ -143,7 +145,7 @@ export default function DownloadClientCard() {
             <label>
               {t('Category')}
               <input value={form.category} onChange={(e) => set('category', e.target.value)} placeholder="mediarium" autoComplete="off" spellCheck={false} />
-              <small className="field-help">{t('Torrents are added in this category, so they are easy to find in the client.')}</small>
+              <small className="field-help">{form.kind === 'transmission' ? t('Torrents get this label, so they are easy to find in Transmission (it needs version 3 or newer).') : t('Torrents are added in this category, so they are easy to find in the client.')}</small>
             </label>
           </>
         )}

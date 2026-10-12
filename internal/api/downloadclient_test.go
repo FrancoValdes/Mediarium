@@ -348,7 +348,7 @@ func TestDownloadClientSettings(t *testing.T) {
 		body map[string]any
 		want string
 	}{
-		{map[string]any{"kind": "transmission", "url": e.qbURL}, "Choose qBittorrent"},
+		{map[string]any{"kind": "deluge", "url": e.qbURL}, "Choose qBittorrent"},
 		{map[string]any{"kind": "qbittorrent", "url": ""}, "Add the address"},
 		{map[string]any{"kind": "qbittorrent", "url": "ftp://x"}, "http://"},
 		{map[string]any{"kind": "qbittorrent", "url": e.qbURL, "remotePath": "/downloads"}, "Fill in both folders"},

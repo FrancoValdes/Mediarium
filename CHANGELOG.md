@@ -8,6 +8,16 @@ under [Unreleased]. How releases are cut: [docs/RELEASING.md](docs/RELEASING.md)
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-10-12
+
+### Added
+- **Keep your settings in a YAML file** (asked for by jdamner on GitHub, #43): `app config export` writes your settings as YAML, `app config diff FILE` shows what a file would change and `app config apply FILE` makes it so, through the same checks as the Settings pages. It covers the settings that are one set of values (general, library, downloading, the torrent client, the debrid service, the proxy and the update options); passwords and keys are written as `${NAME}` and read from the environment. Lists such as indexers and quality profiles are not in it yet. Nothing is read at start-up. See `docs/config-file.md`.
+- **Transmission as a download client** (asked for by acortespr06 on GitHub, #53): Settings > Downloading > Torrents > Use your own torrent client now lists Transmission (version 3 or newer). Mediarium sends torrents with a label, follows them, pauses, resumes and re-checks them and removes them after the import, like it does with qBittorrent. Tested against a copy of Transmission's RPC, not yet against a real Transmission.
+- **Ideas for the movie and show pages** (suggested by MrBanditt on GitHub, #54): a show's page says whether it is **Ended**, **Continuing** or **Upcoming**, and an ended show has a red **Ended** ribbon in the Library; every episode shows the size of its file and each season the total; the release list has an **Age** column you can sort; the release list scrolls into view when a search answers; the **TMDB** link (and IMDb and the site) stay on a title's page after it is in your library; and the Library sorts titles without a leading "The", "A" or "An".
+
+### Fixed
+- **IPTorrents: a signed-in member is recognised** (reported by xrandallx1 on GitHub, #28): the site sends a signed-in member from the front page on to the torrents page, and its "Log out" tooltip is not always inside a link, so the sign-in check found nothing. It now also accepts the tooltip and the torrents table.
+
 ## [3.0.2] - 2026-10-11
 
 ### Fixed

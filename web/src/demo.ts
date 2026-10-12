@@ -122,6 +122,7 @@ const series: Series[] = SERIES_SEEDS.map((s) => ({
   monitored: true,
   episodeCount: s.episodes,
   downloadedCount: s.have,
+  showStatus: s.id === 101 || s.id === 106 ? 'ended' : 'continuing',
 }))
 
 // Recently added titles for the dashboard, newest first, with where each stands.

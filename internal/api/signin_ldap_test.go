@@ -498,11 +498,11 @@ func TestLDAPTestButton(t *testing.T) {
 
 func TestLDAPWorksWhenPasswordSignInIsOff(t *testing.T) {
 	e := newLDAPEnv(t)
-	sam, _, _ := e.login("sam", "dir-password")
+	e.login("sam", "dir-password")
 	// Make sam an administrator so that he can switch the password form off.
 	id := e.scalar(`SELECT id FROM users WHERE username = 'sam'`)
 	e.must(e.admin, "PUT", "/api/users/"+id, map[string]string{"role": "admin"}, http.StatusOK)
-	sam, _, _ = e.login("sam", "dir-password")
+	sam, _, _ := e.login("sam", "dir-password")
 	e.must(sam, "PUT", "/api/auth/sign-in", map[string]any{"localSignIn": false}, http.StatusOK)
 	if _, status, _ := e.login("ryan", adminPassword); status != http.StatusForbidden {
 		t.Errorf("a local account while the password form is off: %d", status)

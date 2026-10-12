@@ -169,8 +169,10 @@ func TestSecondCopyOfAShow(t *testing.T) {
 	copyID := int64(made["id"].(float64))
 
 	eps, _ := env.server.MovieRepo.ListEpisodes(copyID)
-	if len(eps) != 2 || eps[0].Status != library.StatusMissing || !eps[0].Monitored || eps[1].Monitored {
-		t.Fatalf("the copy's episodes should be all missing, monitored as on the main show: %+v", eps)
+	// Adding the copy starts looking for it, so by now the first episode may
+	// already be on its way: what matters is that none of it is "downloaded".
+	if len(eps) != 2 || eps[0].Status == library.StatusDownloaded || eps[1].Status != library.StatusMissing || !eps[0].Monitored || eps[1].Monitored {
+		t.Fatalf("the copy's episodes should not be downloaded, monitored as on the main show: %+v", eps)
 	}
 	// The show list has the show once; the copy has a page of its own.
 	shows := getJSON[[]map[string]any](t, env.client, env.baseURL+"/api/series")

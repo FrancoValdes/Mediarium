@@ -51,7 +51,7 @@ func (n NZB) TotalBytes() int64 {
 // --- NZB XML shape (https://sabnzbd.org/wiki/extra/nzb-spec) ---
 
 type nzbXML struct {
-	XMLName xml.Name     `xml:"nzb"`
+	XMLName xml.Name `xml:"nzb"`
 	Head    struct {
 		Meta []struct {
 			Type  string `xml:"type,attr"`

@@ -18,7 +18,8 @@
 #     torrents;
 #   - the size column is the sixth cell; snatches, seeders and leechers are
 #     the last three cells (an optional files column sits before them);
-#   - a signed-in page carries a sign-out link (/lout.php, shown as an icon with a "Log out" tooltip).
+#   - a signed-in page carries a sign-out link (/lout.php, shown as an icon with a "Log out" tooltip
+#     that is not always inside the link); the front page sends a member on to the torrents page.
 # The site only shows icons in the category column, 100 torrents per page and
 # the files count column if the member sets that in the site's own profile.
 id: iptorrents
@@ -153,9 +154,11 @@ login:
   method: cookie
   test:
     path: /
-    # the sign-out link: its address has been /lout.php, but the link is an icon
-    # with a "Log out" tooltip on the live site, so go by the words as well
-    selector: 'a[href*="lout.php"], a[href*="logout"], a[href*="signout"], a:contains("Log out"), a:contains("Logout"), a:contains("Sign out")'
+    # signed in: the sign-out link (its address has been /lout.php), or the
+    # "Log out" tooltip of its icon (not always inside a link), or the torrents
+    # table that only a signed-in page has. The front page may also send a
+    # signed-in member on to the torrents page.
+    selector: 'a[href*="lout.php"], a[href*="logout"], a[href*="signout"], .tTip:contains("Log out"), a:contains("Log out"), a:contains("Logout"), a:contains("Sign out"), table#torrents'
 
 search:
   paths:

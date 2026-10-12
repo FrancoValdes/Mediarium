@@ -2819,6 +2819,7 @@ a.bar-label:hover { color: var(--accent); }
 .pcard-ribbon.tone-ebook { background: var(--c-book); }
 .pcard-ribbon.tone-audio { background: var(--c-audiobook); }
 .pcard-ribbon.tone-both { background: linear-gradient(90deg, var(--c-book), var(--c-audiobook)); }
+.pcard-ribbon.tone-ended { top: 15px; right: -33px; width: 110px; padding: 2px 0; font-size: 0.62rem; background: color-mix(in srgb, var(--danger) 82%, #000); color: #fff; }
 /* The main action (Add) has its label and lights up as soon as the card is hovered */
 .pcard-actions .icon-btn.primary-act { width: auto; padding: 0 14px; gap: 6px; font-weight: 700; font-size: 0.85rem; }
 .pcard:hover .pcard-actions .icon-btn.primary-act,

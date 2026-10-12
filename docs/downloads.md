@@ -139,9 +139,9 @@ TorBox keeps torrents other people already downloaded. When you grab one of thos
 - **Real-Debrid** has no cache check: it turned off its availability endpoint (`instantAvailability`) at the end of 2024, and its API documentation no longer lists it, so nothing is marked or preferred when Real-Debrid is the service.
 - The tag shows in the release lists of movies, shows and books, and in the main search. Music release lists don't show it yet.
 
-## Download clients (qBittorrent, RDT-Client, Decypharr)
+## Download clients (qBittorrent, Transmission, RDT-Client, Decypharr)
 
-If you already run a torrent client, Mediarium can hand torrent releases to it instead of downloading them itself. It works with qBittorrent and with programs that copy qBittorrent's web interface, such as RDT-Client and Decypharr. The client downloads the torrent into its own folder and can keep seeding it there. When it's done, Mediarium imports the files straight from that folder. It never moves, renames or deletes the client's files.
+If you already run a torrent client, Mediarium can hand torrent releases to it instead of downloading them itself. It works with qBittorrent, with Transmission, and with programs that copy qBittorrent's web interface, such as RDT-Client and Decypharr. The client downloads the torrent into its own folder and can keep seeding it there. When it's done, Mediarium imports the files straight from that folder. It never moves, renames or deletes the client's files.
 
 Torrent releases go to one place only: the built-in torrent client, a debrid service or a download client. Saving a download client turns the debrid service off, and saving a debrid service turns the download client off. The built-in torrent client can stay off: torrent sites are still searched while a download client is set.
 
@@ -156,6 +156,12 @@ Press **Test** to check the address and login (it shows the client's version), t
 ### qBittorrent
 
 Use the address and login of qBittorrent's Web UI (Tools > Options > Web UI). Mediarium needs to see qBittorrent's download folder: mount the same folder into both containers. Mounting one parent folder (for example `/data`) into both, with the same path inside each, means no path mapping is needed and imports can use hardlinks instead of copies.
+
+### Transmission
+
+Pick **Transmission** and use the address of its Web UI, for example `http://192.168.1.10:9091` (in Docker, `http://transmission:9091`). Mediarium adds `/transmission/rpc` itself. If you set a user name and password in Transmission (`rpc-authentication-required`), enter them; otherwise leave them empty. Transmission needs to be **version 3.00 or newer**: Mediarium marks its torrents with **labels** (the category, and a tag like `mediarium-q12`), which older versions don't have. As with qBittorrent, mount the folder Transmission downloads to into the Mediarium container, and set the path mapping if the paths differ. If Transmission's `rpc-host-whitelist` is on, add Mediarium's address to it.
+
+What Mediarium does with it: sends the magnet link or the torrent file, follows the progress, pauses, resumes and re-checks the torrent when you do in Activity, and removes it after the import when you chose **Remove after import**. A tracker error in Transmission doesn't fail a download; a local error (disk full, files gone) does. I could only test this against a copy of Transmission's RPC, not a real Transmission, so please say how it goes.
 
 ### RDT-Client
 

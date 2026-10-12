@@ -28,6 +28,7 @@ import InfoTip from '../components/InfoTip'
 import HelpLink from '../components/HelpLink'
 import { useUrlState } from '../useUrlState'
 import { plural, t, tx } from '../i18n'
+import { compareTitles } from '../titleSort'
 
 type Kind = 'movie' | 'tv'
 type View = 'grid' | 'list'
@@ -59,6 +60,7 @@ interface Item {
   copies: number // second copies kept in another quality
   released: string // "2024-03-01", or the year alone when that is all there is
   sizeBytes: number // on disk
+  ended: boolean // a show that has finished (TMDB says Ended or Canceled)
 }
 
 // The most titles one "search now" for a selection looks up (the server enforces it).
@@ -94,6 +96,7 @@ function fromMovie(m: Movie, queue: QueueItem[]): Item {
     copies: m.copies ?? 0,
     released: m.releaseDate || (m.year ? String(m.year) : ''),
     sizeBytes: m.sizeBytes ?? 0,
+    ended: false,
   }
 }
 
@@ -107,6 +110,7 @@ function fromSeries(s: Series, queue: QueueItem[]): Item {
     copies: s.copies ?? 0,
     released: s.firstAirDate || (s.year ? String(s.year) : ''),
     sizeBytes: s.sizeBytes ?? 0,
+    ended: s.showStatus === 'ended',
   }
 }
 
@@ -282,10 +286,10 @@ export default function Library() {
         (!decade || (i.year >= Number(decade) && i.year < Number(decade) + 10)) &&
         (!inCollection || inCollection.has(i.id)),
     )
-    if (sort === 'title') list.sort((a, b) => a.title.localeCompare(b.title))
-    else if (sort === 'released') list.sort((a, b) => b.released.localeCompare(a.released) || a.title.localeCompare(b.title))
-    else if (sort === 'size') list.sort((a, b) => b.sizeBytes - a.sizeBytes || a.title.localeCompare(b.title))
-    else if (sort === 'status') list.sort((a, b) => a.state.key.localeCompare(b.state.key) || a.title.localeCompare(b.title))
+    if (sort === 'title') list.sort((a, b) => compareTitles(a.title, b.title))
+    else if (sort === 'released') list.sort((a, b) => b.released.localeCompare(a.released) || compareTitles(a.title, b.title))
+    else if (sort === 'size') list.sort((a, b) => b.sizeBytes - a.sizeBytes || compareTitles(a.title, b.title))
+    else if (sort === 'status') list.sort((a, b) => a.state.key.localeCompare(b.state.key) || compareTitles(a.title, b.title))
     if (reverse) list.reverse()
     return list
   }, [items, kind, filter, text, sort, reverse, genre, tag, decade, collection, collections])
@@ -743,6 +747,7 @@ export default function Library() {
               kind={i.kind}
               progress={i.live ? { pct: i.live.progressPct, label: `${i.live.sizeBytes ? t('{pct}% of {size}', { pct: Math.round(i.live.progressPct), size: formatBytes(i.live.sizeBytes) }) : `${Math.round(i.live.progressPct)}%`} · ${i.live.protocol}` } : undefined}
               dim={!i.monitored}
+              ribbon={i.ended ? { label: t('Ended'), tone: 'ended' } : undefined}
               actions={actionsFor(i)}
               selection={selecting ? { selected: selected.has(i.key), onToggle: (e) => pick(i.key, e.shiftKey) } : undefined}
               footer={

@@ -69,7 +69,7 @@ func newIPTSite(t *testing.T) *iptSite {
 		if signedIn(r) {
 			nav = `<a href="/lout.php">Logout</a>`
 			if s.iconLogout.Load() {
-				nav = `<a href="/account" class="tTipWrap"><i class="fa fa-power-off"></i><div class="tTip ttop">Log out</div></a>`
+				nav = `<span class="tTipWrap"><i class="fa fa-power-off"></i><div class="tTip ttop">Log out</div></span>`
 			}
 		}
 		io.WriteString(w, `<html><body>`+nav+body+`</body></html>`)

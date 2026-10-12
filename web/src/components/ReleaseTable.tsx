@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { SearchResult } from '../api'
 import { formatBytes } from '../format'
 import { t } from '../i18n'
-import { FIRST_DIRECTION, filterReleases, indexersIn, qualitiesIn, sortReleases, type ReleaseSortKey, type SortDir } from '../releaseSort'
+import { FIRST_DIRECTION, ageOf, filterReleases, indexersIn, publishedAt, qualitiesIn, sortReleases, type ReleaseSortKey, type SortDir } from '../releaseSort'
 import Dropdown from './Dropdown'
 import Icon from './Icon'
 
@@ -96,6 +96,7 @@ export default function ReleaseTable({
               {showScore && head('score', t('Score'), t("Custom format score in this title's quality profile"))}
               {head('indexer', t('Indexer'))}
               {head('size', t('Size'))}
+              {head('age', t('Age'), t('How long ago the indexer posted it'))}
               {head('seeders', t('Seeders'))}
               <th></th>
             </tr>
@@ -163,6 +164,7 @@ export default function ReleaseTable({
                   </span>
                 </td>
                 <td>{formatBytes(r.sizeBytes)}</td>
+                <td title={r.publishDate && publishedAt(r) ? new Date(publishedAt(r)).toLocaleString() : undefined}>{ageOf(r) || '—'}</td>
                 <td>{r.protocol === 'torrent' ? `${r.seeders ?? 0} / ${r.peers ?? 0}` : '—'}</td>
                 <td>
                   <button className="primary" disabled={grabbing !== null} onClick={() => onGrab(r)}>

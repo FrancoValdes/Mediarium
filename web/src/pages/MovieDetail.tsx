@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AddDialog from '../components/AddDialog'
 import Icon from '../components/Icon'
@@ -60,6 +60,12 @@ function MoviePage() {
   const [adding, setAdding] = useState(false)
   const [monitored, setMonitored] = useState<boolean | null>(null)
   const [results, setResults] = useState<SearchResult[] | null>(null)
+  // The releases list is drawn above the files and settings: bring it into view when a search answers.
+  const releasesRef = useRef<HTMLElement>(null)
+  const hasResults = results !== null
+  useEffect(() => {
+    if (hasResults) releasesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [hasResults])
   const [answered, setAnswered] = useState<{ sources: number; unanswered: Unanswered[] }>({ sources: 0, unanswered: [] })
   const [searching, setSearching] = useState(false)
   const [searchingNow, setSearchingNow] = useState(false)
@@ -188,7 +194,7 @@ function MoviePage() {
             ...(movie.releaseDate ? [{ label: t('Released'), value: movie.releaseDate }] : []),
             ...(movie.releaseStatus ? [{ label: t('Status'), value: movie.releaseStatus }] : []),
           ],
-          links: inLibrary ? undefined : titleLinks('movie', movie.tmdbId, movie.imdbId, movie.homepage),
+          links: titleLinks('movie', movie.tmdbId, movie.imdbId, movie.homepage),
         }}
         status={
           state && (
@@ -262,7 +268,7 @@ function MoviePage() {
       )}
 
       {results !== null && (
-        <section className="card" style={{ marginBottom: 24 }}>
+        <section ref={releasesRef} className="card" style={{ marginBottom: 24, scrollMarginTop: 80 }}>
           <h2>{t('Releases')}</h2>
           <ReleaseNotice sources={answered.sources} unanswered={answered.unanswered} results={results.length} />
           {results.length === 0 && (

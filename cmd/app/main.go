@@ -82,6 +82,9 @@ func main() {
 	if handled, code := handleProbeFlags(os.Args[1:], os.Stdout, os.Stderr); handled {
 		os.Exit(code)
 	}
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		os.Exit(runConfigCommand(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
 		if err := resetPassword(os.Args[2:]); err != nil {
 			log.Fatalf("mediarium: %v", err)

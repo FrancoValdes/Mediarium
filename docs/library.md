@@ -14,7 +14,8 @@ To do the same thing to many titles at once, use **Select**.
 - **Back brings the list back as it was.** The tab, the status chip, the search text, the genre, tag and decade live in the address (for example `/library?kind=tv&st=pending`), so pressing Back from a title returns to the same list with the same filters. Discover works the same way for its tab and filters.
 - **The Downloading chip** only shows its moving blue line while something is really downloading.
 - **Clear filters.** When a search, chip, genre or year is narrowing the list, a **Clear filters** button appears beside the chips, and in the "Nothing matches these filters" message when nothing is left. It puts them all back.
-- **Sort.** **Recently added**, **Title A–Z**, **Newest release** (release date, or the date a show started), **Largest on disk** (the movie's file, or all of a show's downloaded episodes) and **Status**.
+- **Ended shows.** A show that has finished (TMDB says Ended or Canceled) has a red **Ended** ribbon on its poster, and its page says **Ended**, **Continuing** or **Upcoming** next to the episode count. A show shows no status until it has been refreshed once.
+- **Sort.** **Recently added**, **Title A–Z** (without a leading "The", "A" or "An", so The Matrix is under M), **Newest release** (release date, or the date a show started), **Largest on disk** (the movie's file, or all of a show's downloaded episodes) and **Status**.
 - **Sort direction.** The button with the up-and-down arrows next to **Sort** reverses the order (oldest first, Z to A, smallest first). The sort and its direction are remembered in this browser.
 - **Poster size.** In the grid, the slider next to the grid and list buttons makes the posters bigger or smaller. It is remembered in this browser (and hidden on small screens).
 - **Press `/`** anywhere (except while you type in a box) to jump to the search box at the top, and **Esc** to leave it.

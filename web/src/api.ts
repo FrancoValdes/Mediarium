@@ -769,7 +769,7 @@ export interface DebridAccount {
 }
 
 // An external download client torrent releases go to (Settings > Downloading).
-export type DownloadClientKind = '' | 'qbittorrent' | 'rdtclient' | 'decypharr'
+export type DownloadClientKind = '' | 'qbittorrent' | 'transmission' | 'rdtclient' | 'decypharr'
 export interface DownloadClientSettings {
   kind: DownloadClientKind
   url: string
@@ -1174,6 +1174,7 @@ export interface Series {
   seriesType?: SeriesType // how releases number the episodes
   firstAirDate?: string // "2022-02-18", for sorting
   sizeBytes?: number // the downloaded episodes on disk
+  showStatus?: 'ended' | 'continuing' | 'upcoming' // where the show stands; left out until it has been refreshed once
 }
 
 export interface Episode {
@@ -1187,6 +1188,7 @@ export interface Episode {
   quality?: string
   filePath?: string
   monitored: boolean
+  sizeBytes?: number // the file on disk (downloaded episodes)
 }
 
 // A second copy of a movie or show, kept in another quality in the copies folder.

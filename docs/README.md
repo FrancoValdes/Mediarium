@@ -36,6 +36,7 @@ The screenshots in these pages come from demo mode: the movies, shows, artists, 
 | Ebooks and audiobooks (switch them on, add books, which release is picked, where files go) | [books.md](./books.md) |
 | Connect Plex, Jellyfin or Emby (library refresh after imports, "Watch in" links, finding the token or API key, path mapping) | [media-servers.md](./media-servers.md) |
 | Run a script of your own after each import (what it is told, how to try it) | [scripts.md](./scripts.md) |
+| Keep your settings in a YAML file (for git or a deploy script) and apply it | [config-file.md](./config-file.md) |
 | Connect Overseerr, Jellyseerr, Homepage, Homarr, nzb360, LunaSea or Ruddarr (apps made for Radarr, Sonarr and Lidarr) | [other-apps.md](./other-apps.md) |
 | Set up notifications (email, ntfy, Gotify, Pushover, Slack, Discord, Telegram, Matrix, Home Assistant, Apprise, webhook), turn them on and off, test them | [notifications.md](./notifications.md) |
 | Find out what went wrong (a failed download, "too many connections", a full disk) and what to try, copy a report for support | [logs-and-errors.md](./logs-and-errors.md) |

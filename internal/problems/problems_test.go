@@ -144,7 +144,7 @@ func TestCodeFor(t *testing.T) {
 		{"auth", errors.New("the download failed: news.example.com: The provider refused this username and password."), problems.CodeUsenetAuthRefused},
 		{"unreachable", errors.New("the download failed: dial tcp: lookup news.example.com: no such host"), problems.CodeUsenetUnreachable},
 		{"missing parts found by the check before downloading", errors.New("the download failed: Checked 48 articles; 9 of them are not on your Usenet servers"), problems.CodeUsenetMissingParts},
-		{"missing parts",errors.New("the download failed: 12 articles couldn't be found on your Usenet servers and the release has no PAR2 files to repair it"), problems.CodeUsenetMissingParts},
+		{"missing parts", errors.New("the download failed: 12 articles couldn't be found on your Usenet servers and the release has no PAR2 files to repair it"), problems.CodeUsenetMissingParts},
 		{"par2", errors.New("repairing the download failed: par2 repair x: exit status 2"), problems.CodePar2Failed},
 		{"password", errors.New("couldn't unpack the download: archive is password protected"), problems.CodeUnpackPassword},
 		{"7z", errors.New("couldn't unpack the download: the 7z tool is not installed, so .7z archives can't be unpacked"), problems.CodeUnpackToolMissing},

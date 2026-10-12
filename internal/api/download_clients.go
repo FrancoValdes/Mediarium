@@ -155,7 +155,7 @@ func (s *Server) handleClientTorrents(w http.ResponseWriter, r *http.Request) {
 	out.Configured, out.Kind, out.Label, out.Category = true, cfg.Kind, qbit.Label(cfg.Kind), cfg.category()
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	c := newDownloadClient(cfg.URL, cfg.Username, cfg.Password)
+	c := newDownloadClient(cfg.Kind, cfg.URL, cfg.Username, cfg.Password)
 	category := cfg.category()
 	if r.URL.Query().Get("scope") == "all" {
 		category = ""
@@ -206,7 +206,7 @@ func (s *Server) handleClientTorrentAction(w http.ResponseWriter, r *http.Reques
 	}
 	cfg := s.downloadClientConfig()
 	label := qbit.Label(cfg.Kind)
-	c := newDownloadClient(cfg.URL, cfg.Username, cfg.Password)
+	c := newDownloadClient(cfg.Kind, cfg.URL, cfg.Username, cfg.Password)
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	var err error

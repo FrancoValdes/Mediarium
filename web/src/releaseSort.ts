@@ -1,7 +1,7 @@
 // Sorting and filtering for the lists of releases and subtitles: pure
 // functions, so the table components only draw what they return.
 
-export type ReleaseSortKey = 'release' | 'quality' | 'language' | 'score' | 'indexer' | 'size' | 'seeders'
+export type ReleaseSortKey = 'release' | 'quality' | 'language' | 'score' | 'indexer' | 'size' | 'age' | 'seeders'
 export type SortDir = 1 | -1
 
 // The direction a column starts in when first clicked: biggest, best or
@@ -13,6 +13,7 @@ export const FIRST_DIRECTION: Record<ReleaseSortKey, SortDir> = {
   score: -1,
   indexer: 1,
   size: -1,
+  age: -1, // newest first
   seeders: -1,
 }
 
@@ -26,6 +27,28 @@ export interface SortableRelease {
   seeders?: number
   formatScore?: number
   language?: string
+  publishDate?: string
+}
+
+// publishedAt is when the release was posted, 0 when the indexer didn't say.
+export function publishedAt(r: { publishDate?: string }): number {
+  const t = r.publishDate ? Date.parse(r.publishDate) : NaN
+  // The zero date some indexers send for "unknown" counts as none.
+  return Number.isFinite(t) && t > 86_400_000 ? t : 0
+}
+
+// ageOf is how old a release is in a few characters ("5h", "3d", "2mo", "1y"), '' when unknown.
+export function ageOf(r: { publishDate?: string }, now = Date.now()): string {
+  const at = publishedAt(r)
+  if (!at) return ''
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000))
+  if (minutes < 60) return '<1h'
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  if (days < 60) return `${days}d`
+  if (days < 730) return `${Math.floor(days / 30)}mo`
+  return `${Math.floor(days / 365)}y`
 }
 
 // resolutionOf is the number in "1080p" (2160 for 4K), 0 when there is none.
@@ -52,6 +75,9 @@ function compare(a: SortableRelease, b: SortableRelease, key: ReleaseSortKey): n
       return text(a.indexerName, b.indexerName)
     case 'size':
       return a.sizeBytes - b.sizeBytes
+    case 'age':
+      // A larger value is newer; releases with no date sort as oldest.
+      return publishedAt(a) - publishedAt(b)
     case 'seeders':
       // Usenet has no seeders: those sort as none at all.
       return (a.protocol === 'torrent' ? (a.seeders ?? 0) : -1) - (b.protocol === 'torrent' ? (b.seeders ?? 0) : -1)

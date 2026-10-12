@@ -144,9 +144,12 @@ export const TOPICS: TopicDef[] = [
   {
     id: 'backups-updates',
     title: 'Backups and updates',
-    summary: 'Updating from inside the app or from the command line, backing up and restoring, cloud backups.',
+    summary: 'Updating from inside the app or the command line, backing up and restoring, cloud backups, settings in a file.',
     group: 'Looking after it',
-    sources: [{ file: 'INSTALL.md', only: ['Updating', 'Updating without rebuilding the container', 'Backup and restore'] }],
+    sources: [
+      { file: 'INSTALL.md', only: ['Updating', 'Updating without rebuilding the container', 'Backup and restore'] },
+      { file: 'config-file.md', title: 'Keeping your settings in a file' },
+    ],
   },
   {
     id: 'problems',

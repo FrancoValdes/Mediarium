@@ -95,7 +95,7 @@ func goModules(root string) ([]component, error) {
 // knownLicences covers modules whose published version carries no licence
 // file, checked by hand against the project's repository.
 var knownLicences = map[string]struct{ licence, note string }{
-	"github.com/go-llsqlite/adapter": {"MPL-2.0", "The version used was published before the project added its LICENSE file. The project is licensed under the Mozilla Public License 2.0: https://github.com/go-llsqlite/adapter/blob/master/LICENSE. Its source is at https://github.com/go-llsqlite/adapter."},
+	"github.com/go-llsqlite/adapter":     {"MPL-2.0", "The version used was published before the project added its LICENSE file. The project is licensed under the Mozilla Public License 2.0: https://github.com/go-llsqlite/adapter/blob/master/LICENSE. Its source is at https://github.com/go-llsqlite/adapter."},
 	"github.com/pgaskin/kepubify/_/html": {"BSD-3-Clause", "A copy of golang.org/x/net/html, made by the kepubify project. The Go authors' licence (BSD-3-Clause) is the file golang.org/x/net/LICENSE inside the module. Source: https://github.com/pgaskin/kepubify/tree/_/html."},
 }
 

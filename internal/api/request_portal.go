@@ -279,12 +279,12 @@ func (s *Server) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
 	uid, _ := requester(r)
 	o := s.requestOptions()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"quota":      s.requestQuota(uid),
-		"fourK":      map[string]bool{"movie": s.fourKReady("movie"), "tv": s.fourKReady("tv")},
-		"reports":    o.Reports,
-		"notifyOn":   o.NotifyRequester,
-		"asksToAdd":  s.mustRequest(r),
-		"fourKLabel": s.fourKProfileName(),
+		"quota":          s.requestQuota(uid),
+		"fourK":          map[string]bool{"movie": s.fourKReady("movie"), "tv": s.fourKReady("tv")},
+		"reports":        o.Reports,
+		"notifyOn":       o.NotifyRequester,
+		"asksToAdd":      s.mustRequest(r),
+		"fourKLabel":     s.fourKProfileName(),
 		"fourKProfileId": o.FourKProfileID,
 	})
 }

@@ -1,7 +1,7 @@
 // Run with: npm test (uses node's built-in test runner, no extra packages).
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { filterReleases, indexersIn, qualitiesIn, resolutionOf, sortReleases, sortSubtitles, type SortableRelease } from './releaseSort.ts'
+import { ageOf, filterReleases, indexersIn, qualitiesIn, resolutionOf, sortReleases, sortSubtitles, type SortableRelease } from './releaseSort.ts'
 
 const base = { protocol: 'usenet', sizeBytes: 0 }
 const list: SortableRelease[] = [
@@ -48,4 +48,19 @@ test('subtitles sort by fit, rating and name; add-on and SubDL ratings count as 
   assert.deepEqual(sortSubtitles(subs, 'fit', -1).map((s) => s.release), ['a', 'b', 'c'])
   assert.deepEqual(sortSubtitles(subs, 'rating', -1).map((s) => s.release), ['c', 'b', 'a'])
   assert.deepEqual(sortSubtitles(subs, 'release', 1).map((s) => s.release), ['a', 'b', 'c'])
+})
+
+test('age sorts by when the release was posted, newest first, and unknown last', () => {
+  const now = Date.parse('2026-10-12T12:00:00Z')
+  const rel = (title: string, publishDate?: string): SortableRelease => ({ ...base, title, indexerName: 'X', publishDate })
+  const mixed = [rel('old', '2026-09-01T00:00:00Z'), rel('none'), rel('new', '2026-10-12T09:00:00Z'), rel('zero', '0001-01-01T00:00:00Z'), rel('mid', '2026-10-10T00:00:00Z')]
+  assert.deepEqual(sortReleases(mixed, 'age', -1).map((r) => r.title), ['new', 'mid', 'old', 'none', 'zero'])
+  assert.deepEqual(sortReleases(mixed, 'age', 1).map((r) => r.title), ['none', 'zero', 'old', 'mid', 'new'])
+  assert.equal(ageOf(rel('a', '2026-10-12T11:30:00Z'), now), '<1h')
+  assert.equal(ageOf(rel('a', '2026-10-12T07:00:00Z'), now), '5h')
+  assert.equal(ageOf(rel('a', '2026-10-09T12:00:00Z'), now), '3d')
+  assert.equal(ageOf(rel('a', '2026-07-12T12:00:00Z'), now), '3mo')
+  assert.equal(ageOf(rel('a', '2024-01-01T00:00:00Z'), now), '2y')
+  assert.equal(ageOf(rel('a'), now), '')
+  assert.equal(ageOf(rel('a', '0001-01-01T00:00:00Z'), now), '')
 })

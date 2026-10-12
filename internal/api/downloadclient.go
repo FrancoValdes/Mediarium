@@ -105,8 +105,8 @@ func (s *Server) downloadClientOn() bool {
 // newDownloadClient connects to the client at url. The client is usually on
 // the home network, so local addresses are fine (only link-local and cloud
 // metadata addresses are refused).
-func newDownloadClient(url, username, password string) *qbit.Client {
-	return qbit.New(url, username, password, netguard.Client(60*time.Second))
+func newDownloadClient(kind, url, username, password string) qbit.API {
+	return qbit.NewAPI(kind, url, username, password, netguard.Client(60*time.Second))
 }
 
 func clientTag(queueID int64) string { return fmt.Sprintf("mediarium-q%d", queueID) }
@@ -116,7 +116,7 @@ func clientTag(queueID int64) string { return fmt.Sprintf("mediarium-q%d", queue
 // is done, incompleteDir becomes a view of its files (see buildClientView).
 func (s *Server) downloadViaClient(ctx context.Context, queueID int64, downloadURL, incompleteDir string) error {
 	cfg := s.downloadClientConfig()
-	c := newDownloadClient(cfg.URL, cfg.Username, cfg.Password)
+	c := newDownloadClient(cfg.Kind, cfg.URL, cfg.Username, cfg.Password)
 	label := qbit.Label(cfg.Kind)
 	if err := os.MkdirAll(incompleteDir, 0o755); err != nil {
 		return fmt.Errorf("create download folder: %w", err)
@@ -202,7 +202,7 @@ func (s *Server) downloadViaClient(ctx context.Context, queueID int64, downloadU
 // addToClient hands the release to the client. It returns the torrent's
 // hash ("" when it can't be known up front) and whether the torrent was in
 // the client already (then it's never removed from there).
-func (s *Server) addToClient(ctx context.Context, c *qbit.Client, cfg downloadClientConfig, label string, queueID int64, downloadURL, incompleteDir string) (hash string, keep bool, err error) {
+func (s *Server) addToClient(ctx context.Context, c qbit.API, cfg downloadClientConfig, label string, queueID int64, downloadURL, incompleteDir string) (hash string, keep bool, err error) {
 	magnet, torrentFile, err := s.torrentSource(ctx, downloadURL, incompleteDir)
 	if err != nil {
 		return "", false, fmt.Errorf("couldn't get the torrent: %w", err)
@@ -279,7 +279,7 @@ func writeClientHash(path, hash string, keep bool) {
 
 // clientForget removes a torrent that failed from the client, with its
 // files, unless it was there before Mediarium asked for it.
-func (s *Server) clientForget(c *qbit.Client, hash string, keep bool, hashPath string) {
+func (s *Server) clientForget(c qbit.API, hash string, keep bool, hashPath string) {
 	_ = os.Remove(hashPath)
 	if hash == "" || keep {
 		return
@@ -535,7 +535,7 @@ func (s *Server) afterClientImport(dir string) {
 	deleteFiles := !clientViewHasLinks(dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c := newDownloadClient(cfg.URL, cfg.Username, cfg.Password)
+	c := newDownloadClient(cfg.Kind, cfg.URL, cfg.Username, cfg.Password)
 	if err := c.Delete(ctx, hash, deleteFiles); err != nil {
 		slog.Warn("download client: couldn't remove an imported torrent", "hash", hash, "err", err)
 		return
@@ -607,7 +607,7 @@ func (req *downloadClientRequest) trim() {
 
 func (req downloadClientRequest) check() string {
 	if req.Kind != "" && !qbit.ValidKind(req.Kind) {
-		return "Choose qBittorrent, RDT-Client, Decypharr or none."
+		return "Choose qBittorrent, Transmission, RDT-Client, Decypharr or none."
 	}
 	if req.Kind == "" {
 		return ""
@@ -710,7 +710,7 @@ func (s *Server) handleTestDownloadClient(w http.ResponseWriter, r *http.Request
 	req.trim()
 	if msg := req.check(); msg != "" || req.Kind == "" {
 		if msg == "" {
-			msg = "Choose qBittorrent, RDT-Client or Decypharr."
+			msg = "Choose qBittorrent, Transmission, RDT-Client or Decypharr."
 		}
 		writeError(w, http.StatusBadRequest, msg)
 		return
@@ -723,7 +723,7 @@ func (s *Server) handleTestDownloadClient(w http.ResponseWriter, r *http.Request
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	version, err := newDownloadClient(req.URL, req.Username, password).Version(ctx)
+	version, err := newDownloadClient(req.Kind, req.URL, req.Username, password).Version(ctx)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": plainerror.Message(s.downloadClientError(qbit.Label(req.Kind), err))})
 		return

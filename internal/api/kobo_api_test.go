@@ -333,7 +333,7 @@ func TestKoboSyncFlow(t *testing.T) {
 	}
 
 	// 6. Nothing changed: the next sync is empty.
-	entries, resp = dev.sync()
+	entries, _ = dev.sync()
 	if len(entries) != 0 {
 		t.Fatalf("second sync should be empty: %v", entries.kinds())
 	}
@@ -527,7 +527,7 @@ func TestKoboPassesTheStoreThrough(t *testing.T) {
 	if tok.RawStoreToken != "store.one" {
 		t.Fatalf("the store's token is kept in ours: %+v", tok)
 	}
-	entries, resp = dev.sync()
+	entries, _ = dev.sync()
 	if len(entries) != 0 || kobo.ParseSyncToken(dev.token).RawStoreToken != "store.two" {
 		t.Fatalf("second merged sync: %v %q", entries.kinds(), kobo.ParseSyncToken(dev.token).RawStoreToken)
 	}

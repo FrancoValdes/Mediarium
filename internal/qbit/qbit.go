@@ -27,12 +27,14 @@ import (
 	"github.com/rdborg/mediarium/internal/netguard"
 )
 
-// Kinds of client, as people know them. They all speak the same API; the
-// kind only changes the names and hints shown.
+// Kinds of client, as people know them. All but Transmission speak the same
+// API (qBittorrent's); for those the kind only changes the names and hints
+// shown. Transmission has its own protocol (see transmission.go).
 const (
-	QBittorrent = "qbittorrent"
-	RDTClient   = "rdtclient"
-	Decypharr   = "decypharr"
+	QBittorrent  = "qbittorrent"
+	RDTClient    = "rdtclient"
+	Decypharr    = "decypharr"
+	Transmission = "transmission"
 )
 
 // Label is a kind's name as people know it.
@@ -44,13 +46,15 @@ func Label(kind string) string {
 		return "RDT-Client"
 	case Decypharr:
 		return "Decypharr"
+	case Transmission:
+		return "Transmission"
 	}
 	return "your download client"
 }
 
 // ValidKind reports whether kind is one of the clients above.
 func ValidKind(kind string) bool {
-	return kind == QBittorrent || kind == RDTClient || kind == Decypharr
+	return kind == QBittorrent || kind == RDTClient || kind == Decypharr || kind == Transmission
 }
 
 // ErrAuth means the client refused the user name or password.

@@ -21,7 +21,9 @@ import SubtitlesPanel from '../components/SubtitlesPanel'
 import { useAuth } from '../AuthContext'
 import { useModules } from '../ModulesContext'
 import { api, can, isAdmin, isViewer, type Episode, type SearchResult, type SeriesDetail as SeriesDetailData, type TVDetail } from '../api'
-import { qualityText } from '../format'
+import { formatBytes, qualityText } from '../format'
+import { showStatusLabel } from '../showStatus'
+import { titleLinks } from '../components/TitlePreview'
 import { useLive } from '../useLive'
 import { useConfirm } from '../components/ConfirmProvider'
 import { removeOption } from '../diskUsage'
@@ -113,6 +115,13 @@ function SeriesPage() {
     }
     return [...map.entries()].sort((a, b) => a[0] - b[0])
   }, [series])
+
+  // The releases list sits above the seasons: bring it into view when a search starts.
+  const releasesRef = useRef<HTMLElement>(null)
+  const searchOpen = target !== null
+  useEffect(() => {
+    if (searchOpen) releasesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [searchOpen, target?.label])
 
   // Only the answer to the latest search is shown, so a slow earlier one can't land under the wrong episode.
   const searchId = useRef(0)
@@ -280,7 +289,9 @@ function SeriesPage() {
           posterUrl: series.posterUrl,
           overview: series.overview,
           certification: tv?.contentRating,
+          links: titleLinks('tv', series.tmdbId, tv?.imdbId, tv?.homepage),
           facts: [
+            ...(series.showStatus ? [{ label: t('Status'), value: showStatusLabel(series.showStatus) }] : []),
             { label: t('Episodes'), value: t('{done} of {total} downloaded', { done: series.downloadedCount, total: series.episodeCount }) },
             ...(nextText ? [{ label: t('Next episode'), value: nextText }] : []),
             ...(tv?.networks?.length ? [{ label: t('Network'), value: tv.networks.join(', ') }] : []),
@@ -323,7 +334,7 @@ function SeriesPage() {
       {message && <p className="badge downloaded">{message}</p>}
 
       {target && (
-        <section className="card" style={{ marginBottom: 24 }}>
+        <section ref={releasesRef} className="card" style={{ marginBottom: 24, scrollMarginTop: 80 }}>
           <h2>{t('Releases for {target}', { target: target.label })}</h2>
           {searching && <p>{t('Looking for releases…')}</p>}
           {results !== null && <ReleaseNotice sources={answered.sources} unanswered={answered.unanswered} results={results.length} />}
@@ -388,6 +399,7 @@ function SeriesPage() {
               <span className={`badge ${done === allEps.length ? 'downloaded' : 'missing'}`}>
                 {done} / {allEps.length}
               </span>
+              {allEps.some((e) => e.sizeBytes) && <span className="badge" title={t('Size on disk')}>{formatBytes(allEps.reduce((n, e) => n + (e.sizeBytes ?? 0), 0))}</span>}
               {season === 0 ? (
                 <span className="hint">{t("Specials aren't looked for until you tick them. Each one is searched on its own, by S00E number and by its title.")}</span>
               ) : (
@@ -417,6 +429,7 @@ function SeriesPage() {
                   <th>{t('Air date')}</th>
                   <th>{t('Status')}</th>
                   <th>{t('Quality')}</th>
+                  <th>{t('Size')}</th>
                   <th>
                     <span className="sr-only">{t('Actions')}</span>
                   </th>
@@ -448,6 +461,7 @@ function SeriesPage() {
                         )}
                       </td>
                       <td>{qualityText(e.quality)}</td>
+                      <td style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{e.sizeBytes ? formatBytes(e.sizeBytes) : '—'}</td>
                       <td>
                         {canReleases && (
                           <button
@@ -464,7 +478,7 @@ function SeriesPage() {
                     </tr>
                     {subtitlesOn && subsOpen === e.id && (
                       <tr>
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <SubtitlesPanel kind="episode" id={e.id} />
                         </td>
                       </tr>

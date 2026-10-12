@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rdborg/mediarium/internal/library"
@@ -46,6 +47,9 @@ type seriesPayload struct {
 	Copies int   `json:"copies,omitempty"`
 	// RootPath is the library folder chosen for the show ("" = the main TV folder).
 	RootPath string `json:"rootPath,omitempty"`
+	// ShowStatus is where the show stands: "ended", "continuing" or "upcoming"
+	// (from TMDB); left out until the show has been refreshed once.
+	ShowStatus string `json:"showStatus,omitempty"`
 }
 
 // toSeriesPayload builds a library show's JSON; who resolves the account
@@ -62,7 +66,18 @@ func toSeriesPayload(s library.Series, who func(int64) *userRef) seriesPayload {
 		Genres: genres, Tags: []string{}, AddedBy: who(s.AddedBy),
 		NoUpgrade: s.NoUpgrade, DetailsState: s.DetailsState, DetailsNote: s.DetailsNote, SeriesType: library.ValidSeriesType(s.SeriesType),
 		FirstAirDate: s.FirstAirDate, CopyOf: s.CopyOf, RootPath: s.RootPath,
+		ShowStatus: showStatusOf(s.TMDBStatus),
 	}
+}
+
+// showStatusOf is the show's status in the words the screens use, or "" when
+// TMDB's status isn't known yet.
+func showStatusOf(tmdbStatus string) string {
+	if strings.TrimSpace(tmdbStatus) == "" {
+		return ""
+	}
+	status, _ := showEndedStatus(tmdbStatus)
+	return status
 }
 
 type episodePayload struct {
@@ -76,6 +91,8 @@ type episodePayload struct {
 	Quality   string `json:"quality,omitempty"`
 	FilePath  string `json:"filePath,omitempty"`
 	Monitored bool   `json:"monitored"`
+	// SizeBytes is the size of the episode's file on disk (downloaded episodes only).
+	SizeBytes int64 `json:"sizeBytes,omitempty"`
 }
 
 func toEpisodePayload(e library.Episode) episodePayload {
@@ -175,8 +192,12 @@ func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
 	if t, err := s.MovieRepo.TitleTags(library.TagSeries, sr.ID); err == nil {
 		out.Tags = t
 	}
+	now := time.Now()
 	for i, e := range eps {
 		out.Episodes[i] = toEpisodePayload(e)
+		if e.Status == library.StatusDownloaded {
+			out.Episodes[i].SizeBytes = cachedFileSize(e.FilePath, now)
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
