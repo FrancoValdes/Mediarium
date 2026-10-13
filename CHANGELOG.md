@@ -8,6 +8,11 @@ under [Unreleased]. How releases are cut: [docs/RELEASING.md](docs/RELEASING.md)
 
 ## [Unreleased]
 
+## [3.0.5] - 2026-10-13
+
+### Fixed
+- **A 7z archive with a password was refused even with the right password** (found while testing 12nick12's report on GitHub, #44, with a real archive): the check that runs before unpacking stopped at "password protected" for any 7z whose files are encrypted, before the password was ever tried. It now tries the password you gave (from the NZB or `{{password}}` after the release name), and an archive that also hides its file names fails as "password protected" when there is no password, as it should.
+
 ## [3.0.4] - 2026-10-13
 
 ### Added

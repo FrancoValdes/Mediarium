@@ -266,3 +266,44 @@ func TestExtractDoesNotWriteThroughAnExistingLink(t *testing.T) {
 		t.Fatalf("a file was written outside the destination: %v", got)
 	}
 }
+
+// With the real 7z tool: a .7z made with a password opens with that password,
+// whether only the files are encrypted or the file names too.
+func TestExtractReal7zEncrypted7z(t *testing.T) {
+	ex := organizer.NewExtractor()
+	if !ex.Available() {
+		t.Skip("7z binary not available on this machine")
+	}
+	for name, flag := range map[string]string{"files only": "-mhe=off", "names too": "-mhe=on"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "src")
+			if err := os.MkdirAll(src, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeTestFile(t, filepath.Join(src, "movie.mkv"), []byte("the movie"))
+			archive := filepath.Join(dir, "release.7z")
+			cmd := exec.Command("7z", "a", "-psecret", flag, archive, "movie.mkv")
+			cmd.Dir = src
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("build the fixture: %v: %s", err, out)
+			}
+			none := &organizer.Extractor{BinaryPath: ex.BinaryPath}
+			if err := none.Extract(archive, filepath.Join(dir, "a")); !errors.Is(err, organizer.ErrPasswordProtected) {
+				t.Fatalf("no password: %v", err)
+			}
+			wrong := &organizer.Extractor{BinaryPath: ex.BinaryPath, Password: "nope"}
+			if err := wrong.Extract(archive, filepath.Join(dir, "b")); !errors.Is(err, organizer.ErrPasswordProtected) {
+				t.Fatalf("wrong password: %v", err)
+			}
+			right := &organizer.Extractor{BinaryPath: ex.BinaryPath, Password: "secret"}
+			dest := filepath.Join(dir, "c")
+			if err := right.Extract(archive, dest); err != nil {
+				t.Fatalf("right password: %v", err)
+			}
+			if got := readTestFile(t, filepath.Join(dest, "movie.mkv")); got != "the movie" {
+				t.Errorf("movie.mkv = %q", got)
+			}
+		})
+	}
+}

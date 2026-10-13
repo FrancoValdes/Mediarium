@@ -442,7 +442,7 @@ func (e *Extractor) extract7z(archivePath, destDir string) error {
 	if err != nil {
 		return e.sevenZipError(ctx, name, listing, err)
 	}
-	total, err := check7zListing(listing, e.maxTotal())
+	total, err := check7zListing(listing, e.maxTotal(), e.Password != "")
 	if err != nil {
 		return fmt.Errorf("extract %s: %w", name, err)
 	}
@@ -492,7 +492,9 @@ func (e *Extractor) sevenZipError(ctx context.Context, name string, out []byte, 
 		return fmt.Errorf("extract %s: 7z took too long and was stopped: %w", name, ctx.Err())
 	}
 	lower := strings.ToLower(string(out))
-	if strings.Contains(lower, "wrong password") || strings.Contains(lower, "cannot open encrypted archive") {
+	// With the file names encrypted and no password, 7z asks for one (it can't:
+	// stdin is the null device) and gives up.
+	if strings.Contains(lower, "wrong password") || strings.Contains(lower, "cannot open encrypted archive") || strings.Contains(lower, "enter password") {
 		return fmt.Errorf("extract %s: %w", name, ErrPasswordProtected)
 	}
 	return fmt.Errorf("extract %s: %w: %s", name, err, truncateOutput(out))
@@ -522,9 +524,10 @@ var sevenZipPerms = regexp.MustCompile(`^[-dlbcps][-rwxsStT]{9}$`)
 
 // check7zListing reads the output of `7z l -slt` and refuses an archive that
 // holds a link or other special file, a path that leaves the destination,
-// encrypted files, too many entries or more data than budget. It returns the
-// total unpacked size the listing declares.
-func check7zListing(out []byte, budget int64) (int64, error) {
+// encrypted files (unless there is a password to open them with), too many
+// entries or more data than budget. It returns the total unpacked size the
+// listing declares.
+func check7zListing(out []byte, budget int64, havePassword bool) (int64, error) {
 	text := "\n" + strings.ReplaceAll(string(out), "\r\n", "\n")
 	_, body, found := strings.Cut(text, "\n----------\n")
 	if !found {
@@ -552,7 +555,7 @@ func check7zListing(out []byte, budget int64) (int64, error) {
 		if _, err := normalizeEntryName(p); err != nil {
 			return 0, err
 		}
-		if fields["Encrypted"] == "+" {
+		if fields["Encrypted"] == "+" && !havePassword {
 			return 0, ErrPasswordProtected
 		}
 		if _, isLink := fields["Symbolic Link"]; isLink {
