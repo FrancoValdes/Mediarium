@@ -9,13 +9,14 @@
 // prefix. Set PW_CHANNEL (default "chrome") to use an installed browser. Set
 // SHOTS to a folder to keep screenshots.
 import { chromium } from '@playwright/test'
+import { randomBytes } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 
 const origin = process.env.MEDIARIUM_URL ?? 'http://localhost:8264'
 const prefix = (process.env.URL_BASE ?? '').replace(/\/+$/, '')
 const shots = process.env.SHOTS
 if (shots) mkdirSync(shots, { recursive: true })
-const password = process.env.CHECK_PASSWORD ?? 'Check-' + Math.random().toString(36).slice(2, 12) + '-pw'
+const password = process.env.CHECK_PASSWORD ?? 'Check-' + randomBytes(9).toString('base64url') + '-pw'
 const username = 'urlbase-admin'
 
 const problems = []

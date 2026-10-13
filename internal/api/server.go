@@ -46,7 +46,7 @@ import (
 type Server struct {
 	streamPause streamPauseState // pause while someone is watching (stream_pause.go)
 	cfg         config.Config
-	db  *sql.DB // for backups (VACUUM INTO); repos hold their own handles
+	db          *sql.DB // for backups (VACUUM INTO); repos hold their own handles
 
 	Auth              *auth.Service
 	Settings          *settings.Store

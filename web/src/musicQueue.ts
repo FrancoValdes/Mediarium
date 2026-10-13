@@ -89,10 +89,18 @@ export function clearQueue(s: QueueState, keepCurrent: boolean): QueueState {
   return { queue: [], index: -1 }
 }
 
+// A number in [0, 1) from the browser's secure generator (a shuffle doesn't need
+// one, but nothing here should depend on a weak one either).
+function secureRandom(): number {
+  const a = new Uint32Array(1)
+  globalThis.crypto.getRandomValues(a)
+  return a[0] / 4294967296
+}
+
 // Which place plays after the current one: -1 for none (the end of the queue
 // with repeat off). Shuffle picks any other place at random; `random` gives a
 // number in [0, 1) so tests can steer it.
-export function planNext(queueLength: number, index: number, shuffle: boolean, repeat: Repeat, random: () => number = Math.random): number {
+export function planNext(queueLength: number, index: number, shuffle: boolean, repeat: Repeat, random: () => number = secureRandom): number {
   if (queueLength === 0 || index < 0) return -1
   if (repeat === 'one') return index
   if (shuffle && queueLength > 1) {

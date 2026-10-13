@@ -36,24 +36,24 @@ const (
 	// "download client" to configure for torrents (the engine is embedded
 	// via anacrolix/torrent), so these live here rather than in
 	// the download_clients table.
-	KeyTorrentEnabled        = "torrent.enabled"               // "0" turns torrents off entirely; anything else (including unset) leaves them on
-	KeyTorrentListenPort     = "torrent.listen_port"           // TCP+UDP port for incoming peers; unset or "0" = 58264
-	KeyTorrentSeedRatioLimit = "torrent.seed_ratio_limit"      // e.g. "2.0"; "0" = unlimited
-	KeyTorrentSeedTimeLimitH = "torrent.seed_time_limit_h"     // hours; "0" = unlimited
-	KeyTorrentSequential     = "torrent.sequential_default"    // "1" downloads every new built-in torrent in order (first to last piece) so a video can be previewed while it downloads; unset or "0" = off. A torrent can override it
-	KeyTorrentSkipJunk       = "torrent.skip_junk"             // "0" downloads every file of a torrent; anything else (including unset) skips samples and .nfo, .txt, .exe, .url files
-	KeyTorrentPackOnlyWanted = "torrent.pack_only_wanted"      // "1" downloads only the episodes of the wanted show and season from a pack; unset or "0" = the whole pack
-	KeyTorrentUploadLimitKB  = "torrent.upload_limit_kb"       // upload speed limit of the built-in client in KB/s; unset or "0" = no limit. Applies in the same hours as the download limit
-	KeyTorrentAllowLocal     = "torrent.allow_local_addresses" // "1" lets trackers, web seeds and magnet metadata addresses of the built-in client be on the home network or this machine; anything else (including unset) refuses them, because those addresses come from torrents anyone can write. Read when the torrent client starts
-	KeyTorrentPortMapping    = "torrent.port_mapping"          // "0" stops the built-in client asking the router (UPnP, NAT-PMP) to open its port; anything else (including unset) leaves it on. Never used with a VPN or proxy
-	KeyTorrentCategories     = "torrent.categories"            // JSON list of {name, subfolder}: categories for built-in torrents; the subfolder is made inside the downloads working folder. Unset = none
-	KeyTorrentCategoryMap    = "torrent.category_map"          // JSON {movie, tv, music, book: category name}: the category each kind of grab gets; "" = no category
-	KeyDebridService         = "debrid.service"                // "" (off), "realdebrid" or "torbox": torrent releases go to that service instead of the built-in client
-	KeyDebridAPIKey          = "debrid.api_key"                // encrypted; the debrid service's API key
+	KeyTorrentEnabled        = "torrent.enabled"                 // "0" turns torrents off entirely; anything else (including unset) leaves them on
+	KeyTorrentListenPort     = "torrent.listen_port"             // TCP+UDP port for incoming peers; unset or "0" = 58264
+	KeyTorrentSeedRatioLimit = "torrent.seed_ratio_limit"        // e.g. "2.0"; "0" = unlimited
+	KeyTorrentSeedTimeLimitH = "torrent.seed_time_limit_h"       // hours; "0" = unlimited
+	KeyTorrentSequential     = "torrent.sequential_default"      // "1" downloads every new built-in torrent in order (first to last piece) so a video can be previewed while it downloads; unset or "0" = off. A torrent can override it
+	KeyTorrentSkipJunk       = "torrent.skip_junk"               // "0" downloads every file of a torrent; anything else (including unset) skips samples and .nfo, .txt, .exe, .url files
+	KeyTorrentPackOnlyWanted = "torrent.pack_only_wanted"        // "1" downloads only the episodes of the wanted show and season from a pack; unset or "0" = the whole pack
+	KeyTorrentUploadLimitKB  = "torrent.upload_limit_kb"         // upload speed limit of the built-in client in KB/s; unset or "0" = no limit. Applies in the same hours as the download limit
+	KeyTorrentAllowLocal     = "torrent.allow_local_addresses"   // "1" lets trackers, web seeds and magnet metadata addresses of the built-in client be on the home network or this machine; anything else (including unset) refuses them, because those addresses come from torrents anyone can write. Read when the torrent client starts
+	KeyTorrentPortMapping    = "torrent.port_mapping"            // "0" stops the built-in client asking the router (UPnP, NAT-PMP) to open its port; anything else (including unset) leaves it on. Never used with a VPN or proxy
+	KeyTorrentCategories     = "torrent.categories"              // JSON list of {name, subfolder}: categories for built-in torrents; the subfolder is made inside the downloads working folder. Unset = none
+	KeyTorrentCategoryMap    = "torrent.category_map"            // JSON {movie, tv, music, book: category name}: the category each kind of grab gets; "" = no category
+	KeyDebridService         = "debrid.service"                  // "" (off), "realdebrid" or "torbox": torrent releases go to that service instead of the built-in client
+	KeyDebridAPIKey          = "debrid.api_key"                  // encrypted; the debrid service's API key
 	KeyPauseWhileStreaming   = "downloads.pause_while_streaming" // "1" pauses downloads while someone watches on Plex, Jellyfin or Emby
 	KeyPausedForStreaming    = "downloads.paused_for_streaming"  // the ids of the downloads paused for a stream, as JSON
-	KeyDebridPreferCached    = "debrid.prefer_cached"          // "0" stops asking TorBox which releases it already has (no tag, no ranking); "1" or unset (with TorBox as the service) asks and ranks a cached release ahead of an equal one that is not. Real-Debrid has no such check
-	KeyDebridCachedLower     = "debrid.cached_lower_score"     // "1" lets a cached release win over an uncached one of the same quality even when the profile's preferred terms score it lower; unset or "0" only breaks ties between equal scores
+	KeyDebridPreferCached    = "debrid.prefer_cached"            // "0" stops asking TorBox which releases it already has (no tag, no ranking); "1" or unset (with TorBox as the service) asks and ranks a cached release ahead of an equal one that is not. Real-Debrid has no such check
+	KeyDebridCachedLower     = "debrid.cached_lower_score"       // "1" lets a cached release win over an uncached one of the same quality even when the profile's preferred terms score it lower; unset or "0" only breaks ties between equal scores
 
 	// An external download client that speaks the qBittorrent Web API
 	// (qBittorrent, RDT-Client, Decypharr). While one is set, torrent
