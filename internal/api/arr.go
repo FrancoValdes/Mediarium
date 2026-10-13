@@ -811,6 +811,7 @@ func (s *Server) arrCommand(app arrApp) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name         string  `json:"name"`
+			MovieID      int64   `json:"movieId"`
 			MovieIDs     []int64 `json:"movieIds"`
 			SeriesID     int64   `json:"seriesId"`
 			SeasonNumber *int    `json:"seasonNumber"`
@@ -827,6 +828,22 @@ func (s *Server) arrCommand(app arrApp) http.HandlerFunc {
 			for _, id := range req.MovieIDs {
 				id := id
 				s.background(func() { s.searchMovieInBackground(id) })
+			}
+		case "rescanmovie", "refreshmovie":
+			// What apps like Tdarr send after they change a file: look at the
+			// files again and tell the media servers (see arr_rescan.go).
+			ids := append([]int64{}, req.MovieIDs...)
+			if req.MovieID > 0 {
+				ids = append(ids, req.MovieID)
+			}
+			for _, id := range ids {
+				id := id
+				s.background(func() { s.rescanMovieFiles(id, false) })
+			}
+		case "rescanseries":
+			if req.SeriesID > 0 {
+				id := req.SeriesID
+				s.background(func() { s.rescanSeriesFiles(id, false) })
 			}
 		case "missingmoviessearch", "cutoffunmetmoviessearch":
 			s.background(s.arrSearchMissingMovies)
@@ -860,6 +877,7 @@ func (s *Server) arrCommand(app arrApp) http.HandlerFunc {
 						defer cancel()
 						_ = s.refreshSeries(ctx, sr)
 					}
+					s.rescanSeriesFiles(id, false)
 				})
 			}
 		case "artistsearch":

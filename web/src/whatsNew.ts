@@ -10,6 +10,16 @@ export interface ReleaseNotes {
 
 export const WHATS_NEW: ReleaseNotes[] = [
   {
+    version: '3.0.4',
+    items: [
+      t('Transmission works as a download client (Settings > Downloading > Torrents).'),
+      t('Keep your settings in a YAML file and apply it with the app config command (see the docs page Keep your settings in a file).'),
+      t('In Activity, send a waiting download to the front, or tick several downloads and pause, resume, stop or move them together.'),
+      t('Shows say if they have ended, episodes show their file size, release lists have an Age column, and the Library sorts without a leading The.'),
+      t('Apps like Tdarr that change a file can now tell Mediarium to look again, and your media servers are asked to scan the folder.'),
+    ],
+  },
+  {
     version: '3.0.0',
     items: [
       t('A new look: a darker design with a colour and a shape for each kind of media, floating shapes behind the pages, and a layout that works on a phone.'),

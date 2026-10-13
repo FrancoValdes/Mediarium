@@ -11,7 +11,9 @@ import (
 	"github.com/rdborg/mediarium/internal/blocklist"
 	"github.com/rdborg/mediarium/internal/books"
 	"github.com/rdborg/mediarium/internal/indexers"
+	"github.com/rdborg/mediarium/internal/parser"
 	"github.com/rdborg/mediarium/internal/plainerror"
+	"github.com/rdborg/mediarium/internal/quality"
 	"github.com/rdborg/mediarium/internal/queue"
 )
 
@@ -58,6 +60,12 @@ type queueItemPayload struct {
 	// QueuePosition is the place in the download line of a waiting download: 1
 	// is next. Zero for anything else.
 	QueuePosition int `json:"queuePosition,omitempty"`
+	// What the release name says it is (movies and shows): the picture size,
+	// where it came from, the video codec and the audio languages.
+	Resolution string `json:"resolution,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Codec      string `json:"codec,omitempty"`
+	Language   string `json:"language,omitempty"`
 }
 
 // queueRank orders the statuses on the Activity page: what is being worked
@@ -145,6 +153,7 @@ func (s *Server) handleListQueue(w http.ResponseWriter, r *http.Request) {
 	indexerNames := s.indexerNames()
 	categories, _ := s.TorrentOpts.Categories()
 	namer := s.newQueueNamer(items)
+	preferred := s.preferredLanguage()
 	for i, it := range items {
 		title, subtitle, poster := namer.describe(it)
 		p := queueItemPayload{
@@ -171,6 +180,11 @@ func (s *Server) handleListQueue(w http.ResponseWriter, r *http.Request) {
 			if m, ok := namer.movie(it.MovieID); ok {
 				p.TMDBID = m.TMDBID
 			}
+		}
+		if it.AlbumID == 0 && it.BookID == 0 {
+			rel := parser.Parse(it.ReleaseTitle)
+			p.Resolution, p.Source, p.Codec = rel.Resolution, rel.Source, rel.Codec
+			p.Language = quality.FitLanguage(rel, preferred).Label
 		}
 		out[i] = p
 	}
@@ -205,22 +219,34 @@ func (s *Server) handleDeleteQueueItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "This download is still running. Pause or stop it first.")
 		return
 	}
-	deleteFiles := r.URL.Query().Get("deleteFiles") == "1"
-	if item.Status == queue.StatusPaused {
-		queueControlMu.Lock()
-		s.releaseAfterPause(item)
-		queueControlMu.Unlock()
-	}
-	work := s.workDirFor(id) // before the row goes: a torrent may be filed in a category folder
-	if err := s.QueueRepo.Delete(id); err != nil {
+	if err := s.removeQueueEntry(item, r.URL.Query().Get("deleteFiles") == "1", false); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, nil)
+}
+
+// removeQueueEntry takes a finished, failed, stopped or paused download off
+// the list (a paused one is let go first), and with deleteFiles also deletes
+// its partly downloaded files from the downloads folder. controlLocked says
+// the caller already holds queueControlMu.
+func (s *Server) removeQueueEntry(item queue.Item, deleteFiles, controlLocked bool) error {
+	if item.Status == queue.StatusPaused {
+		if !controlLocked {
+			queueControlMu.Lock()
+			defer queueControlMu.Unlock()
+		}
+		s.releaseAfterPause(item)
+	}
+	work := s.workDirFor(item.ID) // before the row goes: a torrent may be filed in a category folder
+	if err := s.QueueRepo.Delete(item.ID); err != nil {
+		return err
 	}
 	if deleteFiles {
 		s.removeWorkDir(work)
 	}
 	s.queueItemEvent(item, "removed", queue.LevelInfo, "Removed from the download list: "+item.ReleaseTitle)
-	writeJSON(w, http.StatusOK, nil)
+	return nil
 }
 
 // handleClearFinishedQueue empties the list of completed and failed entries.

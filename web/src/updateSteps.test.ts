@@ -29,6 +29,8 @@ test('the program summary says where the running program came from', () => {
   assert.equal(programSummary({ running: '1.1.0', image: '1.1.0', pushed: null }), 'You are running Mediarium 1.1.0.')
   assert.match(programSummary({ running: '1.2.0', image: '1.1.0', pushed: { version: '1.2.0', running: true } }), /installed on top of the Docker image, which has 1\.1\.0/)
   assert.match(programSummary({ running: '1.1.0', image: '1.1.0', pushed: { version: '1.2.0', running: false } }), /waiting for the next restart/)
+  // An installed update older than the image is ignored at start-up, and the card says so.
+  assert.match(programSummary({ running: '3.0.3', image: '3.0.3', pushed: { version: '2.1.6', running: false } }), /older installed update \(2\.1\.6\) is still stored, but it is ignored/)
 })
 
 test('the last check is described without jargon', () => {

@@ -343,7 +343,7 @@ function LibrarySection({ part }: { part: 'folders' | 'naming' }) {
                 <option value="ask">{t('Ask me each time (in Activity)')}</option>
               </select>
             </label>
-            <small style={{ color: 'var(--text-dim)' }}>{t('What to do when a download would replace a file already in your library.')}</small>
+            <small style={{ color: 'var(--text-dim)' }}>{t('What to do when a download would replace a file already in your library. With Skip, a title that looks for better versions still takes a better file in place of the old one.')}</small>
           </div>
         </div>
         {namingPreset === 'custom' && <NamingBuilder movieFormat={customFormat} setMovieFormat={setCustomFormat} episodeFormat={episodeFormat} setEpisodeFormat={setEpisodeFormat} v={v} />}

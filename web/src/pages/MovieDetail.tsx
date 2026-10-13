@@ -25,6 +25,7 @@ import { useToast } from '../components/Toast'
 import { useAuth } from '../AuthContext'
 import { useModules } from '../ModulesContext'
 import { qualityText } from '../format'
+import { rescanMessage } from '../rescanMessage'
 import { api, can, isAdmin, type DiscoverMovie, type MovieDetail as MovieDetailData, type SearchResult } from '../api'
 import { useLive } from '../useLive'
 import { useConfirm } from '../components/ConfirmProvider'
@@ -70,6 +71,37 @@ function MoviePage() {
   const [searching, setSearching] = useState(false)
   const [searchingNow, setSearchingNow] = useState(false)
   const [grabbing, setGrabbing] = useState<string | null>(null)
+
+  const [rescanning, setRescanning] = useState(false)
+  async function rescan() {
+    if (!movie?.libraryId) return
+    setRescanning(true)
+    try {
+      toast.success(rescanMessage(await api.rescanMovie(movie.libraryId)))
+      reload()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRescanning(false)
+    }
+  }
+
+  async function deleteFile() {
+    if (!movie?.libraryId) return
+    const answer = await confirm({
+      title: t('Delete the file of {title}?', { title: movie.title }),
+      body: <p>{t('The file goes to the recycle bin (or is deleted, if it is switched off). The movie stays in your library and is wanted again, so Mediarium can look for a new release.')}</p>,
+      confirmLabel: t('Delete'),
+      danger: true,
+    })
+    if (!answer) return
+    try {
+      await api.deleteMovieFile(movie.libraryId)
+      reload()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   function reload() {
     api
@@ -228,6 +260,16 @@ function MoviePage() {
               )}
               {can(me, 'releases') && <InfoTip text={t('Lists every release your indexers found for this movie, so you can pick one yourself instead of letting Mediarium choose.')} />}
               {movie.status === 'downloaded' && <WatchLinks tmdbId={movie.tmdbId} kind="movie" />}
+              {admin && movie.status === 'downloaded' && movie.filePath && (
+                <button className="btn-with-icon" onClick={() => void rescan()} disabled={rescanning} title={t('Looks at the file on your disk again: if it was deleted by hand the movie is wanted again, and a renamed file is found.')}>
+                  <Icon name="folder" size={16} /> {rescanning ? t('Checking…') : t('Rescan files')}
+                </button>
+              )}
+              {admin && movie.status === 'downloaded' && movie.filePath && (
+                <button className="btn-with-icon danger-ghost" onClick={() => void deleteFile()} title={t('Delete the file and keep the movie')}>
+                  <Icon name="trash" size={16} /> {t('Delete file')}
+                </button>
+              )}
               {admin && (
                 <button className="btn-with-icon danger-ghost" onClick={onRemove}>
                   <Icon name="trash" size={16} /> {t('Remove')}

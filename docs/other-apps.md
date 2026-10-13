@@ -37,6 +37,10 @@ From then on, an approved request adds the title to your library, with the seaso
 - **matcharr** (group movie picking): add Radarr with the address `http://<mediarium>:8264/radarr` and the key. A match is added to your library and searched for; a movie you already have counts as done.
 - **nzb360, LunaSea, Ruddarr**: add a Radarr or Sonarr instance with the full address and the key. You can browse the library, add movies and shows, change monitoring and quality profile, search, and follow the download queue and the calendar.
 
+## Tdarr and other apps that change your files
+
+Tdarr and similar apps change a file after it was imported (a new codec, sometimes a new extension) and then tell Radarr or Sonarr to look again, so that the media server finds the new file. Add Mediarium to them like Radarr or Sonarr (the address and key above). When they send **RescanMovie**, **RefreshMovie**, **RescanSeries** or **RefreshSeries**, Mediarium checks each downloaded file of that title: a file that is still there stays as it is, a file that only changed its extension (`.mp4` became `.mkv`, same name) is found under its new name, and then your media servers are asked to scan the folder. A file that can't be found is left alone (it is never marked missing or deleted). Tdarr itself works on the files in your library folders, so mount the same folders into it.
+
 ## What works and what doesn't
 
 | Works | Notes |

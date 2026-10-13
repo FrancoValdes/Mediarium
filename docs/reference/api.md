@@ -198,6 +198,8 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 |---|---|---|---|
 | POST | `/api/downloads/manual` | admin | adds an NZB, a torrent or a magnet link to the download line for a chosen movie or episode. |
 | GET | `/api/downloads/status` | admin | summarises the two built-in downloaders for the Downloads settings page: Usenet is ready once at least one server is enabled; the torrent client is always re... |
+| GET | `/api/downloads/stream-pause` | admin | shows the switch and what the last check found. |
+| PUT | `/api/downloads/stream-pause` | admin | turns the switch on or off. |
 | GET | `/api/downloads/torrent-options` | admin |  |
 | PUT | `/api/downloads/torrent-options` | admin |  |
 
@@ -205,6 +207,7 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 
 | Method | Path | Access | What it does |
 |---|---|---|---|
+| DELETE | `/api/episodes/{id}/file` | admin | deletes one episode's file. |
 | PUT | `/api/episodes/{id}/monitored` | signed in |  |
 | GET | `/api/episodes/{id}/subtitles` | signed in |  |
 | POST | `/api/episodes/{id}/subtitles/download` | signed in |  |
@@ -396,12 +399,14 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | POST | `/api/movies/{id}/copies` | admin | POST /api/movies/{id}/copies {"profileId": 4} adds a second copy of a movie and starts looking for it. |
 | GET | `/api/movies/{id}/disk-usage` | admin |  |
 | GET | `/api/movies/{id}/events` | any account | lists a movie's own activity log, newest first (at most 200 events). |
+| DELETE | `/api/movies/{id}/file` | admin | deletes a movie's file and makes the movie wanted again. |
 | GET | `/api/movies/{id}/files` | any account | lists the files in a movie's folder on disk. |
 | PUT | `/api/movies/{id}/folder` | signed in | is PUT /api/movies/{id}/folder: where the movie's next files go. |
 | POST | `/api/movies/{id}/grab` | signed in | queues a release for a movie and starts the download and import in the background. |
 | PUT | `/api/movies/{id}/monitored` | signed in |  |
 | PUT | `/api/movies/{id}/no-upgrade` | admin | and handleSetSeriesNoUpgrade switch the search for better versions off for one title (or back on). |
 | PUT | `/api/movies/{id}/profile` | admin |  |
+| POST | `/api/movies/{id}/rescan` | admin | looks at a movie's file again, for the Rescan files button. |
 | GET | `/api/movies/{id}/search` | signed in | is the interactive search for one library movie: every matching release across the indexers, with the reasons automation would skip it. |
 | POST | `/api/movies/{id}/search-now` | signed in | runs the automatic search for one movie right now, even if it is unmonitored, grabbing the best acceptable release. |
 | GET | `/api/movies/{id}/similar` | any account | lists movies like one in the library, for the "because you added ..." rail. |
@@ -527,7 +532,7 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 |---|---|---|---|
 | DELETE | `/api/queue` | admin | empties the list of completed and failed entries. |
 | GET | `/api/queue` | any account |  |
-| POST | `/api/queue/bulk` | admin | does one thing (pause, resume, stop, or send to the front) to several downloads at once. |
+| POST | `/api/queue/bulk` | admin | does one thing (pause, resume, stop, remove from the list, or send to the front) to several downloads at once. |
 | POST | `/api/queue/pause-all` | admin | pauses every download that is running or waiting, or only the Usenet or only the torrent ones with ?protocol=. |
 | POST | `/api/queue/resume-all` | admin | puts every paused download back in the download line (or only the Usenet or only the torrent ones with ?protocol=). |
 | DELETE | `/api/queue/{id}` | admin | removes a finished, failed, stopped, paused or parked entry from the list. |
@@ -598,8 +603,10 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | POST | `/api/series/{id}/numbering/refresh` | signed in | answers POST /api/series/{id}/numbering/refresh: "Refresh mapping". |
 | PUT | `/api/series/{id}/profile` | admin |  |
 | POST | `/api/series/{id}/refresh` | any account | re-fetches a show's episode list from TMDB — new seasons appear and air dates get announced or moved over a show's life. |
+| POST | `/api/series/{id}/rescan` | admin | looks at every downloaded file of a show again. |
 | GET | `/api/series/{id}/search` | signed in | is the interactive search for one season or one episode of a library show: queries every indexer, then keeps only releases that are actually for this show an... |
 | POST | `/api/series/{id}/search-now` | signed in | searches for everything wanted in a series (or one season, or one episode) right now, even if unmonitored. |
+| DELETE | `/api/series/{id}/seasons/{season}/files` | admin | deletes the files of every downloaded episode of a season. |
 | PUT | `/api/series/{id}/seasons/{season}/monitored` | signed in |  |
 | PUT | `/api/series/{id}/sources` | admin |  |
 | PUT | `/api/series/{id}/tags` | signed in |  |
@@ -792,4 +799,4 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | PUT | `/api/watched/settings` | admin | PUT /api/watched/settings {"sync": true, "cleanup": {...}} |
 | POST | `/api/watched/sync` | admin | POST /api/watched/sync: read what's been watched now. |
 
-462 routes.
+469 routes.

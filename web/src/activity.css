@@ -253,3 +253,5 @@
 }
 .activity-page .pick-bar strong { margin-right: 6px; font-family: var(--font-mono); font-size: 0.85rem; }
 @media (prefers-reduced-motion: reduce) { .activity-page .qrow .qpick { transition: none; } }
+.activity-page .qspecs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.activity-page .qspec { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 0.02em; }

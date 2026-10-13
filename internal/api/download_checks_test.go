@@ -183,16 +183,13 @@ func TestReleaseWithAProgramInItIsRejectedBeforeDownloading(t *testing.T) {
 	if n := env.nntp.totalHits(); n != 0 {
 		t.Errorf("%d articles were fetched; the check must come before any download", n)
 	}
-	keys, err := env.server.Blocklist.Keys()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !keys[blocklist.Key(title)] {
-		t.Error("the release should be on the blocklist")
-	}
-	if got := env.movieStatus(t); got != library.StatusMissing {
-		t.Errorf("movie is %s, want missing so it can be searched for again", got)
-	}
+	// The item is marked failed a moment before the blocklist and the movie
+	// are updated, so wait for those instead of reading them straight away.
+	waitFor(t, "the release to be on the blocklist", func() bool {
+		keys, _ := env.server.Blocklist.Keys()
+		return keys[blocklist.Key(title)]
+	})
+	waitFor(t, "the movie to be missing again", func() bool { return env.movieStatus(t) == library.StatusMissing })
 	found := false
 	for _, c := range env.problemCodes(t) {
 		if c == problems.CodeDownloadUnsafe {
@@ -274,13 +271,11 @@ func TestProgramInsideAnArchiveIsRejectedAfterUnpacking(t *testing.T) {
 	if env.nntp.totalHits() == 0 {
 		t.Error("the file list showed nothing, so the download should have run")
 	}
-	keys, _ := env.server.Blocklist.Keys()
-	if !keys[blocklist.Key(title)] {
-		t.Error("the release should be on the blocklist")
-	}
-	if got := env.movieStatus(t); got != library.StatusMissing {
-		t.Errorf("movie is %s, want missing", got)
-	}
+	waitFor(t, "the release to be on the blocklist", func() bool {
+		keys, _ := env.server.Blocklist.Keys()
+		return keys[blocklist.Key(title)]
+	})
+	waitFor(t, "the movie to be missing again", func() bool { return env.movieStatus(t) == library.StatusMissing })
 }
 
 func TestDuplicateReleases(t *testing.T) {

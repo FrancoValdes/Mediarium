@@ -20,6 +20,24 @@ To do the same thing to many titles at once, use **Select**.
 - **Poster size.** In the grid, the slider next to the grid and list buttons makes the posters bigger or smaller. It is remembered in this browser (and hidden on small screens).
 - **Press `/`** anywhere (except while you type in a box) to jump to the search box at the top, and **Esc** to leave it.
 
+## Looking at the files on your disk again
+
+If you delete or rename files outside Mediarium, its list doesn't know until you tell it. **Rescan files** (on a show's page, and on a movie's page) looks at every downloaded file of that title: a file that is still there is fine, a file that was renamed (for example `.mp4` to `.mkv`) is found under its new name, and a file that is gone makes its episode or movie **wanted** again. The media servers are asked to scan the folder afterwards. Administrators only.
+
+A rescan won't believe that everything is gone when the library folder itself is empty or missing (a drive that isn't plugged in): those files are left alone and the message says so. **Refresh episodes** is a different thing: it only reloads the episode list from TMDB. Scripts: `POST /api/movies/{id}/rescan` and `POST /api/series/{id}/rescan` answer with `found`, `renamed`, `missing` and `skipped`.
+
+## Deleting a file and keeping the title
+
+To get a better or smaller version of something you already have, delete the file and let Mediarium look again, without removing the title:
+
+- **A movie:** **Delete file** on its page.
+- **One episode:** **Delete file** on the episode's row (open the season first).
+- **A whole season:** **Delete files** in the season's header.
+
+Administrators only. The files (and the subtitles and artwork named after them) go to the recycle bin, or are deleted if the bin is switched off (Settings > System, in the clean-up card). The movie or the episodes become **wanted** again, and stay monitored if they were, so the next search can fill them. A file that holds two episodes is deleted once and both come back as wanted. Nothing outside your library folders is ever touched. Scripts: `DELETE /api/movies/{id}/file`, `DELETE /api/episodes/{id}/file` and `DELETE /api/series/{id}/seasons/{season}/files` (each answers with how many files went and how many episodes are wanted again; `409` when there's nothing downloaded to delete).
+
+A season pack you pick yourself for a season that is fully downloaded is no longer refused with "no episodes to fill": it goes through **If a file already exists** like any import. With the default, it replaces a file only when the pack is a better quality and the show may be upgraded. To replace worse or equal files, set **If a file already exists** to overwrite, or delete the season's files first.
+
 ## Selecting many titles
 
 **Select** is for administrators. Members see the Library without it.

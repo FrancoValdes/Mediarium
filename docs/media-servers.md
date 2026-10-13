@@ -193,6 +193,16 @@ If Plex can't match the folder to any library, Mediarium scans all of Plex's mov
 - Servers that are switched off, or have **Refresh after every download** off, are left alone.
 - **Music** works the same way once the music module is on ([music.md](./music.md)): after an album is imported, its folder (`<Artist>/<Album (Year)>`) is scanned. Plex scans it in the library that contains it, which must be a Plex *music* library (type "Music"); if none contains the folder, all music libraries are scanned, never your movie or TV ones. Jellyfin and Emby are told the album folder like any other. Add a path-mapping row for the music folder too (for example `/data/music` to `/music`).
 
+## Pause downloads while someone is watching
+
+If your internet is slow, a download can make the picture stutter. On the media servers page (once you have a Plex, Jellyfin or Emby server) the **While someone is watching** switch pauses downloads whenever someone is watching, and lets them carry on afterwards.
+
+- Every half minute Mediarium asks each Plex, Jellyfin and Emby server whether anyone is watching. A paused stream counts as watching. Silo, Audiobookshelf, Kavita and webhook servers aren't asked.
+- While someone is watching, running downloads and downloads waiting in line are paused. Downloads that are only being unpacked and imported are left to finish: they use no internet.
+- When nobody has been watching for two checks in a row (about a minute), the downloads Mediarium paused are put back. It only resumes what it paused itself: one you paused by hand stays paused. The list is kept in the settings, so a restart can't leave downloads paused for good.
+- If no server can be asked (all are down), nothing changes. Switching the setting off gives back what it was holding.
+- It is off by default. The page shows how many people were watching at the last check. Scripts: `GET` and `PUT /api/downloads/stream-pause` with `{"enabled": true}`.
+
 ## NFO and artwork files
 
 Kodi, Jellyfin and Emby read small files that sit next to your videos: an **NFO file** with the title, plot, cast and the ids of the title on TMDB, IMDb and TheTVDB, and pictures for the poster and the background. Mediarium can write them. It is **off by default**, and you choose it separately for movies and for TV shows under **Settings > Library > Folders > NFO and artwork files**: one switch for the NFO files and one for the artwork, for each kind. Nothing changes for an install until you switch something on.

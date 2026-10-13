@@ -86,3 +86,30 @@ func TestBulkActionsReportWhatFailed(t *testing.T) {
 	e.nntp.open()
 	e.waitAllDone(t, []int64{running, b, c})
 }
+
+// Several paused downloads can be taken off the list in one go; one that is
+// still running or waiting is refused and named.
+func TestBulkRemoveTakesPausedDownloadsOffTheList(t *testing.T) {
+	e := newControlEnv(t, 2)
+	m2, m3 := lineMovie(t, e, 2), lineMovie(t, e, 3)
+	running := e.downloadHeld(t)
+	b, _ := e.server.TestGrabMovie(m2, releaseName, e.nzbURL)
+	c, _ := e.server.TestGrabMovie(m3, releaseName, e.nzbURL)
+	postJSON[map[string]any](t, e.client, e.base+"/api/queue/bulk", map[string]any{"ids": []int64{b, c}, "action": "pause"}, http.StatusOK)
+
+	resp := postJSON[map[string]any](t, e.client, e.base+"/api/queue/bulk", map[string]any{"ids": []int64{b, c, running}, "action": "remove"}, http.StatusOK)
+	failed := resp["failed"].([]any)
+	if resp["done"].(float64) != 2 || len(failed) != 1 || failed[0].(map[string]any)["id"].(float64) != float64(running) {
+		t.Fatalf("the two paused go, the running one is refused: %v", resp)
+	}
+	for _, id := range []int64{b, c} {
+		if _, err := e.server.QueueRepo.Get(id); err == nil {
+			t.Fatalf("download %d should be off the list", id)
+		}
+	}
+	if e.status(t, running) != "downloading" {
+		t.Fatalf("the running download carries on: %s", e.status(t, running))
+	}
+	e.nntp.open()
+	e.waitAllDone(t, []int64{running})
+}

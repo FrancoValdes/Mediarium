@@ -1287,6 +1287,18 @@ export interface QueueItem {
   peers?: number // peers the built-in torrent client is connected to
   seeds?: number // seeds among them // where the release came from, when that indexer is still set up
   category?: string // the torrent category the built-in client filed it under
+  resolution?: string // what the release name says: 1080p, 2160p...
+  source?: string // WEB-DL, BluRay...
+  codec?: string // x264, x265...
+  language?: string // the audio languages the release names
+}
+
+// What looking at a title's files again found.
+export interface RescanReport {
+  found: number
+  renamed: number
+  missing: number
+  skipped: number
 }
 
 export interface BlocklistEntry {
@@ -2929,7 +2941,7 @@ export const api = {
   resumeQueueItem: (id: number) => post<{ status: string }>(`/queue/${id}/resume`),
   stopQueueItem: (id: number, deleteFiles: boolean) => post<{ status: string; pending?: string }>(`/queue/${id}/stop`, { deleteFiles }),
   frontQueueItem: (id: number) => post<{ status: string }>(`/queue/${id}/front`),
-  bulkQueue: (ids: number[], action: 'pause' | 'resume' | 'stop' | 'front', deleteFiles = false) =>
+  bulkQueue: (ids: number[], action: 'pause' | 'resume' | 'stop' | 'front' | 'remove', deleteFiles = false) =>
     post<{ done: number; failed: { id: number; error: string }[] }>('/queue/bulk', { ids, action, deleteFiles }),
   pauseAllQueue: (protocol?: 'usenet' | 'torrent') => post<{ paused: number }>(`/queue/pause-all${protocol ? `?protocol=${protocol}` : ''}`),
   resumeAllQueue: (protocol?: 'usenet' | 'torrent') => post<{ resumed: number; skipped: number; problem?: string }>(`/queue/resume-all${protocol ? `?protocol=${protocol}` : ''}`),
@@ -3085,6 +3097,13 @@ export const api = {
   getSeries: (id: number) => get<SeriesDetail>(`/series/${id}`),
   addSeries: (tmdbId: number, options: AddSeriesOptions = {}) => post<Series | Requested>('/series', { tmdbId, ...options }),
   refreshSeries: (id: number) => post<Series>(`/series/${id}/refresh`),
+  getStreamPause: () => get<{ enabled: boolean; watching: number; servers: number; held: number }>('/downloads/stream-pause'),
+  putStreamPause: (enabled: boolean) => put<{ enabled: boolean; watching: number; servers: number; held: number }>('/downloads/stream-pause', { enabled }),
+  rescanMovie: (id: number) => post<RescanReport>(`/movies/${id}/rescan`),
+  rescanSeries: (id: number) => post<RescanReport>(`/series/${id}/rescan`),
+  deleteMovieFile: (id: number) => del<{ files: number; episodes: number; trashed: boolean }>(`/movies/${id}/file`),
+  deleteEpisodeFile: (id: number) => del<{ files: number; episodes: number; trashed: boolean }>(`/episodes/${id}/file`),
+  deleteSeasonFiles: (seriesId: number, season: number) => del<{ files: number; episodes: number; trashed: boolean }>(`/series/${seriesId}/seasons/${season}/files`),
   deleteSeries: (id: number, deleteFiles = false) => del<null>(`/series/${id}?deleteFiles=${deleteFiles}`),
   titleCopies: (kind: 'movie' | 'series', id: number) => get<TitleCopies>(`/${kind === 'movie' ? 'movies' : 'series'}/${id}/copies`),
   addTitleCopy: (kind: 'movie' | 'series', id: number, profileId: number) => post<TitleCopy>(`/${kind === 'movie' ? 'movies' : 'series'}/${id}/copies`, { profileId }),

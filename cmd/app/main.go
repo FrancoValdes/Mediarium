@@ -228,6 +228,9 @@ func run() error {
 	stopWatchdog := server.StartWatchdog()
 	defer stopWatchdog()
 
+	stopStreamPause := server.StartStreamPause()
+	defer stopStreamPause()
+
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
 		Handler: server.Routes(),

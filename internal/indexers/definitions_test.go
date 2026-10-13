@@ -2,6 +2,7 @@ package indexers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,46 @@ import (
 	"testing"
 	"time"
 )
+
+// A catalogue made with an older copy of a shipped definition is fetched
+// again once, so a fix to that definition reaches installs that already have
+// a cache. After that the cache is used again.
+func TestDefinitionStoreRefreshesForNewerShippedDefinitions(t *testing.T) {
+	archive := tarGz(t, map[string][]byte{"definitions/v11/fixturepublic.yml": fixtureDef(t, "fixturepublic")})
+	srv, hits := archiveServer(t, archive)
+	dir := filepath.Join(t.TempDir(), "indexer-definitions")
+	store := NewDefinitionStore(dir)
+	store.SourceURL = srv.URL
+	if _, err := store.Catalogue(context.Background(), false); err != nil || hits.Load() != 1 {
+		t.Fatalf("first download: hits=%d err=%v", hits.Load(), err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cached DefinitionIndex
+	if err := json.Unmarshal(raw, &cached); err != nil {
+		t.Fatal(err)
+	}
+	if cached.Builtins != builtinFingerprint() {
+		t.Fatalf("a new catalogue records which shipped definitions it has: %q", cached.Builtins)
+	}
+	cached.Builtins = "an-older-copy"
+	raw, _ = json.Marshal(cached)
+	if err := os.WriteFile(filepath.Join(dir, "index.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again := NewDefinitionStore(dir)
+	again.SourceURL = srv.URL
+	if _, err := again.Catalogue(context.Background(), false); err != nil || hits.Load() != 2 {
+		t.Fatalf("an older copy of a shipped definition should refresh the catalogue: hits=%d err=%v", hits.Load(), err)
+	}
+	last := NewDefinitionStore(dir)
+	last.SourceURL = srv.URL
+	if _, err := last.Catalogue(context.Background(), false); err != nil || hits.Load() != 2 {
+		t.Fatalf("and then the cache is used again: hits=%d err=%v", hits.Load(), err)
+	}
+}
 
 func TestDefinitionStoreDownloadsAndCaches(t *testing.T) {
 	archive := tarGz(t, map[string][]byte{

@@ -42,6 +42,8 @@ The keys the app stores in its settings table. You normally change these from th
 | `downloads.concurrent` | how many downloads run at the same time, Usenet and torrents together: 1 to 5; unset = 1 |
 | `downloads.hours` | when new downloads may start, "1-7" (from 1:00 to 7:00, server time); outside it they wait in line. Unset = any time |
 | `downloads.min_free_gb` | no new download starts while the downloads folder has less free space than this many GB; unset = 5, "0" = off |
+| `downloads.pause_while_streaming` | "1" pauses downloads while someone watches on Plex, Jellyfin or Emby |
+| `downloads.paused_for_streaming` | the ids of the downloads paused for a stream, as JSON |
 | `downloads.precheck` | "1" asks the news servers whether a sample of an NZB's articles exist before downloading it, and gives up at once on a release the PAR2 files could not repair; unset or "0" leaves it off |
 | `downloads.reject_executables` | "0" lets releases that hold programs or scripts (.exe, .scr, .bat...) through; anything else (including unset) rejects them |
 | `downloads.retention_days` | Usenet releases posted longer ago than this many days are not taken (the provider no longer has them): 1 to 10000, "0" or unset = off |

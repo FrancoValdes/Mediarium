@@ -292,6 +292,20 @@ function QueueRow({ q, admin, busy, act, stop, remove, picked, onPick }: RowProp
           )}
         </div>
         <div className="qrelease">{q.releaseTitle}</div>
+        {(q.resolution || q.source || q.codec || q.language) && (
+          <div className="qspecs">
+            {[q.resolution, q.source, q.codec].filter(Boolean).map((x) => (
+              <span key={x} className="badge qspec">
+                {x}
+              </span>
+            ))}
+            {q.language && (
+              <span className="badge qspec" title={t('The audio language the release name gives')}>
+                {q.language}
+              </span>
+            )}
+          </div>
+        )}
         {showBar && (
           <div className="qprogress">
             <div className={`bar ${animated && !q.pending ? 'active' : ''} ${barTone}`}>
@@ -621,11 +635,13 @@ export default function Queue() {
   const shownActivity = activity.filter((a) => group === 'All' || (EVENT[a.eventType]?.group ?? 'Other') === group)
 
   // What was picked and has since finished or left the list is simply not counted.
+  // Downloads that can be ticked: the ones in progress, failed and stopped.
+  const pickable = useMemo(() => [...inProgress, ...failed, ...stopped], [inProgress, failed, stopped])
   const livePicked = useMemo(() => {
     if (picked.size === 0) return picked
-    const live = new Set(inProgress.map((q) => q.id))
+    const live = new Set(pickable.map((q) => q.id))
     return new Set([...picked].filter((id) => live.has(id)))
-  }, [picked, inProgress])
+  }, [picked, pickable])
 
   const pick = useCallback((id: number, on: boolean) => {
     setPicked((cur) => {
@@ -635,17 +651,18 @@ export default function Queue() {
       return next
     })
   }, [])
-  async function pickedDo(action: 'pause' | 'resume' | 'stop' | 'front') {
+  async function pickedDo(action: 'pause' | 'resume' | 'stop' | 'front' | 'remove') {
     // In the order they are shown, so "to the front" keeps the line's own order.
-    const ids = inProgress.filter((q) => livePicked.has(q.id)).map((q) => q.id)
+    const ids = pickable.filter((q) => livePicked.has(q.id)).map((q) => q.id)
     if (ids.length === 0 || pickBusy) return
     let deleteFiles = false
-    if (action === 'stop') {
-      const anyFiles = inProgress.some((q) => livePicked.has(q.id) && (q.keptFiles || q.progressPct > 0))
+    if (action === 'stop' || action === 'remove') {
+      const anyFiles = pickable.some((q) => livePicked.has(q.id) && (q.keptFiles || q.progressPct > 0))
+      const removing = action === 'remove'
       const r = await confirm({
-        title: plural(ids.length, 'Stop this download?', 'Stop these {n} downloads?'),
-        body: <p>{t('They stop downloading and go back to waiting for a release. You can try them again from the list.')}</p>,
-        confirmLabel: t('Stop downloads'),
+        title: removing ? plural(ids.length, 'Remove this download from the list?', 'Remove these {n} downloads from the list?') : plural(ids.length, 'Stop this download?', 'Stop these {n} downloads?'),
+        body: <p>{removing ? t('They leave the list. A download that is still running or waiting in line is not removed: pause or stop it first.') : t('They stop downloading and go back to waiting for a release. You can try them again from the list.')}</p>,
+        confirmLabel: removing ? t('Remove downloads') : t('Stop downloads'),
         danger: true,
         option: anyFiles ? { label: t('Also delete the partly downloaded files'), hint: t('Your library is not touched.'), defaultChecked: true } : undefined,
       })
@@ -790,6 +807,35 @@ export default function Queue() {
             </div>
           )}
 
+          {admin && livePicked.size > 0 && (
+            <div className="pick-bar" role="region" aria-label={t('Picked downloads')}>
+              <strong>{plural(livePicked.size, '{n} picked', '{n} picked')}</strong>
+              <button className="btn-sm" disabled={pickBusy} onClick={() => void pickedDo('front')}>
+                {t('To the front')}
+              </button>
+              <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('pause')}>
+                <Icon name="pause" size={14} /> {t('Pause')}
+              </button>
+              <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('resume')}>
+                <Icon name="play" size={14} /> {t('Resume')}
+              </button>
+              <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('stop')}>
+                <Icon name="stop" size={14} /> {t('Stop')}
+              </button>
+              <button className="btn-sm btn-with-icon danger-ghost" disabled={pickBusy} onClick={() => void pickedDo('remove')}>
+                <Icon name="trash" size={14} /> {t('Remove')}
+              </button>
+              <button className="btn-sm" disabled={pickBusy} onClick={() => setPicked(new Set(pickable.map((q) => q.id)))}>
+                {t('Pick all')}
+              </button>
+              <button className="btn-sm" disabled={pickBusy} onClick={() => setPicked(new Set(pickable.filter((q) => q.status === 'paused').map((q) => q.id)))}>
+                {t('Pick paused')}
+              </button>
+              <button className="btn-sm" disabled={pickBusy} onClick={() => setPicked(new Set())}>
+                {t('Clear')}
+              </button>
+            </div>
+          )}
           {inProgress.length > 0 && (
             <section id="act-progress" style={{ marginBottom: 24 }}>
               <div className="rail-head">
@@ -807,29 +853,6 @@ export default function Queue() {
                   </span>
                 )}
               </div>
-              {admin && livePicked.size > 0 && (
-                <div className="pick-bar" role="region" aria-label={t('Picked downloads')}>
-                  <strong>{plural(livePicked.size, '{n} picked', '{n} picked')}</strong>
-                  <button className="btn-sm" disabled={pickBusy} onClick={() => void pickedDo('front')}>
-                    {t('To the front')}
-                  </button>
-                  <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('pause')}>
-                    <Icon name="pause" size={14} /> {t('Pause')}
-                  </button>
-                  <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('resume')}>
-                    <Icon name="play" size={14} /> {t('Resume')}
-                  </button>
-                  <button className="btn-sm btn-with-icon" disabled={pickBusy} onClick={() => void pickedDo('stop')}>
-                    <Icon name="stop" size={14} /> {t('Stop')}
-                  </button>
-                  <button className="btn-sm" disabled={pickBusy} onClick={() => setPicked(new Set(inProgress.map((q) => q.id)))}>
-                    {t('Pick all')}
-                  </button>
-                  <button className="btn-sm" disabled={pickBusy} onClick={() => setPicked(new Set())}>
-                    {t('Clear')}
-                  </button>
-                </div>
-              )}
               {rows(inProgress, true)}
             </section>
           )}
@@ -840,7 +863,7 @@ export default function Queue() {
                 <h2>{t('Failed')}</h2>
                 <span>{t('retry, pick another release, or remove')}</span>
               </div>
-              {rows(failed)}
+              {rows(failed, true)}
             </section>
           )}
 
@@ -860,7 +883,7 @@ export default function Queue() {
                 <h2>{t('Stopped')}</h2>
                 <span>{t('retry, or remove')}</span>
               </div>
-              {rows(stopped)}
+              {rows(stopped, true)}
             </section>
           )}
 

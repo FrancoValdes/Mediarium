@@ -833,7 +833,7 @@ type bulkQueueResponse struct {
 	Failed []bulkQueueFailure `json:"failed"`
 }
 
-// handleBulkQueue does one thing (pause, resume, stop, or send to the front)
+// handleBulkQueue does one thing (pause, resume, stop, remove from the list, or send to the front)
 // to several downloads at once. Each one is tried on its own: one that can't
 // be done (say, pausing a finished download) is listed in "failed" and the
 // rest still go through.
@@ -844,9 +844,9 @@ func (s *Server) handleBulkQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Action {
-	case "pause", "resume", "stop", "front":
+	case "pause", "resume", "stop", "front", "remove":
 	default:
-		writeError(w, http.StatusBadRequest, `Choose "pause", "resume", "stop" or "front".`)
+		writeError(w, http.StatusBadRequest, `Choose "pause", "resume", "stop", "front" or "remove".`)
 		return
 	}
 	if len(req.IDs) == 0 {
@@ -884,6 +884,12 @@ func (s *Server) handleBulkQueue(w http.ResponseWriter, r *http.Request) {
 			err = s.stopItem(item, req.DeleteFiles)
 		case "front":
 			err = s.frontItem(id)
+		case "remove":
+			if isActiveStatus(item.Status) {
+				err = errors.New("This download is still running or waiting in line. Pause or stop it first.")
+			} else {
+				err = s.removeQueueEntry(item, req.DeleteFiles, true)
+			}
 		}
 		if err != nil {
 			resp.Failed = append(resp.Failed, bulkQueueFailure{ID: id, Error: err.Error()})

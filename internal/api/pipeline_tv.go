@@ -243,7 +243,7 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 		if err != nil {
 			return fail(err)
 		}
-		policy, isBetter := s.conflictPolicy(tier, func() (quality.Tier, bool) {
+		policy, isBetter := s.conflictPolicy(tier, !series.NoUpgrade, func() (quality.Tier, bool) {
 			return quality.Tier(eps[0].Quality), true
 		})
 		replaceEarlier := replacesOldFiles(policy, isBetter)
@@ -302,7 +302,7 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 
 	if imported == 0 {
 		if skipped > 0 {
-			return fail(fmt.Errorf("files for this release already exist in your library, so nothing was imported"))
+			return fail(fmt.Errorf("files for this release already exist in your library, so nothing was imported. To replace them, delete the files first (Delete files on the season) or set \"If a file already exists\" to overwrite"))
 		}
 		return fail(badRelease(fmt.Errorf("no episode of %s could be matched in the downloaded files", series.Title)))
 	}
@@ -341,7 +341,16 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 // a season pack — every episode of that season not already downloaded.
 func (s *Server) tvGrabTargets(seriesID int64, season int, episodes []int) ([]library.Episode, error) {
 	if len(episodes) == 0 {
-		return s.seasonEpisodes(seriesID, season, true)
+		eps, err := s.seasonEpisodes(seriesID, season, true)
+		if err != nil {
+			// Every episode is downloaded already: a season pack picked to
+			// replace them goes through the import settings, which decide
+			// per file (better quality, or "overwrite").
+			if all, err2 := s.seasonEpisodes(seriesID, season, false); err2 == nil {
+				return all, nil
+			}
+		}
+		return eps, err
 	}
 	var out []library.Episode
 	for _, n := range episodes {

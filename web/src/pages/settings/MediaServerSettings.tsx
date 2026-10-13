@@ -13,7 +13,7 @@ import { FieldError, FormProblem, useValidation, type Validation } from '../../u
 import { firstError, folderPath, required, apiKey as apiKeyCheck, url as urlCheck } from '../../validate'
 import { useLive } from '../../useLive'
 import { useModules } from '../../ModulesContext'
-import { t, tx } from '../../i18n'
+import { plural, t, tx } from '../../i18n'
 import TipLabel from '../../components/TipLabel'
 
 const KINDS: MediaServerKind[] = ['plex', 'jellyfin', 'emby', 'silo', 'webhook']
@@ -527,6 +527,49 @@ function ServerCard({ s, onChanged }: { s: MediaServer; onChanged: () => void })
 // Settings > Connections > Media servers: Plex, Jellyfin and Emby. After each
 // download the right library is refreshed, and title pages get "Watch in ..."
 // buttons. Your servers are listed on top, and adding one is below.
+// Pause downloads while someone is watching on Plex, Jellyfin or Emby.
+function StreamPauseSetting() {
+  const toast = useToast()
+  const [state, setState] = useState<{ enabled: boolean; watching: number; servers: number; held: number } | null>(null)
+  const load = useCallback(() => {
+    api.getStreamPause().then(setState).catch(() => undefined)
+  }, [])
+  useEffect(load, [load])
+  useLive(load, 15000)
+  if (!state) return null
+  return (
+    <fieldset className="group span-all">
+      <legend>
+        <Icon name="pause" size={14} /> {t('While someone is watching')}
+      </legend>
+      <Switch
+        checked={state.enabled}
+        onChange={(v) =>
+          api
+            .putStreamPause(v)
+            .then((r) => {
+              setState(r)
+              toast.success(v ? t('Downloads will pause while someone is watching.') : t('Downloads no longer pause for streams.'))
+            })
+            .catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
+        }
+        label={t('Pause downloads while someone is watching')}
+        tip={t('Every half minute Mediarium asks your Plex, Jellyfin and Emby servers if anyone is watching. While someone is, running and waiting downloads are paused. A minute after the last person stops, they carry on. Only the downloads Mediarium paused itself are put back.')}
+        description={t('Useful when your internet is slow, so a download does not make the picture stutter.')}
+      />
+      {state.enabled && (
+        <small style={{ color: 'var(--text-dim)' }}>
+          {state.servers === 0
+            ? t('No media server has answered yet.')
+            : state.watching > 0
+              ? plural(state.watching, '{n} person is watching now.', '{n} people are watching now.') + (state.held > 0 ? ' ' + plural(state.held, '{n} download is paused for it.', '{n} downloads are paused for it.') : '')
+              : t('Nobody is watching right now.')}
+        </small>
+      )}
+    </fieldset>
+  )
+}
+
 export default function MediaServerSettings() {
   const [list, setList] = useState<MediaServer[] | null>(null)
   const reload = useCallback(() => {
@@ -573,6 +616,7 @@ export default function MediaServerSettings() {
         </legend>
         <AddForm onAdded={reload} />
       </fieldset>
+      {list && list.some((s) => s.kind === 'plex' || s.kind === 'jellyfin' || s.kind === 'emby') && <StreamPauseSetting />}
       {list && list.some((s) => s.kind === 'plex' || s.kind === 'jellyfin' || s.kind === 'emby') && <WatchedSettings />}
     </div>
   )

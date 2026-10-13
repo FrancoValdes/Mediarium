@@ -493,7 +493,11 @@ func (s *Server) vpnRequiredForTorrents() bool {
 // importConflictPolicy reads the configured naming-collision policy for a
 // movie import. See conflictPolicy for the shared logic.
 func (s *Server) importConflictPolicy(movieID int64, incomingTier quality.Tier) (organizer.ConflictPolicy, func() bool) {
-	return s.conflictPolicy(incomingTier, func() (quality.Tier, bool) {
+	upgrades := false
+	if m, err := s.MovieRepo.Get(movieID); err == nil {
+		upgrades = !m.NoUpgrade
+	}
+	return s.conflictPolicy(incomingTier, upgrades, func() (quality.Tier, bool) {
 		current, err := s.MovieRepo.Get(movieID)
 		if err != nil {
 			return "", false
@@ -508,12 +512,14 @@ func (s *Server) importConflictPolicy(movieID int64, incomingTier quality.Tier) 
 // existing file (Unknown-ranked when the item predates tier tracking,
 // which correctly counts as an upgrade rather than erroring). If the
 // current tier can't be determined it fails closed — never overwrites.
-func (s *Server) conflictPolicy(incomingTier quality.Tier, currentTier func() (quality.Tier, bool)) (organizer.ConflictPolicy, func() bool) {
+//
+// upgrades says the title is allowed to be upgraded (it is not set to leave
+// its file alone). With the default "skip" policy such a title still takes a
+// better release in place of its file: otherwise "Look for better versions"
+// would download the better file and then refuse to import it.
+func (s *Server) conflictPolicy(incomingTier quality.Tier, upgrades bool, currentTier func() (quality.Tier, bool)) (organizer.ConflictPolicy, func() bool) {
 	v, _ := s.Settings.Get(settings.KeyImportConflictPolicy)
-	switch v {
-	case "overwrite":
-		return organizer.ConflictOverwrite, nil
-	case "overwrite_if_better":
+	ifBetter := func() (organizer.ConflictPolicy, func() bool) {
 		isBetter := func() bool {
 			current, ok := currentTier()
 			if !ok {
@@ -522,9 +528,18 @@ func (s *Server) conflictPolicy(incomingTier quality.Tier, currentTier func() (q
 			return quality.Rank(incomingTier) > quality.Rank(current)
 		}
 		return organizer.ConflictOverwriteIfBetter, isBetter
+	}
+	switch v {
+	case "overwrite":
+		return organizer.ConflictOverwrite, nil
+	case "overwrite_if_better":
+		return ifBetter()
 	case "ask":
 		return organizer.ConflictAsk, nil
 	default:
+		if upgrades {
+			return ifBetter()
+		}
 		return organizer.ConflictSkip, nil
 	}
 }

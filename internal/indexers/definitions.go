@@ -79,10 +79,13 @@ func NewDefinitionStore(dir string) *DefinitionStore {
 
 // DefinitionIndex is the cached catalogue (index.json).
 type DefinitionIndex struct {
-	UpdatedAt     time.Time           `json:"updatedAt"`
-	Source        string              `json:"source"`
-	SchemaVersion int                 `json:"schemaVersion"`
-	Definitions   []DefinitionSummary `json:"definitions"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	Source        string    `json:"source"`
+	SchemaVersion int       `json:"schemaVersion"`
+	// Builtins is the fingerprint of the shipped definitions this catalogue
+	// was made with (see builtinFingerprint).
+	Builtins    string              `json:"builtins,omitempty"`
+	Definitions []DefinitionSummary `json:"definitions"`
 }
 
 // DefinitionSummary is what the "add a site" list shows for a definition.
@@ -327,6 +330,7 @@ func (s *DefinitionStore) refresh(ctx context.Context) (*DefinitionIndex, error)
 		UpdatedAt:     time.Now().UTC(),
 		Source:        DefinitionsSource + ", schema v" + strconv.Itoa(version),
 		SchemaVersion: version,
+		Builtins:      builtinFingerprint(),
 	}
 	tmp := s.Dir + ".new"
 	if err := os.RemoveAll(tmp); err != nil {

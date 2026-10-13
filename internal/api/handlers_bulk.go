@@ -461,14 +461,37 @@ func (s *Server) afterBulkProfile(value any, refs, missing []library.Ref) {
 	for _, m := range missing {
 		gone[m] = true
 	}
+	// Changing the profile of hundreds of titles at once must not queue a
+	// download for every one of them. Each title that now aims above its file
+	// is marked as wanting an upgrade, but only the first few are searched for
+	// right away; the scheduled search finds the rest, a few an hour.
+	var searches []func()
 	for _, ref := range refs {
 		if gone[ref] {
 			continue
 		}
+		ref := ref
 		if ref.Kind == library.KindMovie {
-			s.movieProfileChanged(ref.ID, profileID)
-		} else {
-			s.seriesProfileChanged(ref.ID, profileID)
+			if s.movieNeedsUpgradeSearch(ref.ID, profileID) {
+				searches = append(searches, func() { s.searchMovieInBackground(ref.ID) })
+			}
+		} else if s.seriesNeedsUpgradeSearch(ref.ID, profileID) {
+			searches = append(searches, func() { s.searchSeriesInBackground(ref.ID) })
 		}
 	}
+	if len(searches) > maxBulkProfileSearches {
+		log.Printf("profile change: %d titles aim above their files; only the first %d are searched for now, the scheduled search does the rest", len(searches), maxBulkProfileSearches)
+		searches = searches[:maxBulkProfileSearches]
+	}
+	if len(searches) > 0 {
+		s.background(func() {
+			for _, search := range searches {
+				search()
+			}
+		})
+	}
 }
+
+// maxBulkProfileSearches is how many titles are searched for at once when a
+// profile is given to many titles in one go.
+const maxBulkProfileSearches = 10

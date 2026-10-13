@@ -27,6 +27,9 @@ func (s *Server) TestRSSSync(ctx context.Context) { s.rssSync(ctx) }
 // the test's database.
 func (s *Server) TestWaitBackground() { s.bg.Wait() }
 
+// TestStreamPauseRound makes one check of the pause-while-streaming loop.
+func (s *Server) TestStreamPauseRound(ctx context.Context) { s.streamPauseRound(ctx) }
+
 // TestRunCleanup runs the clean-up as if the time were now, and
 // TestCleanupJob the automation loop's hourly clean-up check.
 func (s *Server) TestRunCleanup(now time.Time) (removed int, prunedQueue, prunedActivity int64) {

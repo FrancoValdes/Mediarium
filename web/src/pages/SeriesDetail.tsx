@@ -23,6 +23,7 @@ import { useModules } from '../ModulesContext'
 import { api, can, isAdmin, isViewer, type Episode, type SearchResult, type SeriesDetail as SeriesDetailData, type TVDetail } from '../api'
 import { formatBytes, qualityText } from '../format'
 import { showStatusLabel } from '../showStatus'
+import { rescanMessage } from '../rescanMessage'
 import { titleLinks } from '../components/TitlePreview'
 import { useLive } from '../useLive'
 import { useConfirm } from '../components/ConfirmProvider'
@@ -211,6 +212,20 @@ function SeriesPage() {
   }
 
   const [refreshing, setRefreshing] = useState(false)
+  const [rescanning, setRescanning] = useState(false)
+  async function rescan() {
+    setError('')
+    setRescanning(true)
+    try {
+      setMessage(rescanMessage(await api.rescanSeries(seriesId)))
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRescanning(false)
+    }
+  }
+
   async function refresh() {
     setError('')
     setRefreshing(true)
@@ -222,6 +237,27 @@ function SeriesPage() {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setRefreshing(false)
+    }
+  }
+
+  // Delete the files of one episode or a whole season, keeping the show: the
+  // episodes are wanted again, so a new release can take their place.
+  async function deleteFiles(what: { episode: Episode } | { season: number }) {
+    const one = 'episode' in what
+    const label = one ? `S${String(what.episode.season).padStart(2, '0')}E${String(what.episode.episode).padStart(2, '0')}` : what.season === 0 ? t('Specials') : t('Season {n}', { n: what.season })
+    const answer = await confirm({
+      title: one ? t('Delete the file of {name}?', { name: label }) : t('Delete the files of {name}?', { name: label }),
+      body: <p>{t('The files go to the recycle bin (or are deleted, if it is switched off). {title} stays in your library and these episodes are wanted again, so Mediarium can look for a new release.', { title: series?.title ?? '' })}</p>,
+      confirmLabel: t('Delete'),
+      danger: true,
+    })
+    if (!answer) return
+    try {
+      const r = one ? await api.deleteEpisodeFile(what.episode.id) : await api.deleteSeasonFiles(seriesId, what.season)
+      setMessage(plural(r.episodes, 'Deleted the file. {n} episode is wanted again.', 'Deleted the files. {n} episodes are wanted again.'))
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -311,6 +347,11 @@ function SeriesPage() {
               </button>
             )}
             {!viewer && <InfoTip text={t('Fetches the episode list again, so new episodes, new seasons and changed air dates show up.')} />}
+            {admin && series.downloadedCount > 0 && (
+              <button className="btn-with-icon" onClick={() => void rescan()} disabled={rescanning} title={t('Looks at the files on your disk again: a file that was deleted by hand makes its episode wanted again, and a file that was renamed is found.')}>
+                <Icon name="folder" size={16} /> {rescanning ? t('Checking…') : t('Rescan files')}
+              </button>
+            )}
             {series.downloadedCount > 0 && <WatchLinks tmdbId={series.tmdbId} kind="tv" />}
             {admin && (
               <button className="btn-with-icon danger-ghost" onClick={remove}>
@@ -406,6 +447,11 @@ function SeriesPage() {
                 <>
                   {canReleases && <button onClick={() => runSearch({ season, label: t('Season {n} (packs)', { n: season }) })}>{t('Search season')}</button>}
                   {canReleases && <InfoTip text={t('Lists the releases found for this whole season, season packs included, so you can pick one yourself.')} />}
+                  {admin && allEps.some((e) => e.status === 'downloaded' && e.filePath) && (
+                    <button className="danger-ghost" onClick={() => void deleteFiles({ season })} title={t('Delete the files of this season and keep the show')}>
+                      {t('Delete files')}
+                    </button>
+                  )}
                   <label style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-dim)' }}>
                     <input
                       type="checkbox"
@@ -471,6 +517,13 @@ function SeriesPage() {
                             {t('Search')}
                           </button>
                         )}{' '}
+                        {admin && e.status === 'downloaded' && e.filePath && (
+                          <>
+                            <button className="danger-ghost" onClick={() => void deleteFiles({ episode: e })} title={t('Delete this episode’s file and keep the show')}>
+                              {t('Delete file')}
+                            </button>{' '}
+                          </>
+                        )}
                         {subtitlesOn && e.status === 'downloaded' && can(me, 'subtitles') && (
                           <button onClick={() => setSubsOpen(subsOpen === e.id ? null : e.id)}>{t('Subtitles')}</button>
                         )}

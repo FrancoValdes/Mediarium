@@ -30,13 +30,18 @@ func TestUpgradeUnderAnotherNameRemovesTheOldFileOnlyWhenReplacingIsAllowed(t *t
 		old string
 		// keepOld says the old file must still be there afterwards.
 		keepOld bool
+		// noUpgrade is the title's "leave my file alone" setting.
+		noUpgrade bool
 	}{
-		{"overwrite, other name in the movie's folder", "overwrite", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", false},
-		{"overwrite if better, and it is better", "overwrite_if_better", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", false},
-		{"overwrite if better, but it is not better", "overwrite_if_better", "Remux-2160p", "The Fixture Movie (1999)/The Fixture Movie (1999) [2160p].mkv", true},
-		{"default policy never replaces", "", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", true},
-		{"skip never replaces", "skip", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", true},
-		{"a file outside the library folder is left alone", "overwrite", "HDTV-720p", "outside:old.mp4", true},
+		{"overwrite, other name in the movie's folder", "overwrite", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", false, false},
+		{"overwrite if better, and it is better", "overwrite_if_better", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", false, false},
+		{"overwrite if better, but it is not better", "overwrite_if_better", "Remux-2160p", "The Fixture Movie (1999)/The Fixture Movie (1999) [2160p].mkv", true, false},
+		{"default policy replaces a worse file when the title may be upgraded", "", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", false, false},
+		{"skip replaces a worse file when the title may be upgraded", "skip", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", false, false},
+		{"default policy keeps the file of a title set not to upgrade", "", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", true, true},
+		{"skip keeps the file of a title set not to upgrade", "skip", "HDTV-720p", "The Fixture Movie (1999)/The Fixture Movie (1999) [720p].mp4", true, true},
+		{"default policy never replaces a better file", "", "Remux-2160p", "The Fixture Movie (1999)/The Fixture Movie (1999) [2160p].mkv", true, false},
+		{"a file outside the library folder is left alone", "overwrite", "HDTV-720p", "outside:old.mp4", true, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -51,6 +56,11 @@ func TestUpgradeUnderAnotherNameRemovesTheOldFileOnlyWhenReplacingIsAllowed(t *t
 			putFile(t, oldPath, "the old version")
 			if err := e.server.MovieRepo.SetStatus(e.movie.ID, library.StatusDownloaded, tc.oldQuality, oldPath); err != nil {
 				t.Fatal(err)
+			}
+			if tc.noUpgrade {
+				if err := e.server.MovieRepo.SetNoUpgrade(e.movie.ID, true); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			id := e.grab(t)
@@ -95,6 +105,49 @@ func TestUpgradeUnderTheSameNameLeavesOneFile(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(oldPath); string(got) != string(e.wantFile) {
 		t.Fatalf("the file was not replaced: %q", got)
+	}
+}
+
+// The usual upgrade: the better release has the same file name as the file in
+// the library. With the default setting a title that may be upgraded takes it
+// in place of the old file instead of failing with "a file already exists";
+// a release that is not better is still turned away.
+func TestUpgradeUnderTheSameNameWithTheDefaultPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		oldQuality string
+		noUpgrade  bool
+		replaced   bool
+	}{
+		{"a better release replaces it", "HDTV-720p", false, true},
+		{"a title set not to upgrade keeps its file", "HDTV-720p", true, false},
+		{"a release that is not better is turned away", "Remux-2160p", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newControlEnv(t, -1)
+			oldPath := filepath.Join(e.movies, "The Fixture Movie (1999)", "The Fixture Movie (1999).mkv")
+			putFile(t, oldPath, "the old version")
+			if err := e.server.MovieRepo.SetStatus(e.movie.ID, library.StatusDownloaded, tc.oldQuality, oldPath); err != nil {
+				t.Fatal(err)
+			}
+			if tc.noUpgrade {
+				if err := e.server.MovieRepo.SetNoUpgrade(e.movie.ID, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			id := e.grab(t)
+			waitFor(t, "the download to end", func() bool { s := e.status(t, id); return s == "completed" || s == "failed" })
+			got, _ := os.ReadFile(oldPath)
+			if tc.replaced {
+				if e.status(t, id) != "completed" || string(got) != string(e.wantFile) {
+					t.Fatalf("the better release should replace the file: %s %v, file %q", e.status(t, id), e.item(t, id)["error"], got)
+				}
+				return
+			}
+			if e.status(t, id) != "failed" || string(got) != "the old version" {
+				t.Fatalf("the old file should stay and the import be turned away: %s, file %q", e.status(t, id), got)
+			}
+		})
 	}
 }
 

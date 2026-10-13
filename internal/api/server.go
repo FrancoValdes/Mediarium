@@ -44,7 +44,8 @@ import (
 )
 
 type Server struct {
-	cfg config.Config
+	streamPause streamPauseState // pause while someone is watching (stream_pause.go)
+	cfg         config.Config
 	db  *sql.DB // for backups (VACUUM INTO); repos hold their own handles
 
 	Auth              *auth.Service
@@ -676,6 +677,11 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("GET /api/irc-announce/{id}/log", s.handleIRCLog)
 
 	// Library management: removing titles, per-title profile and downloaders, imports.
+	admin.HandleFunc("POST /api/movies/{id}/rescan", s.handleRescanMovie)
+	admin.HandleFunc("POST /api/series/{id}/rescan", s.handleRescanSeries)
+	admin.HandleFunc("DELETE /api/movies/{id}/file", s.handleDeleteMovieFile)
+	admin.HandleFunc("DELETE /api/episodes/{id}/file", s.handleDeleteEpisodeFile)
+	admin.HandleFunc("DELETE /api/series/{id}/seasons/{season}/files", s.handleDeleteSeasonFiles)
 	admin.HandleFunc("DELETE /api/movies/{id}", s.handleDeleteMovie)
 	admin.HandleFunc("POST /api/movies/{id}/copies", s.handleAddMovieCopy)
 	admin.HandleFunc("POST /api/series/{id}/copies", s.handleAddSeriesCopy)
@@ -769,6 +775,8 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("PUT /api/downloads/torrent-options", s.handlePutTorrentOptions)
 	admin.HandleFunc("GET /api/indexers/seed-rules", s.handleListSeedRules)
 	admin.HandleFunc("PUT /api/indexers/{id}/seed-rules", s.handlePutSeedRule)
+	admin.HandleFunc("GET /api/downloads/stream-pause", s.handleGetStreamPause)
+	admin.HandleFunc("PUT /api/downloads/stream-pause", s.handlePutStreamPause)
 	admin.HandleFunc("POST /api/queue/pause-all", s.handlePauseAllQueue)
 	admin.HandleFunc("POST /api/queue/resume-all", s.handleResumeAllQueue)
 	admin.HandleFunc("GET /api/blocklist", s.handleListBlocklist)

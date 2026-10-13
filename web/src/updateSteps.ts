@@ -2,6 +2,7 @@
 // running Mediarium, and the short sentences about where the running program
 // came from. No React in here so they can be tested.
 import { t } from './i18n.ts'
+import { compareVersions } from './whatsNew.ts'
 
 export interface Steps {
   title: string
@@ -61,6 +62,10 @@ export function programSummary(s: { running: string; image: string; pushed: { ve
   if (!s.image) return t('You are running Mediarium {version}.', { version: s.running })
   if (s.pushed && s.pushed.running) {
     return t('You are running Mediarium {version}, installed on top of the Docker image, which has {image}.', { version: s.running, image: s.image })
+  }
+  if (s.pushed && compareVersions(s.pushed.version, s.image) < 0) {
+    // Left over from before the image was updated: the start-up ignores it, so say that instead of "waiting".
+    return t('You are running Mediarium {version}. An older installed update ({update}) is still stored, but it is ignored because the Docker image has {image}.', { version: s.running, update: s.pushed.version, image: s.image })
   }
   if (s.pushed) {
     return t('You are running Mediarium {version}. An installed update ({update}) is waiting for the next restart. The Docker image has {image}.', { version: s.running, update: s.pushed.version, image: s.image })

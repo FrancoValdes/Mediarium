@@ -186,13 +186,15 @@ func TestPrecheckFailsAReleaseThatIsNotOnTheServers(t *testing.T) {
 	if n := nntp.bodyN.Load(); n != 0 {
 		t.Errorf("%d articles were downloaded; the check must come first", n)
 	}
-	keys, _ := env.server.Blocklist.Keys()
-	if !keys[blocklist.Key(title)] {
-		t.Error("the release should be on the blocklist")
-	}
-	if got := env.movieStatus(t); got != library.StatusMissing {
-		t.Errorf("movie is %s, want missing so it is searched for again", got)
-	}
+	// The item is marked failed a moment before the blocklist and the movie
+	// are updated, so wait for those instead of reading them straight away.
+	waitFor(t, "the release to be on the blocklist", func() bool {
+		keys, _ := env.server.Blocklist.Keys()
+		return keys[blocklist.Key(title)]
+	})
+	waitFor(t, "the movie to be missing again, so it is searched for again", func() bool {
+		return env.movieStatus(t) == library.StatusMissing
+	})
 	found := false
 	for _, c := range env.problemCodes(t) {
 		if c == problems.CodeUsenetMissingParts {

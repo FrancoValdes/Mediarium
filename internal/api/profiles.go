@@ -438,6 +438,17 @@ func (s *Server) setItemProfile(w http.ResponseWriter, r *http.Request, what str
 // Choosing that profile says "I want that quality", so "leave what I have
 // alone" is switched off for it. Reports whether a search was started.
 func (s *Server) movieProfileChanged(id, profileID int64) bool {
+	if !s.movieNeedsUpgradeSearch(id, profileID) {
+		return false
+	}
+	s.background(func() { s.searchMovieInBackground(id) })
+	return true
+}
+
+// movieNeedsUpgradeSearch is the first half of movieProfileChanged: whether
+// the new profile aims above the movie's file. When it does, "leave what I
+// have alone" is switched off for the movie. It starts no search.
+func (s *Server) movieNeedsUpgradeSearch(id, profileID int64) bool {
 	m, err := s.MovieRepo.Get(id)
 	if err != nil || m.Status != library.StatusDownloaded || !tierKnown(m.Quality) {
 		return false
@@ -452,13 +463,21 @@ func (s *Server) movieProfileChanged(id, profileID int64) bool {
 			return false
 		}
 	}
-	s.background(func() { s.searchMovieInBackground(id) })
 	return true
 }
 
 // seriesProfileChanged is movieProfileChanged for a show: when any episode
 // on disk is below the new profile, the show's episodes are looked for again.
 func (s *Server) seriesProfileChanged(id, profileID int64) bool {
+	if !s.seriesNeedsUpgradeSearch(id, profileID) {
+		return false
+	}
+	s.background(func() { s.searchSeriesInBackground(id) })
+	return true
+}
+
+// seriesNeedsUpgradeSearch is the first half of seriesProfileChanged.
+func (s *Server) seriesNeedsUpgradeSearch(id, profileID int64) bool {
 	sr, err := s.MovieRepo.GetSeries(id)
 	if err != nil {
 		return false
@@ -488,7 +507,6 @@ func (s *Server) seriesProfileChanged(id, profileID int64) bool {
 			return false
 		}
 	}
-	s.background(func() { s.searchSeriesInBackground(id) })
 	return true
 }
 

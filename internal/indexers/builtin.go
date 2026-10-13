@@ -1,8 +1,11 @@
 package indexers
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -48,11 +51,35 @@ func addBuiltins(files map[string][]byte) {
 	}
 }
 
+// builtinFingerprint identifies the shipped definitions' exact contents, so a
+// cached catalogue made with older ones can be told from one made with these.
+func builtinFingerprint() string {
+	defs := builtinDefinitions()
+	ids := make([]string, 0, len(defs))
+	for id := range defs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	h := sha256.New()
+	for _, id := range ids {
+		h.Write([]byte(id))
+		h.Write([]byte{0})
+		h.Write(defs[id])
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
 // missingBuiltin reports whether a cached catalogue was made before a
-// shipped definition existed, so it's refreshed to pick it up.
+// shipped definition existed, or with an older copy of one (a fix to a
+// shipped definition only reaches a cached catalogue this way), so it's
+// refreshed to pick them up.
 func missingBuiltin(idx *DefinitionIndex) bool {
 	if idx == nil {
 		return false
+	}
+	if idx.Builtins != builtinFingerprint() {
+		return true
 	}
 	have := map[string]bool{}
 	for _, d := range idx.Definitions {

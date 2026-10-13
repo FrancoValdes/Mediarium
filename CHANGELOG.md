@@ -8,6 +8,22 @@ under [Unreleased]. How releases are cut: [docs/RELEASING.md](docs/RELEASING.md)
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-10-13
+
+### Added
+- **Pause downloads while someone is watching** (asked for by yannicschuller on GitHub, #57): on the media servers page, **While someone is watching** pauses running and waiting downloads when someone is watching on Plex, Jellyfin or Emby, and lets them carry on a minute after the last person stops. It only resumes what it paused itself. Off by default.
+- **Rescan files** (reported by blind0wl on GitHub, #59), on a show's and a movie's page: looks at the files on your disk again, follows a renamed file, and makes a title wanted again when its file was deleted by hand. It never believes an empty or missing library folder.
+- **Remove several downloads at once** in Activity (#59): tick downloads (also failed and stopped ones), **Pick paused** picks all the paused ones, and **Remove** takes them off the list.
+- **Delete one file, an episode's file or a season's files, and keep the title** (asked for by blind0wl on GitHub, #59): **Delete file** on a movie and on an episode, and **Delete files** on a season. The files go to the recycle bin and the movie or episodes are wanted again, so a new release can take their place. A season pack you pick yourself for a season you already have is no longer refused with "no episodes to fill": it goes through the import settings, and the message that explains a skipped import now says how to replace the files.
+- **Activity shows what each download is** (suggested by yannicschuller on GitHub, #56): under a download's name there are small tags for the picture size, the source, the video codec and the audio language, read from the release name.
+- **Tdarr and similar apps can tell Mediarium a file changed** (asked about by neoblitz on Reddit): the Radarr and Sonarr "rescan" and "refresh" requests are no longer ignored. Mediarium looks at the title's files again, follows a file that only changed its extension, and asks your media servers to scan the folder. See `docs/other-apps.md`.
+
+### Fixed
+- **Giving a quality profile to many titles at once no longer queues a download for every one** (reported by blind0wl on GitHub, #59): every title whose file was below the new profile was searched for at the same moment, and the limit of 10 an hour didn't apply. Now the first 10 are searched for right away and the scheduled search does the rest.
+- **A better version found by "Look for better versions" now replaces the old file** (reported from inside the app): with the default setting for "If a file already exists" the better file was downloaded and then refused with "files for this release already exist in your library, so nothing was imported". A title that may be upgraded now takes a better file in place of the old one; a file that is not better, or a title set to leave its file alone, is still skipped.
+- **A fix to IPTorrents (or Toloka) now reaches installs that already have the site list** (reported by xrandallx1 on GitHub, #28): the definitions that ship with Mediarium were only added to the saved site list when it was made, so an install that had saved it before kept the old copy of IPTorrents even after updating. The saved list is now fetched once again when the shipped definitions have changed.
+- **The Updates card no longer says an old installed update is "waiting for the next restart"** when the Docker image is newer: Mediarium ignores such an update at start-up, and the card now says so.
+
 ## [3.0.3] - 2026-10-12
 
 ### Added

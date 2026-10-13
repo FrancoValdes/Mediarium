@@ -99,6 +99,8 @@ The Queue tab always reads in the same order, and rows don't move while they dow
 3. **Needs your decision.** A file already exists and you chose to be asked. Administrators pick **Overwrite** or **Skip**, and members see "Waiting for an admin". Then **Stopped**.
 4. **Waiting for a release.** Monitored titles with nothing downloaded yet, with what the last search found. Each is a tile with its poster and year; a show is one tile however many of its episodes are missing ("6 episodes waiting"). The search note is cut short on the tile and reads in full when you point at it. A title that's already downloaded never shows up here. It lists the first 20, and a button opens the rest in Upcoming > Wanted.
 
+Under each movie or show download's name there are small tags for what the release name says it is: the picture size (1080p, 2160p), the source (WEB-DL, BluRay), the video codec (x264, x265) and the audio language. They are read from the name, so a release that doesn't say (no language, for example) simply has no tag for it. `GET /api/queue` has them as `resolution`, `source`, `codec` and `language`.
+
 While a download runs, its row shows the speed and the time left, worked out from how far it got between two refreshes of the page (so it takes a few seconds to appear, and only while the page is open). **Details** under a row opens the release name, the indexer it came from, the source, the size, when it was added and finished, where it goes, and what happened to it, from the title's own history. `GET /api/queue` carries `indexerName` for the indexer.
 
 The queue refreshes every few seconds. Finished downloads are on the **History** tab, with **Clear finished** to empty that list. `GET /api/queue` returns the items in this order.
@@ -167,7 +169,7 @@ Every download in progress, Usenet or torrent, has **Pause** and **Stop**. Only 
 | **Retry** | On a failed or stopped download: tries the same release again. If its files are still there (a partial download too), it carries on from them. |
 | **Remove** | Takes a completed, failed, stopped or paused download off the list. Removing a paused one stops it first, and asks whether to delete its partial files. |
 | **Pause all** / **Resume all** | Do the same for every download at once. |
-| **Pick** (the small box on a download's picture) | Pick several downloads, then use the bar that appears above the list: **To the front**, **Pause**, **Resume** or **Stop** for all of them, **Pick all**, or **Clear**. One that can't be changed (pausing a download that's already paused, say) is named in the message, and the rest still go through. Picked downloads keep the order they're shown in when you send them to the front. |
+| **Pick** (the small box on a download's picture) | Pick several downloads (in progress, failed or stopped), then use the bar that appears above the list: **To the front**, **Pause**, **Resume**, **Stop** or **Remove** for all of them, **Pick all**, **Pick paused**, or **Clear**. **Remove** takes the picked downloads off the list (a running one, or one waiting in line, is refused and named: pause or stop it first). One that can't be changed (pausing a download that's already paused, say) is named in the message, and the rest still go through. Picked downloads keep the order they're shown in when you send them to the front. |
 
 A download that's unpacking or importing pauses or stops when the current step ends. The row says **Pausing…** or **Stopping…** until then.
 
