@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, isAdmin, type RequestQuota, type TitleRequest } from '../api'
 import { useAuth } from '../AuthContext'
 import { useLive } from '../useLive'
-import { locale, t, tx } from '../i18n'
+import { locale, plural, t, tx } from '../i18n'
 import Icon from './Icon'
 import { PosterFallback } from './PosterCard'
 import { useToast } from './Toast'
@@ -27,7 +27,7 @@ function timeAgoFuture(iso: string): string {
   if (Number.isNaN(ms) || ms <= 0) return t('now')
   const h = Math.round(ms / 3600000)
   if (h < 2) return t('in about an hour')
-  return h < 36 ? t('in about {n} hours', { n: h }) : t('in about {n} days', { n: Math.round(h / 24) })
+  return h < 36 ? plural(h, 'in about {n} hour', 'in about {n} hours') : plural(Math.round(h / 24), 'in about {n} day', 'in about {n} days')
 }
 
 export default function RequestsList({ onCount }: { onCount?: (pending: number) => void }) {

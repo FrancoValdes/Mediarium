@@ -156,6 +156,14 @@ func (s *Server) grabRelease(movie library.Movie, releaseTitle, downloadURL stri
 // the movie is still running (a person grabbing by hand is always obeyed).
 // The release goes into the download line; it starts when a place is free.
 func (s *Server) grabMovie(movie library.Movie, releaseTitle, downloadURL string, sizeBytes int64, protocol indexers.Protocol, kind grabKind) (int64, error) {
+	return s.grabMovieReplacing(movie, releaseTitle, downloadURL, sizeBytes, protocol, kind, "")
+}
+
+// grabMovieReplacing is grabMovie for a release that is meant to take the
+// place of the movie's file at replaces ("" for an ordinary grab): the queue
+// item remembers that path, and the import swaps the new file in and removes
+// the old one only once the new one is in the library.
+func (s *Server) grabMovieReplacing(movie library.Movie, releaseTitle, downloadURL string, sizeBytes int64, protocol indexers.Protocol, kind grabKind, replaces string) (int64, error) {
 	if protocol == indexers.ProtocolTorrent && !s.torrentReleasesOn() {
 		return 0, errTorrentsDisabled
 	}
@@ -194,7 +202,7 @@ func (s *Server) grabMovie(movie library.Movie, releaseTitle, downloadURL string
 		}
 	}
 	queueID, err := s.QueueRepo.Enqueue(queue.Item{
-		MovieID: movie.ID, ReleaseTitle: releaseTitle, NZBURL: downloadURL, SizeBytes: sizeBytes, Protocol: queue.Protocol(protocol), Priority: kind.priority(),
+		MovieID: movie.ID, ReleaseTitle: releaseTitle, NZBURL: downloadURL, SizeBytes: sizeBytes, Protocol: queue.Protocol(protocol), Priority: kind.priority(), ReplacesFile: replaces,
 	})
 	if err == nil {
 		// From here the movie is taken, as an episode or an album is, even while

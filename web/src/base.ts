@@ -22,6 +22,33 @@ export function unprefixed(base: string, path: string): string {
   return path
 }
 
+// The fields in which the server sends a picture's address. Pictures it serves
+// itself (book and music covers) come as "/api/...", from the domain root.
+const PICTURE_FIELDS = new Set(['coverUrl', 'posterUrl', 'imageUrl', 'backdropUrl', 'logoUrl', 'profileUrl'])
+
+/**
+ * Puts base in front of every picture address on this server ("/api/...") in
+ * an answer from the server, however deep it sits. The answer is changed in
+ * place and returned. Addresses on other sites are left alone.
+ */
+export function rebasePictures<T>(base: string, data: T): T {
+  if (base === '' || data === null || typeof data !== 'object') return data
+  const seen: unknown[] = [data]
+  while (seen.length > 0) {
+    const node = seen.pop() as Record<string, unknown> | unknown[]
+    if (Array.isArray(node)) {
+      for (const v of node) if (v !== null && typeof v === 'object') seen.push(v)
+      continue
+    }
+    for (const [k, v] of Object.entries(node)) {
+      if (typeof v === 'string') {
+        if (PICTURE_FIELDS.has(k) && v.startsWith('/api/')) node[k] = base + v
+      } else if (v !== null && typeof v === 'object') seen.push(v)
+    }
+  }
+  return data
+}
+
 function readBase(): string {
   if (typeof document === 'undefined') return ''
   return cleanBase(document.querySelector('meta[name="mediarium-base"]')?.getAttribute('content'))

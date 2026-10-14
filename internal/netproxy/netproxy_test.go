@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rdborg/mediarium/internal/netguard"
 )
 
 // socksServer is a minimal SOCKS5 server (CONNECT only) that counts the
@@ -280,5 +283,55 @@ func TestHTTPProxy(t *testing.T) {
 	Set(Config{URL: mustParse(t, "http://bob:nope@"+host), For: map[Use]bool{Torrents: true}})
 	if _, err := For(Torrents).DialContext(context.Background(), "tcp", "127.0.0.1:1"); err == nil || !strings.Contains(err.Error(), "refused the user name or password") {
 		t.Fatalf("wrong password: %v", err)
+	}
+}
+
+// The proxy makes the connection to the destination, so the dial-time check
+// only sees the proxy. The destination is checked before it is handed over:
+// the cloud metadata service is never asked for through the proxy either.
+func TestProxyRefusesBlockedDestinations(t *testing.T) {
+	t.Cleanup(func() { Set(Config{}) })
+	socks := newSocksServer(t, "", "")
+	var carried atomic.Int32
+	px := httpProxy(t, "", "", &carried)
+	for _, proxyURL := range []string{"socks5://" + socks.ln.Addr().String(), "socks5h://" + socks.ln.Addr().String(), px.URL} {
+		Set(Config{URL: mustParse(t, proxyURL), For: map[Use]bool{Indexers: true, Torrents: true}})
+		for _, dest := range []string{"http://169.254.169.254/latest/meta-data/", "https://169.254.169.254/", "http://[fe80::1]/", "http://[::ffff:169.254.169.254]/", "http://[64:ff9b::a9fe:a9fe]/"} {
+			if _, err := get(t, Client(5*time.Second, Indexers), dest); !errors.Is(err, netguard.ErrBlocked) {
+				t.Errorf("%s through %s: %v, want it refused", dest, proxyURL, err)
+			}
+		}
+		if _, err := DialContext(context.Background(), Torrents, 5*time.Second, "tcp", "169.254.169.254:80"); !errors.Is(err, netguard.ErrBlocked) {
+			t.Errorf("a dial to the metadata address through %s: %v, want it refused", proxyURL, err)
+		}
+	}
+	if carried.Load() != 0 {
+		t.Fatalf("a blocked destination reached the HTTP proxy %d times", carried.Load())
+	}
+	// A normal destination still goes through.
+	tgt := target(t)
+	if body, err := get(t, Client(5*time.Second, Indexers), tgt.URL); err != nil || body != "hello" {
+		t.Fatalf("an allowed destination: %q %v", body, err)
+	}
+}
+
+func TestCheckHost(t *testing.T) {
+	for _, tc := range []struct {
+		host    string
+		blocked bool
+	}{
+		{"169.254.169.254:80", true},
+		{"[fe80::1%eth0]:443", true},
+		{"[fd00:ec2::254]:80", true},
+		{"169.254.169.254", true},
+		{"10.0.0.5:8080", false},
+		{"127.0.0.1:9696", false},
+		{"localhost:80", false},
+		{"no-such-name.invalid:80", false}, // can't be looked up here: left to the proxy
+	} {
+		err := netguard.CheckHost(context.Background(), tc.host, true)
+		if errors.Is(err, netguard.ErrBlocked) != tc.blocked {
+			t.Errorf("CheckHost(%q) = %v, want blocked %v", tc.host, err, tc.blocked)
+		}
 	}
 }

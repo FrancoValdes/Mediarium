@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type IrcAnnounceList, type IrcConnection, type IrcLogRow, type IrcPreset, type IrcTemplate, type IrcTestResult } from '../api'
 import { formatBytes, timeAgo } from '../format'
 import { channelsText, neededKeys, parseChannels, parseList, stateOf } from '../ircAnnounce'
-import { t, tx } from '../i18n'
+import { t, tx, st } from '../i18n'
 import { useLive } from '../useLive'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
 import { firstError, hostOrIP, port as portCheck, required, url as urlCheck } from '../validate'
@@ -182,7 +182,7 @@ function Log({ id }: { id: number }) {
               </td>
               <td>
                 <span className={`irc-decision ${r.decision}`}>{DECISIONS[r.decision]?.() ?? r.decision}</span> {r.item && <strong>{r.item}. </strong>}
-                {r.reason}
+                {st(r.reason)}
               </td>
             </tr>
           ))}
@@ -541,7 +541,7 @@ function Editor({ existing, presets, onCancel, onSaved }: { existing?: IrcConnec
 
 function TestOutput({ r }: { r: IrcTestResult }) {
   if (!r.matched) {
-    return <p className="notice notice-warn" style={{ margin: 0 }}>{r.message}</p>
+    return <p className="notice notice-warn" style={{ margin: 0 }}>{st(r.message)}</p>
   }
   return (
     <div className="irc-test-out" role="status">
@@ -571,7 +571,7 @@ function TestOutput({ r }: { r: IrcTestResult }) {
       </dl>
       <div>
         <span className={`irc-decision ${r.decision}`}>{r.decision ? DECISIONS[r.decision]?.() : ''}</span> {r.item && <strong>{r.item}. </strong>}
-        {r.reason}
+        {st(r.reason)}
       </div>
     </div>
   )

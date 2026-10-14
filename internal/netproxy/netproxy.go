@@ -7,6 +7,9 @@
 // The setting is process-wide and read on every new connection, so a change
 // applies straight away without rebuilding clients. Connections to the proxy
 // itself go through netguard like every other outgoing connection.
+//
+// The built-in VPN can carry the same kinds of traffic (see SetVPN). It comes
+// before the proxy, and addresses on the home network still connect directly.
 package netproxy
 
 import (
@@ -139,11 +142,25 @@ func (d *Dialer) Address() string {
 
 // DialContext connects to addr through the proxy.
 func (d *Dialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	if err := d.checkTarget(ctx, addr); err != nil {
+		return nil, err
+	}
 	conn, err := d.dial(ctx, network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("through the proxy %s: %w", d.Address(), plain(err))
 	}
 	return conn, nil
+}
+
+// checkTarget refuses a destination netguard would refuse on a direct
+// connection (the cloud metadata service and other link-local addresses):
+// the proxy connects to it, so the dial-time check only ever sees the proxy.
+// With socks5h names are left to the proxy to resolve.
+func (d *Dialer) checkTarget(ctx context.Context, addr string) error {
+	if err := netguard.CheckHost(ctx, addr, d.url.Scheme != "socks5h"); err != nil {
+		return fmt.Errorf("through the proxy %s: %w", d.Address(), err)
+	}
+	return nil
 }
 
 // plain makes the proxy library's errors readable.
@@ -196,7 +213,24 @@ type switchingTransport struct {
 }
 
 func (t *switchingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if src := viaVPN(t.use); src != nil {
+		tunnel, err := tunnelFor(src, t.use, req.URL.Host)
+		if err != nil {
+			return nil, err
+		}
+		if tunnel == nil {
+			return t.direct.RoundTrip(req)
+		}
+		return tunnelTransport(tunnel).RoundTrip(req)
+	}
 	if d := For(t.use); d != nil {
+		// An HTTP proxy is sent the whole URL and dials it itself; with SOCKS
+		// the transport dials through d.DialContext, which checks it too.
+		if d.url.Scheme == "http" {
+			if err := d.checkTarget(req.Context(), req.URL.Host); err != nil {
+				return nil, err
+			}
+		}
 		resp, err := d.httpTransport().RoundTrip(req)
 		if err != nil {
 			return nil, fmt.Errorf("through the proxy %s: %w", d.Address(), plain(err))
@@ -210,23 +244,36 @@ func (t *switchingTransport) RoundTrip(req *http.Request) (*http.Response, error
 // transport in use.
 func (t *switchingTransport) CloseIdleConnections() {
 	t.direct.CloseIdleConnections()
+	closeTunnelIdle()
 	if d := For(t.use); d != nil {
 		d.httpTransport().CloseIdleConnections()
 	}
 }
 
-// DialContext connects to addr for use: through the proxy when it's on for
-// that kind of traffic, otherwise directly (through netguard).
+// DialContext connects to addr for use: through the VPN or the proxy when
+// one is on for that kind of traffic, otherwise directly (through netguard).
 func DialContext(ctx context.Context, use Use, timeout time.Duration, network, addr string) (net.Conn, error) {
-	if d := For(use); d != nil {
-		if timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, timeout)
-			defer cancel()
+	var through ContextDialer
+	if src := viaVPN(use); src != nil {
+		tunnel, err := tunnelFor(src, use, addr)
+		if err != nil {
+			return nil, err
 		}
-		return d.DialContext(ctx, network, addr)
+		if tunnel != nil {
+			through = tunnel
+		}
+	} else if d := For(use); d != nil {
+		through = d
 	}
-	return netguard.Dialer(timeout).DialContext(ctx, network, addr)
+	if through == nil {
+		return netguard.Dialer(timeout).DialContext(ctx, network, addr)
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	return through.DialContext(ctx, network, addr)
 }
 
 // connectDialer opens a tunnel through an HTTP proxy with CONNECT.

@@ -3,7 +3,7 @@ import { MiniPlayer, MusicPlayerProvider } from './MusicPlayer'
 import { Fragment, useCallback, useEffect, useRef, useState, Suspense } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { scrollToTop } from '../scrollTop'
-import { api, isAdmin, type WatchLink } from '../api'
+import { api, isAdmin, type AppLink, type WatchLink } from '../api'
 import { useAuth } from '../AuthContext'
 import { demoEnabled } from '../demo'
 import { titleFor, useSpecificTitle } from '../documentTitle'
@@ -75,8 +75,10 @@ function Shell() {
   const [active, setActive] = useState(0)
   const location = useLocation()
   const [homes, setHomes] = useState<WatchLink[]>([])
+  const [apps, setApps] = useState<AppLink[]>([])
   useEffect(() => {
     api.mediaServerHomes().then(setHomes).catch(() => setHomes([]))
+    api.listApps().then(setApps).catch(() => setApps([]))
   }, [])
   // A new page opens at the top. Back puts the page where it was left (a long list you were scrolling), and a change that only
   // rewrites the address in place (picking a filter, typing in a search box) leaves the page where it is.
@@ -339,7 +341,7 @@ function Shell() {
           })}
         </div>
         )}
-        <SideTools ebooksOn={ebooksOn} audiobooksOn={audiobooksOn} musicOn={musicOn} homes={homes} showSupport={admin && showSupport} variant="side">
+        <SideTools ebooksOn={ebooksOn} audiobooksOn={audiobooksOn} musicOn={musicOn} homes={homes} apps={apps} showSupport={admin && showSupport} variant="side">
           <ThemeToggle />
         </SideTools>
         {version && (
@@ -388,7 +390,7 @@ function Shell() {
                 <Icon name="flask" size={14} /> <span className="demo-chip-label">{t('Demo data')}</span>
               </span>
             )}
-            <SideTools ebooksOn={ebooksOn} audiobooksOn={audiobooksOn} musicOn={musicOn} homes={homes} showSupport={admin && showSupport} variant="top" />
+            <SideTools ebooksOn={ebooksOn} audiobooksOn={audiobooksOn} musicOn={musicOn} homes={homes} apps={apps} showSupport={admin && showSupport} variant="top" />
             <span className="top-theme">
               <ThemeToggle />
             </span>

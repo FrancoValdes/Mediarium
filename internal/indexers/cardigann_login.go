@@ -16,7 +16,7 @@ import (
 )
 
 // ensureLogin signs in once per session when the definition has a login
-// block. Callers hold s.mu.
+// block. Callers hold the session's turn (s.lock).
 func (s *cgSession) ensureLogin(ctx context.Context) error {
 	if s.def.Login == nil || s.loggedIn {
 		return nil

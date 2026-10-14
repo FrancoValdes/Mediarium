@@ -52,7 +52,21 @@ type Control struct {
 	// writeFailed is set when the disk refused data. The engine then stops
 	// downloading and the limits must not start it again.
 	writeFailed atomic.Bool
+	writeErr    atomic.Value // the error the disk gave (an error)
 	kick        chan struct{}
+}
+
+// ErrWriteFailed is returned by Download when the disk refused the torrent's
+// data (full, or not writable). The release is not to blame.
+var ErrWriteFailed = errors.New("the disk refused the torrent's data")
+
+// writeFailure is the error Download returns once the disk refused data: it
+// wraps both ErrWriteFailed and what the disk said (often "no space left").
+func (c *Control) writeFailure() error {
+	if err, ok := c.writeErr.Load().(error); ok && err != nil {
+		return fmt.Errorf("%w: %w", ErrWriteFailed, err)
+	}
+	return ErrWriteFailed
 }
 
 // NewControl returns the control of t, whose metadata must be known (the
@@ -62,6 +76,9 @@ func NewControl(t *torrent.Torrent) *Control {
 	c := &Control{t: t, skip: map[string]bool{}, kick: make(chan struct{}, 1)}
 	t.SetOnWriteChunkError(func(err error) {
 		slog.Error("torrent: the disk refused data, downloading is stopped", "torrent", t.Name(), "err", err)
+		if err != nil {
+			c.writeErr.Store(err)
+		}
 		c.writeFailed.Store(true)
 		t.DisallowDataDownload()
 	})
@@ -257,6 +274,11 @@ func (c *Control) Download(ctx context.Context, stallAfter time.Duration, onProg
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			if c.writeFailed.Load() {
+				// Nothing more will arrive: say why now rather than call the
+				// torrent stalled (and blocklist it) hours later.
+				return c.writeFailure()
+			}
 			var total int64
 			done, total = c.Progress()
 			if c.Done() {

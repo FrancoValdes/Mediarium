@@ -281,17 +281,20 @@ func (s *Server) handleRetryQueueItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keptDir, reuse := s.keptDownload(item)
-	if reuse {
-		s.offerKeptDownload(item.NZBURL, keptDir)
-	}
+	// The new item must not start before the earlier files are in its folder.
+	release := s.dispatch.Hold()
 	newID, err := s.regrab(item)
 	if err != nil {
-		if reuse {
-			s.withdrawKeptDownload(item.NZBURL)
-		}
+		release()
 		writeGrabError(w, err, http.StatusBadRequest)
 		return
 	}
+	if reuse {
+		// Moved now, not when the new item starts: while it waits in line the
+		// files belong to it, so a restart or the daily clean-up can't lose them.
+		reuse = s.moveKeptDownload(keptDir, s.workDirFor(newID))
+	}
+	release()
 	message := "Retrying, downloading again: " + item.ReleaseTitle
 	if reuse {
 		message = "Retrying from the files already downloaded: " + item.ReleaseTitle
@@ -373,7 +376,7 @@ func (s *Server) handleBlocklistQueueItem(w http.ResponseWriter, r *http.Request
 	}
 	_ = s.QueueRepo.LogItemEvent(queue.ItemEvent{MovieID: item.MovieID, SeriesID: item.SeriesID, AlbumID: item.AlbumID,
 		Kind: "blocklisted", Level: queue.LevelWarn, Message: "Blocklisted \"" + item.ReleaseTitle + "\": by you"})
-	_ = s.QueueRepo.Delete(id)
+	s.dropBlocklistedItem(item)
 	switch {
 	case item.MovieID > 0:
 		go s.searchMovieInBackground(item.MovieID)
@@ -385,6 +388,27 @@ func (s *Server) handleBlocklistQueueItem(w http.ResponseWriter, r *http.Request
 		s.background(func() { s.searchBook(item.BookID, books.Format(item.BookFormat), true) })
 	}
 	writeJSON(w, http.StatusOK, nil)
+}
+
+// dropBlocklistedItem takes a download whose release a person blocklisted off
+// the list. A paused or parked one still holds its title as "downloading":
+// that is handed back first, or the new search would find the title busy. Its
+// files are not wanted any more, so its working folder goes too.
+func (s *Server) dropBlocklistedItem(item queue.Item) {
+	queueControlMu.Lock()
+	defer queueControlMu.Unlock()
+	item = s.freshItem(item)
+	if isActiveStatus(item.Status) {
+		return // resumed in the meantime: never delete a running download's row
+	}
+	work := s.workDirFor(item.ID) // before the row goes: a torrent may be filed in a category folder
+	if item.Status == queue.StatusPaused || item.Status == queue.StatusConflict {
+		_ = s.QueueRepo.SetStatus(item.ID, queue.StatusStopped, "")
+		s.releaseTitleClaims(item)
+	}
+	s.torrents.stopQueue(item.ID)
+	_ = s.QueueRepo.Delete(item.ID)
+	s.removeWorkDir(work)
 }
 
 type resolveConflictRequest struct {

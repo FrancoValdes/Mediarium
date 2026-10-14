@@ -45,6 +45,10 @@ func (s *Server) handleGetCalendarFeed(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNewCalendarFeed(w http.ResponseWriter, r *http.Request) {
+	// The address keeps working without the key, so a key can't make one.
+	if !requireSession(w, r) {
+		return
+	}
 	u := auth.UserFromContext(r.Context())
 	if u == nil {
 		writeError(w, http.StatusUnauthorized, "You need to sign in first.")

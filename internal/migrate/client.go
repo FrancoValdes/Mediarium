@@ -71,9 +71,42 @@ func (s Sources) Any() bool {
 		s.Medusa != nil || s.SickChill != nil
 }
 
-// maxResponseBytes bounds one response: a Radarr library of several
-// thousand movies with all their metadata is tens of megabytes.
-const maxResponseBytes = 256 << 20
+// maxListBytes bounds the answer that lists a whole library (a Radarr
+// library of several thousand movies with all their metadata is tens of
+// megabytes); maxResponseBytes bounds every other answer, which is small.
+// Several apps are read at once, so these add up.
+const (
+	maxListBytes     = 64 << 20
+	maxResponseBytes = 8 << 20
+)
+
+// errAnswerTooBig is returned for an answer over its limit.
+var errAnswerTooBig = errors.New("answer too big")
+
+// cappedReader reads at most max bytes and fails with errAnswerTooBig as soon
+// as there is more.
+type cappedReader struct {
+	r         io.Reader
+	read, max int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.read > c.max {
+		return 0, errAnswerTooBig
+	}
+	if room := c.max + 1 - c.read; int64(len(p)) > room {
+		p = p[:room]
+	}
+	n, err := c.r.Read(p)
+	if c.read+int64(n) > c.max {
+		// Only the bytes within the limit are handed on.
+		n = int(c.max - c.read)
+		c.read = c.max + 1
+		return n, errAnswerTooBig
+	}
+	c.read += int64(n)
+	return n, err
+}
 
 const requestTimeout = 2 * time.Minute
 
@@ -96,6 +129,11 @@ func newHTTPClient() *http.Client {
 			}
 			if req.URL.Host != via[0].URL.Host {
 				return fmt.Errorf("the address redirects to %s; enter that address instead", req.URL.Host)
+			}
+			// Not from https to http (the key would go unencrypted), and not
+			// to any other change of scheme either.
+			if req.URL.Scheme != via[0].URL.Scheme {
+				return fmt.Errorf("the address redirects to %s://%s; enter that address instead", req.URL.Scheme, req.URL.Host)
 			}
 			return nil
 		},
@@ -133,6 +171,15 @@ type call struct {
 	keyQuery  string
 	// xml: the answer is XML (Newznab/Torznab), not JSON.
 	xml bool
+	// list: the answer lists a whole library, so it may be big.
+	list bool
+}
+
+func (c call) limit() int64 {
+	if c.list {
+		return maxListBytes
+	}
+	return maxResponseBytes
 }
 
 // get reads from Radarr, Sonarr, Prowlarr or SABnzbd: the API key goes in
@@ -143,6 +190,7 @@ func get(ctx context.Context, hc *http.Client, conn Conn, path string, query url
 	if keyInQuery {
 		c = call{path: path, query: query, keyQuery: "apikey"}
 	}
+	c.list = strings.HasSuffix(path, "/movie") || strings.HasSuffix(path, "/series")
 	return read(ctx, hc, conn, c, out)
 }
 
@@ -183,11 +231,12 @@ func read(ctx context.Context, hc *http.Client, conn Conn, c call, out any) erro
 	if c.keyHeader != "" {
 		req.Header.Set(c.keyHeader, key)
 	}
-	return send(hc, req, base.Host, shown, c.xml, "the API key was not accepted", out)
+	return send(hc, req, base.Host, shown, c.xml, c.limit(), "the API key was not accepted", out)
 }
 
-// send runs a request built by read or rpc and decodes the answer.
-func send(hc *http.Client, req *http.Request, host, shown string, isXML bool, authMsg string, out any) error {
+// send runs a request built by read or rpc and decodes the answer, of at
+// most limit bytes.
+func send(hc *http.Client, req *http.Request, host, shown string, isXML bool, limit int64, authMsg string, out any) error {
 	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("could not reach %s: %w", host, redact(err))
@@ -205,14 +254,16 @@ func send(hc *http.Client, req *http.Request, host, shown string, isXML bool, au
 	case resp.StatusCode != http.StatusOK:
 		return fmt.Errorf("%s answered %s for %s", host, resp.Status, shown)
 	}
-	body := io.LimitReader(resp.Body, maxResponseBytes)
+	body := &cappedReader{r: resp.Body, max: limit}
 	if isXML {
-		return decodeXML(body, host, shown, authMsg, out)
+		err = decodeXML(body, host, shown, authMsg, out)
+	} else if err = json.NewDecoder(body).Decode(out); err != nil {
+		err = fmt.Errorf("%s did not answer with the expected data for %s (is this the right app?): %w", host, shown, err)
 	}
-	if err := json.NewDecoder(body).Decode(out); err != nil {
-		return fmt.Errorf("%s did not answer with the expected data for %s (is this the right app?): %w", host, shown, err)
+	if errors.Is(err, errAnswerTooBig) {
+		return fmt.Errorf("the answer from %s for %s is too big (over %d MB), so it was not read", host, shown, limit>>20)
 	}
-	return nil
+	return err
 }
 
 // newznabError is the error answer of Newznab and Torznab APIs.
@@ -279,7 +330,7 @@ func rpc(ctx context.Context, hc *http.Client, conn LoginConn, method string, ou
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := send(hc, req, base.Host, "/jsonrpc "+method, false, "the username or password was not accepted", &env); err != nil {
+	if err := send(hc, req, base.Host, "/jsonrpc "+method, false, maxResponseBytes, "the username or password was not accepted", &env); err != nil {
 		return err
 	}
 	if env.Error != nil {

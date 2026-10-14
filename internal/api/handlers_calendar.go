@@ -26,6 +26,11 @@ type calendarEntryPayload struct {
 	ReleaseDate string `json:"releaseDate"`
 	Status      string `json:"status"`
 	PosterURL   string `json:"posterUrl,omitempty"` // the poster or cover the calendar shows next to the title
+	// BackdropURL and LogoURL are the wide still and the title logo of a movie or
+	// show, for the Backdrops view. They appear once they have been fetched in
+	// the background (see artwork.go). For an episode, TMDBID is the show's.
+	BackdropURL string `json:"backdropUrl,omitempty"`
+	LogoURL     string `json:"logoUrl,omitempty"`
 }
 
 const (
@@ -211,9 +216,10 @@ func (s *Server) calendarEntriesSince(since string) ([]calendarEntryPayload, err
 		entries = append(entries, calendarEntryPayload{
 			Kind: "episode", ID: ep.ID, SeriesID: ep.SeriesID, Season: ep.Season, Episode: ep.Episode,
 			Title: ep.SeriesName, Subtitle: label, ReleaseDate: ep.AirDate, Status: string(ep.Status),
-			PosterURL: metadata.PosterURL(ep.PosterPath),
+			PosterURL: metadata.PosterURL(ep.PosterPath), TMDBID: ep.SeriesTMDB,
 		})
 	}
+	s.attachArt(entries)
 
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].ReleaseDate < entries[j].ReleaseDate })
 	return entries, nil

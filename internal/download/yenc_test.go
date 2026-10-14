@@ -2,6 +2,8 @@ package download
 
 import (
 	"bytes"
+	"fmt"
+	"hash/crc32"
 	"testing"
 )
 
@@ -54,6 +56,36 @@ func TestDecodeYencMultipart(t *testing.T) {
 	}
 	if part.CRC32Valid {
 		t.Fatalf("expected crc mismatch to be detected (pcrc32 is a deliberately wrong fixture value)")
+	}
+}
+
+// Which checksum describes the article's own data: pcrc32 always, crc32 only
+// in a post of one part (in a multi-part post it is the whole file's).
+func TestDecodeYencChecksumKinds(t *testing.T) {
+	body := encodeBodyOnly([]byte("ABCDE"))
+	good := fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte("ABCDE")))
+	tests := []struct {
+		name    string
+		raw     string
+		damaged bool
+	}{
+		{"single part, right crc32", "=ybegin line=128 size=5 name=a\r\n" + body + "=yend size=5 crc32=" + good + "\r\n", false},
+		{"single part, wrong crc32", "=ybegin line=128 size=5 name=a\r\n" + body + "=yend size=5 crc32=deadbeef\r\n", true},
+		{"single part, no checksum", "=ybegin line=128 size=5 name=a\r\n" + body + "=yend size=5\r\n", false},
+		{"part, right pcrc32", "=ybegin part=1 line=128 size=10 name=a\r\n=ypart begin=1 end=5\r\n" + body + "=yend size=5 part=1 pcrc32=" + good + " crc32=deadbeef\r\n", false},
+		{"part, wrong pcrc32", "=ybegin part=1 line=128 size=10 name=a\r\n=ypart begin=1 end=5\r\n" + body + "=yend size=5 part=1 pcrc32=deadbeef\r\n", true},
+		{"part, only the file's crc32", "=ybegin part=1 line=128 size=10 name=a\r\n=ypart begin=1 end=5\r\n" + body + "=yend size=5 part=1 crc32=deadbeef\r\n", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			part, err := DecodeYenc(bytes.NewReader([]byte(tt.raw)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if part.Damaged() != tt.damaged {
+				t.Fatalf("Damaged() = %v, want %v (part %+v)", part.Damaged(), tt.damaged, part)
+			}
+		})
 	}
 }
 

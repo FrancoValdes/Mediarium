@@ -126,8 +126,9 @@ func (s *Service) CreateAccountWithRole(username, password, firstName, lastName,
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
-	res, err := s.db.Exec(`INSERT INTO users (username, password_hash, is_admin, is_viewer, first_name, last_name, email) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		username, string(hash), isAdmin, viewer, firstName, lastName, email)
+	// An administrator makes these accounts, so the email address is theirs.
+	res, err := s.db.Exec(`INSERT INTO users (username, password_hash, is_admin, is_viewer, first_name, last_name, email, email_by_admin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		username, string(hash), isAdmin, viewer, firstName, lastName, email, email != "")
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			return nil, ErrUsernameTaken
@@ -216,7 +217,7 @@ func (s *Service) UpdateAccount(id int64, upd AccountUpdate) (*Account, error) {
 		}
 	}
 	if upd.Email != nil {
-		if err := set(`UPDATE users SET email = ? WHERE id = ?`, *upd.Email, id); err != nil {
+		if err := set(`UPDATE users SET email = ?, email_by_admin = 1 WHERE id = ?`, *upd.Email, id); err != nil {
 			return nil, err
 		}
 	}
@@ -254,8 +255,21 @@ func (s *Service) UpdateAccount(id int64, upd AccountUpdate) (*Account, error) {
 		if err := set(`UPDATE users SET password_hash = ? WHERE id = ?`, newHash, id); err != nil {
 			return nil, err
 		}
-		if err := set(`DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
-			return nil, err
+		// An administrator sets a new password when the old one may be known
+		// to someone else, so everything that works without it stops too:
+		// sessions, API keys, the e-reader password and Kobo address, and the
+		// calendar feed. The person makes new ones after signing in. Passkeys
+		// and a single sign-on link stay; they need the person's own device
+		// or provider account.
+		for _, q := range []string{
+			`DELETE FROM sessions WHERE user_id = ?`,
+			`UPDATE api_keys SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE user_id = ? AND revoked_at IS NULL`,
+			`DELETE FROM ereader_access WHERE user_id = ?`,
+			`DELETE FROM calendar_feeds WHERE user_id = ?`,
+		} {
+			if err := set(q, id); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := tx.Commit(); err != nil {

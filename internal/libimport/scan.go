@@ -1,6 +1,7 @@
 package libimport
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -68,7 +69,17 @@ type videoFile struct {
 	mod  time.Time
 }
 
-func walkVideos(root string) ([]videoFile, error) {
+// The most video files a scan collects: of a whole library, and of one
+// title's own folder (a folder with more is not one title's).
+const (
+	maxLibraryFiles = 500_000
+	maxTitleFiles   = 20_000
+)
+
+// errTooManyFiles is returned when a scan finds more video files than its limit.
+var errTooManyFiles = errors.New("too many video files")
+
+func walkVideos(root string, limit int) ([]videoFile, error) {
 	info, err := os.Stat(root)
 	if err != nil {
 		return nil, fmt.Errorf("scan folder: %w", err)
@@ -77,45 +88,78 @@ func walkVideos(root string) ([]videoFile, error) {
 		return nil, fmt.Errorf("scan folder: %s is not a directory", root)
 	}
 	var out []videoFile
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	// Symlinked folders (and a symlinked root) are followed, as libraries
+	// spread over several drives often use them; visited holds the real
+	// folders seen so far, so a link back up the tree is not a loop. Paths are
+	// kept as they are under root, through the links.
+	visited := map[string]bool{}
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			if visited[real] {
+				return nil
+			}
+			visited[real] = true
+		}
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			if path == root {
+			if dir == root {
 				return err // nothing at all could be read
 			}
 			return nil // an unreadable subfolder shouldn't abort the whole scan
 		}
-		name := d.Name()
-		if d.IsDir() {
-			if path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "@") || extraDirs[strings.ToLower(name)]) {
-				return filepath.SkipDir
+		for _, d := range entries {
+			name := d.Name()
+			path := filepath.Join(dir, name)
+			isDir := d.IsDir()
+			var info fs.FileInfo
+			if d.Type()&fs.ModeSymlink != 0 {
+				if info, err = os.Stat(path); err != nil {
+					continue // a broken link
+				}
+				isDir = info.IsDir()
 			}
-			return nil
+			if isDir {
+				if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "@") || extraDirs[strings.ToLower(name)] {
+					continue
+				}
+				if err := walk(path); err != nil {
+					return err
+				}
+				continue
+			}
+			// Hidden files are not videos: macOS leaves "._Movie.mkv" stubs next
+			// to the real file on drives it has written to.
+			if strings.HasPrefix(name, ".") || !organizer.IsVideoFile(path) {
+				continue
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				continue
+			}
+			// Judged by the path below root: a folder called "sample" that the
+			// library itself sits in must not hide every file in it.
+			if organizer.IsSample(rel) {
+				continue
+			}
+			if extraSuffix.MatchString(strings.TrimSuffix(name, filepath.Ext(name))) {
+				continue
+			}
+			if info == nil {
+				if info, err = d.Info(); err != nil {
+					continue
+				}
+			}
+			if len(out) >= limit {
+				return errTooManyFiles
+			}
+			out = append(out, videoFile{path: path, rel: strings.Split(filepath.ToSlash(rel), "/"), size: info.Size(), mod: info.ModTime()})
 		}
-		// Hidden files are not videos: macOS leaves "._Movie.mkv" stubs next
-		// to the real file on drives it has written to.
-		if strings.HasPrefix(name, ".") || !organizer.IsVideoFile(path) {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return nil
-		}
-		// Judged by the path below root: a folder called "sample" that the
-		// library itself sits in must not hide every file in it.
-		if organizer.IsSample(rel) {
-			return nil
-		}
-		if extraSuffix.MatchString(strings.TrimSuffix(name, filepath.Ext(name))) {
-			return nil
-		}
-		fi, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		out = append(out, videoFile{path: path, rel: strings.Split(filepath.ToSlash(rel), "/"), size: fi.Size(), mod: fi.ModTime()})
 		return nil
-	})
-	if err != nil {
+	}
+	if err := walk(root); errors.Is(err, errTooManyFiles) {
+		return nil, fmt.Errorf("there are more than %d video files in %s, so it was not read: check it is the right folder", limit, root)
+	} else if err != nil {
 		return nil, fmt.Errorf("walk %s: %w", root, err)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
@@ -142,7 +186,7 @@ func groupKey(title string, year int) string { return fmt.Sprintf("%s|%d", norma
 // file name, falling back to (or being completed by) the containing folder:
 // "Inception (2010)/movie.mkv" is as common as a flat folder of release names.
 func ScanMovies(root string) (Result, error) {
-	files, err := walkVideos(root)
+	files, err := walkVideos(root, maxLibraryFiles)
 	if err != nil {
 		return Result{}, err
 	}
@@ -190,7 +234,7 @@ func movieIdentity(rel []string) (string, int, quality.Tier) {
 // can't be read from their name are reported as skipped rather than guessed
 // at.
 func ScanTV(root string) (Result, error) {
-	files, err := walkVideos(root)
+	files, err := walkVideos(root, maxLibraryFiles)
 	if err != nil {
 		return Result{}, err
 	}

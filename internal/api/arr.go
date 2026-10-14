@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rdborg/mediarium/internal/auth"
@@ -805,6 +807,68 @@ func (s *Server) arrPickProfile(id int64) int64 {
 
 // --- commands ---
 
+const (
+	// arrMaxCommandIDs is how many movies, episodes or albums one command may
+	// name.
+	arrMaxCommandIDs = 200
+	// arrMaxWaitingCommands is how many commands may wait for their turn.
+	arrMaxWaitingCommands = 20
+)
+
+// arrLine runs the commands the apps send one after another, and within a
+// command its titles one after another. Before, a MoviesSearch for 1,000 ids
+// started 1,000 searches at once and a person's own search waited behind them.
+type arrLine struct {
+	mu      sync.Mutex
+	waiting [][]func()
+	running bool
+}
+
+// arrLines holds each server's line (tests run several servers in one process).
+var arrLines sync.Map // *Server -> *arrLine
+
+func (s *Server) arrCommandLine() *arrLine {
+	l, _ := arrLines.LoadOrStore(s, &arrLine{})
+	return l.(*arrLine)
+}
+
+// add puts one command's jobs at the back of the line and starts working
+// through it if nothing is. It reports false, adding nothing, when the line is
+// full.
+func (l *arrLine) add(s *Server, jobs []func()) bool {
+	l.mu.Lock()
+	if len(l.waiting) >= arrMaxWaitingCommands {
+		l.mu.Unlock()
+		return false
+	}
+	l.waiting = append(l.waiting, jobs)
+	start := !l.running
+	l.running = true
+	l.mu.Unlock()
+	if start {
+		s.background(l.drain)
+	}
+	return true
+}
+
+// drain runs the waiting commands until none is left.
+func (l *arrLine) drain() {
+	for {
+		l.mu.Lock()
+		if len(l.waiting) == 0 {
+			l.running = false
+			l.mu.Unlock()
+			return
+		}
+		next := l.waiting[0]
+		l.waiting = l.waiting[1:]
+		l.mu.Unlock()
+		for _, job := range next {
+			job()
+		}
+	}
+}
+
 // arrCommand starts what the app asks for. Searches run in the background;
 // commands that mean nothing here are accepted and done at once.
 func (s *Server) arrCommand(app arrApp) http.HandlerFunc {
@@ -823,11 +887,22 @@ func (s *Server) arrCommand(app arrApp) http.HandlerFunc {
 			arrBadRequest(w, "Name", "Send the command as {\"name\": \"...\"}.")
 			return
 		}
+		for _, list := range []struct {
+			name string
+			ids  []int64
+		}{{"MovieIds", req.MovieIDs}, {"EpisodeIds", req.EpisodeIDs}, {"AlbumIds", req.AlbumIDs}} {
+			if len(list.ids) > arrMaxCommandIDs {
+				arrBadRequest(w, list.name, fmt.Sprintf("Send at most %d at a time.", arrMaxCommandIDs))
+				return
+			}
+		}
+		// Every command runs in one line, one after another, so a long list
+		// from an app never crowds out the searches a person starts.
+		var jobs []func()
 		switch strings.ToLower(req.Name) {
 		case "moviessearch", "moviesearch":
 			for _, id := range req.MovieIDs {
-				id := id
-				s.background(func() { s.searchMovieInBackground(id) })
+				jobs = append(jobs, func() { s.searchMovieInBackground(id) })
 			}
 		case "rescanmovie", "refreshmovie":
 			// What apps like Tdarr send after they change a file: look at the
@@ -837,41 +912,37 @@ func (s *Server) arrCommand(app arrApp) http.HandlerFunc {
 				ids = append(ids, req.MovieID)
 			}
 			for _, id := range ids {
-				id := id
-				s.background(func() { s.rescanMovieFiles(id, false) })
+				jobs = append(jobs, func() { s.rescanMovieFiles(id, false) })
 			}
 		case "rescanseries":
 			if req.SeriesID > 0 {
 				id := req.SeriesID
-				s.background(func() { s.rescanSeriesFiles(id, false) })
+				jobs = append(jobs, func() { s.rescanSeriesFiles(id, false) })
 			}
 		case "missingmoviessearch", "cutoffunmetmoviessearch":
-			s.background(s.arrSearchMissingMovies)
+			jobs = append(jobs, s.arrSearchMissingMovies)
 		case "seriessearch", "missingepisodesearch":
-			if req.SeriesID > 0 {
-				id := req.SeriesID
-				s.background(func() { s.arrSearchTV(tvScope{seriesID: id}) })
-			} else {
-				s.background(func() { s.arrSearchTV(tvScope{}) })
-			}
+			sc := tvScope{seriesID: max(req.SeriesID, 0)}
+			jobs = append(jobs, func() { s.arrSearchTV(sc) })
 		case "seasonsearch":
 			if req.SeriesID > 0 && req.SeasonNumber != nil {
 				sc := tvScope{seriesID: req.SeriesID, season: *req.SeasonNumber, specials: *req.SeasonNumber == 0}
-				s.background(func() { s.arrSearchTV(sc) })
+				jobs = append(jobs, func() { s.arrSearchTV(sc) })
 			}
 		case "episodesearch":
 			for _, id := range req.EpisodeIDs {
-				ep, err := s.MovieRepo.GetEpisodeByID(id)
-				if err != nil {
-					continue
-				}
-				sc := tvScope{seriesID: ep.SeriesID, season: ep.Season, episode: ep.Episode, specials: ep.Season == 0, force: true}
-				s.background(func() { s.arrSearchTV(sc) })
+				jobs = append(jobs, func() {
+					ep, err := s.MovieRepo.GetEpisodeByID(id)
+					if err != nil {
+						return
+					}
+					s.arrSearchTV(tvScope{seriesID: ep.SeriesID, season: ep.Season, episode: ep.Episode, specials: ep.Season == 0, force: true})
+				})
 			}
 		case "refreshseries":
 			if req.SeriesID > 0 {
 				id := req.SeriesID
-				s.background(func() {
+				jobs = append(jobs, func() {
 					if sr, err := s.MovieRepo.GetSeries(id); err == nil {
 						ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 						defer cancel()
@@ -883,13 +954,16 @@ func (s *Server) arrCommand(app arrApp) http.HandlerFunc {
 		case "artistsearch":
 			if req.ArtistID > 0 {
 				id := req.ArtistID
-				s.background(func() { s.searchArtistAlbums(id) })
+				jobs = append(jobs, func() { s.searchArtistAlbums(id) })
 			}
 		case "albumsearch":
 			for _, id := range req.AlbumIDs {
-				id := id
-				s.background(func() { s.arrSearchAlbum(id) })
+				jobs = append(jobs, func() { s.arrSearchAlbum(id) })
 			}
+		}
+		if len(jobs) > 0 && !s.arrCommandLine().add(s, jobs) {
+			writeJSON(w, http.StatusServiceUnavailable, []map[string]string{{"propertyName": "Name", "errorMessage": "Too many commands are waiting already. Try again once they have finished.", "severity": "error"}})
+			return
 		}
 		now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		writeJSON(w, http.StatusCreated, map[string]any{

@@ -20,7 +20,7 @@ import { useToast } from '../components/Toast'
 import { languageName } from '../languages'
 import { slotName } from '../subtitleProfiles'
 import { useLive } from '../useLive'
-import { plural, t } from '../i18n'
+import { plural, t, st } from '../i18n'
 import { untilText } from '../delayText'
 
 type Kind = 'missing' | 'cutoff' | 'subtitles'
@@ -230,7 +230,7 @@ export default function Wanted() {
         item.kind === 'movie'
           ? await api.searchNowMovie(item.movieId ?? item.id)
           : await api.searchNowSeries(item.seriesId!, { season: item.season, episode: item.episode })
-      toast.info(`${item.title}${item.subtitle ? ' ' + item.subtitle.split(' · ')[0] : ''}: ${res.message}`)
+      toast.info(`${item.title}${item.subtitle ? ' ' + item.subtitle.split(' · ')[0] : ''}: ${st(res.message)}`)
       if (res.grabbed > 0) load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -246,7 +246,7 @@ export default function Wanted() {
     setBusy(`book-${b.id}-${f}`)
     try {
       const res = await api.searchNowBook(b.id, f)
-      toast.info(`${b.title}: ${res.message}`)
+      toast.info(`${b.title}: ${st(res.message)}`)
       if (res.grabbed > 0) load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -259,7 +259,7 @@ export default function Wanted() {
     setBusy(`music-${a.id}`)
     try {
       const res = await api.searchNowAlbum(a.id)
-      toast.info(`${a.artistName} – ${a.title}: ${res.message}`)
+      toast.info(`${a.artistName} – ${a.title}: ${st(res.message)}`)
       if (res.grabbed > 0) load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -273,9 +273,9 @@ export default function Wanted() {
   async function searchAll(rows: Row[]) {
     if (rows.length > ASK_ABOVE) {
       const ok = await confirm({
-        title: t('Search for {n} titles now?', { n: rows.length }),
+        title: plural(rows.length, 'Search for {n} title now?', 'Search for {n} titles now?'),
         body: <p>{t("Each title is one search on every indexer. Many indexers allow only so many searches a day, so this may use up today's limit. The automatic searches go on as usual either way.")}</p>,
-        confirmLabel: t('Search {n} titles', { n: rows.length }),
+        confirmLabel: plural(rows.length, 'Search {n} title', 'Search {n} titles'),
       })
       if (!ok) return
     }
@@ -304,7 +304,7 @@ export default function Wanted() {
     setBusy(`show-${seriesId}`)
     try {
       const res = await api.searchNowSeries(seriesId, {})
-      toast.info(`${title}: ${res.message}`)
+      toast.info(`${title}: ${st(res.message)}`)
       if (res.grabbed > 0) load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -524,7 +524,7 @@ export default function Wanted() {
                       </strong>
                     </Link>
                     <small>
-                      {kind === 'missing' ? t('{n} episodes missing', { n: r.items.length }) : t('{n} episodes below the quality you asked for', { n: r.items.length })}
+                      {kind === 'missing' ? plural(r.items.length, '{n} episode missing', '{n} episodes missing') : plural(r.items.length, '{n} episode below the quality you asked for', '{n} episodes below the quality you asked for')}
                     </small>
                   </div>
                   <div className="wmeta">{r.items[0].profileName && <span className="badge">{r.items[0].profileName}</span>}</div>

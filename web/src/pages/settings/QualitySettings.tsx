@@ -10,6 +10,7 @@ import { useAutosaveSetting } from '../../useAutosave'
 import QualityProfilesSection from '../../components/QualityProfiles'
 import SizeLimitsCard from '../../components/SizeLimitsCard'
 import MusicProfilesSection from '../../components/MusicProfiles'
+import QuietForAWhile from '../../components/QuietForAWhile'
 import { t } from '../../i18n'
 import TipLabel from '../../components/TipLabel'
 
@@ -45,6 +46,7 @@ function AutomationSection() {
         showState
       />
       <AutomationIntervals />
+      <QuietForAWhile />
       <Switch
         checked={unmonitorDownloaded.value}
         onChange={unmonitorDownloaded.change}

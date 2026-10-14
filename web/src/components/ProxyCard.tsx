@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useToast } from './Toast'
 import { api, type ProxySettings } from '../api'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
 import TipLabel from './TipLabel'
 
 type Form = Omit<ProxySettings, 'hasPassword' | 'port'> & { port: string; password: string }
@@ -149,7 +149,7 @@ export default function ProxyCard() {
           {nothingTicked && <p className="notice notice-warn" style={{ margin: 0 }}>{t('Nothing is ticked, so nothing goes through the proxy yet.')}</p>}
         </>
       )}
-      {test && <p className={test.ok ? 'notice' : 'notice notice-warn'} style={{ margin: 0 }}>{test.message}</p>}
+      {test && <p className={test.ok ? 'notice' : 'notice notice-warn'} style={{ margin: 0 }}>{st(test.message)}</p>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button className="primary" onClick={() => void save()} disabled={busy !== ''}>
           {busy === 'save' ? t('Saving…') : t('Save')}

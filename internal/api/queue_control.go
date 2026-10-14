@@ -73,15 +73,36 @@ func (s *Server) settleInterrupted(queueID int64, run *pipelineRun) (bool, error
 	return false, nil
 }
 
+// errNotRunning is pauseItem's answer for a download that is not running.
+var errNotRunning = errors.New("This download isn't running, so it can't be paused.")
+
+// freshItem reads item again: the copy a caller has may be from before it
+// waited for queueControlMu, and the download may have finished since.
+func (s *Server) freshItem(item queue.Item) queue.Item {
+	if fresh, err := s.QueueRepo.Get(item.ID); err == nil {
+		return fresh
+	}
+	return item
+}
+
 // pauseItem pauses one item that is queued, downloading or importing.
 func (s *Server) pauseItem(item queue.Item) error {
+	item = s.freshItem(item)
 	if !downloadInProgress(item.Status) {
-		return errors.New("This download isn't running, so it can't be paused.")
+		return errNotRunning
 	}
 	if s.pipelines.interrupt(item.ID, false, false, stopWait) {
 		return nil
 	}
-	return s.QueueRepo.Pause(item.ID, false) // nothing was running it
+	// Nothing was running it. It may still have finished a moment ago: then
+	// it keeps its status.
+	if err := s.QueueRepo.Pause(item.ID, false); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errNotRunning
+		}
+		return err
+	}
+	return nil
 }
 
 // resumeItem puts a paused item back in the download line, at the front of its
@@ -111,16 +132,24 @@ func (s *Server) resumeItem(item queue.Item) error {
 // stopItem stops a download that is running or paused. With deleteFiles its
 // partly downloaded files in the downloads folder are deleted too.
 func (s *Server) stopItem(item queue.Item, deleteFiles bool) error {
+	item = s.freshItem(item)
+	finished := errors.New("This download has already finished.")
 	if item.Status != queue.StatusQueued && item.Status != queue.StatusDownloading && item.Status != queue.StatusImporting && item.Status != queue.StatusPaused {
-		return errors.New("This download has already finished.")
+		return finished
 	}
 	if s.pipelines.interrupt(item.ID, true, deleteFiles, stopWait) {
 		return nil
 	}
-	s.torrents.stopQueue(item.ID)
-	if err := s.QueueRepo.SetStatus(item.ID, queue.StatusStopped, ""); err != nil {
+	// Only while it has not finished: a download that completed a moment ago
+	// keeps its status (and its seeding torrent).
+	stopped, err := s.QueueRepo.Stop(item.ID)
+	if err != nil {
 		return err
 	}
+	if !stopped {
+		return finished
+	}
+	s.torrents.stopQueue(item.ID)
 	s.releaseTitleClaims(item)
 	if deleteFiles {
 		s.removeWorkDir(s.workDirFor(item.ID))

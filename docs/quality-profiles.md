@@ -1,6 +1,8 @@
 # Quality profiles
 
-A quality profile decides which releases Mediarium may download for a movie or show, and when it stops looking for something better. Every title uses the **default profile** unless you give it one of its own. Change the default with **Make default** on Settings > Library > Quality (or `PUT /api/settings` with `defaultProfileId`), and a single title's profile from its page.
+A quality profile decides which releases Mediarium may download for a movie or show, and when it stops looking for something better. Every title uses the **default profile** unless you give it one of its own. Change the default with **Make default for movies** on Settings > Library > Quality (or `PUT /api/settings` with `defaultProfileId`), and a single title's profile from its page.
+
+Shows can have a default of their own. Press **Make default for TV** on a profile (or send `defaultTvProfileId` in `PUT /api/settings`) and every show with no profile of its own uses that one, while movies keep the movie default. Until you set one, shows use the same default as movies, so nothing changes for you. **Use the movie default for TV** (or `defaultTvProfileId: 0`) puts it back. The add-title window, a title's profile picker and the Library list all show the default that fits the title. A profile that is the default for movies or for TV can't be deleted.
 
 A profile has:
 
@@ -20,6 +22,21 @@ A profile has:
 ![Editing a profile: name, accepted qualities, where to stop upgrading, better versions switch and fallback profiles](images/quality-editor.png)
 
 *Edit on a profile opens this form above the list.*
+
+## Moving a title to a lower profile
+
+Giving a title a lower profile (say 4K down to 1080p) changes what Mediarium accepts from now on. It does not touch the file you already have, and it never searches for a smaller one by itself: a 4K file on a 1080p profile counts as above the cutoff, so it is simply left alone. This is the same as in Radarr and Sonarr.
+
+To shrink a movie you already have, use **Replace with a smaller version** on its page (or on a selection in the Library, see [Selecting many titles](library.md#selecting-many-titles)):
+
+1. Give the movie the profile you want, for example 1080p.
+2. Press **Replace with a smaller version**. A question names the file you have and its size.
+3. Mediarium searches your indexers for the best release that the movie's current profile accepts, that is not a higher quality than your file, and that is at least a tenth smaller. If it finds one it downloads it like any other release.
+4. Only when the new file is downloaded and in your library is the old file removed. If nothing suitable is found, or the download fails, your old file stays and the movie stays downloaded. Nothing is deleted first.
+
+The new file goes through the usual import, so **If a file already exists** (Settings > Library > Folders) is respected for the name of the new file. If the movie's file changed while the download was running, nothing is removed. For TV shows there is no such button yet: change the profile and the episodes that are already below it are looked for again, but a file above the profile is left alone.
+
+The same thing through the API: `POST /api/movies/{id}/replace-smaller` for one movie, and `POST /api/library/bulk/replace-smaller` with `{"items": [{"kind": "movie", "id": 1}]}` for a selection (administrators, at most 25 at a time).
 
 ## The built-in presets
 
@@ -107,6 +124,8 @@ Under the switch are two numbers:
 - **Check for new releases every … minutes** is how often it looks at the newest releases of each indexer and matches them against what you're waiting for. From 5 to 1440 minutes, starting at 15 (`automation.release_check_minutes`, or `releaseCheckMinutes`).
 
 A new number is used from the next wait on, with no restart. A number outside these limits is refused and the old one stays.
+
+**Quiet for a while** is under the numbers: **1 hour**, **4 hours** or **Until morning** (8:00 in your browser's time) holds the heavy background work, the searches, library and show refreshes, the subtitle sweep, picture fetching, list and watchlist checks, so a small server isn't busy while a film plays or a game is running. Downloads that are running or waiting, imports, backups and anything you start yourself carry on. **Back to normal** ends it. It's kept in `automation.quiet_until` (a restart doesn't end it early); scripts use `GET` and `PUT /api/automation/quiet` (`{"minutes": 60}`, `0` to end it, 4320 at most).
 
 Two more switches, both off at first, decide what happens to monitoring once something is in:
 

@@ -1,9 +1,11 @@
 package api_test
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"sync"
 	"testing"
 )
 
@@ -126,5 +128,60 @@ func TestSearchGrabNeedsTheRightToAdd(t *testing.T) {
 	}, http.StatusForbidden)
 	if list := getJSON[[]map[string]any](t, admin, base+"/api/series"); len(list) != 0 {
 		t.Fatalf("a grab added a show for an account that has to ask: %v", list)
+	}
+}
+
+// Many copies of one request sent at the same time make one request: the
+// duplicate check and saving the request take turns.
+func TestParallelRequestsAreNotDuplicated(t *testing.T) {
+	server, base, admin := loginNewServer(t)
+	server.TestSetOpenLibrary(newFakeOpenLibrary(t).URL)
+	postJSONMethod[map[string]any](t, admin, http.MethodPut, base+"/api/modules", map[string]any{"ebooks": true}, http.StatusOK)
+	perms := map[string]any{"addDirect": false, "movies": true, "tv": true, "music": true, "books": true, "releases": false, "manage": true, "retry": true, "subtitles": true, "play": true}
+	postJSON[map[string]any](t, admin, base+"/api/users", map[string]any{"username": "lee", "password": "lee-password-1", "role": "member", "permissions": perms}, http.StatusCreated)
+	jar, _ := cookiejar.New(nil)
+	lee := &http.Client{Jar: jar}
+	postJSON[map[string]any](t, lee, base+"/api/auth/login", map[string]string{"username": "lee", "password": "lee-password-1"}, http.StatusOK)
+
+	const n = 12
+	body := []byte(`{"olKey":"OL9W","title":"Smith of Wootton Major","author":"J.R.R. Tolkien","ebook":true}`)
+	var wg sync.WaitGroup
+	codes := make(chan int, n)
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, err := http.NewRequest(http.MethodPost, base+"/api/books", bytes.NewReader(body))
+			if err != nil {
+				codes <- 0
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := lee.Do(req)
+			if err != nil {
+				codes <- 0
+				return
+			}
+			resp.Body.Close()
+			codes <- resp.StatusCode
+		}()
+	}
+	wg.Wait()
+	close(codes)
+	accepted := 0
+	for c := range codes {
+		switch c {
+		case http.StatusAccepted:
+			accepted++
+		case http.StatusConflict:
+		default:
+			t.Errorf("unexpected status %d", c)
+		}
+	}
+	if accepted != 1 {
+		t.Fatalf("%d of %d parallel copies were accepted, want 1", accepted, n)
+	}
+	if got := getJSON[map[string]any](t, admin, base+"/api/requests")["requests"].([]any); len(got) != 1 {
+		t.Fatalf("%d requests saved, want 1", len(got))
 	}
 }

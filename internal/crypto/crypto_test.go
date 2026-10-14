@@ -81,6 +81,19 @@ func TestKeyFileIsPrivateAndReloads(t *testing.T) {
 	if got, err := again.Decrypt(enc); err != nil || got != "x" {
 		t.Fatalf("a reloaded key does not decrypt: %q, %v", got, err)
 	}
+	// The key is written to a temporary file and renamed into place: nothing
+	// else is left in the folder.
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "secret.key" {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("folder holds %v, want only secret.key", names)
+	}
 }
 
 // A key file an editor added a newline to still loads.

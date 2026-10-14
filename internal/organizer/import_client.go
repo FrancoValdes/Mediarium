@@ -124,8 +124,7 @@ func importLink(target, destPath string, policy ConflictPolicy, isBetter func() 
 		return ImportResult{DestPath: destPath}, nil
 	}
 	// As with Import: made beside the old file, then renamed over it.
-	staging := destPath + stagingSuffix
-	_ = os.Remove(staging)
+	staging := stagingPath(destPath)
 	if err := os.Symlink(target, staging); err != nil {
 		return ImportResult{}, fmt.Errorf("link %s -> %s: %w", staging, target, err)
 	}

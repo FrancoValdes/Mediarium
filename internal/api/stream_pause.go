@@ -27,6 +27,12 @@ const (
 	// before downloads carry on (two is about a minute), so a pause between
 	// two episodes doesn't make them stop and start again.
 	streamQuietChecks = 2
+	// When no media server can be asked (down, or its address changed) while
+	// downloads are held, they are given back after this many checks in a row
+	// that also span at least streamUnreachableFor: nobody can say anyone is
+	// still watching, and they must not stay paused for good.
+	streamUnreachableChecks = 3
+	streamUnreachableFor    = 10 * time.Minute
 )
 
 type streamPauseState struct {
@@ -35,6 +41,10 @@ type streamPauseState struct {
 	watching int
 	servers  int
 	checked  time.Time
+	// unreachable counts the checks in a row that could ask no media server,
+	// since unreachableSince.
+	unreachable      int
+	unreachableSince time.Time
 }
 
 func (s *Server) streamPauseOn() bool {
@@ -65,16 +75,18 @@ func (s *Server) savePausedForStreaming(ids []int64) {
 }
 
 // watchingNow counts the people watching across the media servers that can
-// say so. ok is false when none of them could be asked.
-func (s *Server) watchingNow(ctx context.Context) (n, servers int, ok bool) {
+// say so. ok is false when none of them could be asked; configured is how many
+// enabled servers there are to ask (-1 when the list couldn't be read).
+func (s *Server) watchingNow(ctx context.Context) (n, servers, configured int, ok bool) {
 	list, err := s.MediaServers.List()
 	if err != nil {
-		return 0, 0, false
+		return 0, 0, -1, false
 	}
 	for _, m := range list {
 		if !m.Enabled || (m.Kind != mediaservers.KindPlex && m.Kind != mediaservers.KindJellyfin && m.Kind != mediaservers.KindEmby) {
 			continue
 		}
+		configured++
 		ask, cancel := context.WithTimeout(ctx, 10*time.Second)
 		c, err := s.mediaClient.ActiveStreams(ask, m)
 		cancel()
@@ -85,7 +97,7 @@ func (s *Server) watchingNow(ctx context.Context) (n, servers int, ok bool) {
 		servers++
 		n += c
 	}
-	return n, servers, servers > 0
+	return n, servers, configured, servers > 0
 }
 
 // streamPauseRound makes one check and does what it says.
@@ -101,13 +113,32 @@ func (s *Server) streamPauseRound(ctx context.Context) {
 		}
 		return
 	}
-	n, servers, ok := s.watchingNow(ctx)
+	n, servers, configured, ok := s.watchingNow(ctx)
 	st.mu.Lock()
 	st.checked, st.servers = time.Now(), servers
 	if !ok {
+		if st.unreachable == 0 {
+			st.unreachableSince = time.Now()
+		}
+		st.unreachable++
+		// Every media server was removed or switched off: nobody can be
+		// watching through one, so what was held goes back at once. When they
+		// are only out of reach, it goes back after a while.
+		release := configured == 0 ||
+			(st.unreachable >= streamUnreachableChecks && time.Since(st.unreachableSince) >= streamUnreachableFor)
+		if release {
+			st.watching, st.quiet = 0, 0
+		}
 		st.mu.Unlock()
-		return // nobody could be asked: change nothing
+		if release {
+			if ids := s.pausedForStreaming(); len(ids) > 0 {
+				slog.Info("pause while streaming: no media server can be asked, giving the downloads back", "held", len(ids))
+				s.resumeStreamPaused(ids)
+			}
+		}
+		return // otherwise change nothing
 	}
+	st.unreachable = 0
 	st.watching = n
 	if n > 0 {
 		st.quiet = 0

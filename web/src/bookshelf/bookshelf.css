@@ -108,3 +108,19 @@
 
 /* The reader and player fill the window: no empty scrollbar strip down the right. */
 html:has(.rdr), html:has(.ply) { scrollbar-gutter: auto; }
+
+/* ---- Comics ------------------------------------------------------------- */
+.cmx { --rdr-bg: #101114; --rdr-fg: #e9e9ee; }
+.cmx-stage { position: relative; display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; min-height: 0; }
+.cmx-stage .rdr-turn:disabled { opacity: 0.1; cursor: default; }
+.cmx-pages { display: flex; justify-content: center; align-items: center; gap: 2px; min-height: 0; min-width: 0; overflow: hidden; touch-action: pan-y; user-select: none; }
+.cmx-pages img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; background: #000; }
+.cmx-pages:has(img + img) img { max-width: 50%; }
+.cmx-stage.fit-width .cmx-pages { align-items: flex-start; overflow-y: auto; }
+.cmx-stage.fit-width .cmx-pages img { width: 100%; max-height: none; height: auto; object-fit: initial; }
+.cmx-stage.fit-width .cmx-pages:has(img + img) img { width: 50%; }
+.cmx-bad { padding: 24px; opacity: 0.7; }
+@media (max-width: 640px) {
+  .cmx-stage { grid-template-columns: 0 minmax(0, 1fr) 0; }
+  .cmx-stage .rdr-turn { display: none; }
+}

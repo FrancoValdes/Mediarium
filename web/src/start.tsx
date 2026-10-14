@@ -10,19 +10,21 @@ import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
 import { ConfirmProvider } from './components/ConfirmProvider'
 import { PUSH_WORKER } from './push'
+import { BASE_PATH } from './base'
+import { isStaleWorker } from './staleWorker'
 
 if (demoEnabled()) installDemo()
 
 // Mediarium's only service worker is the push one (push-sw.js), which caches
 // nothing. One left behind by another app that once ran on the same address
 // would answer API calls from its own cache and show stale data, so remove
-// any other we find and reload once.
+// such a worker and reload once. Workers of other apps that share the domain
+// under their own path are not ours to touch (see staleWorker.ts).
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker
     .getRegistrations()
     .then(async (regs) => {
-      const isPush = (r: ServiceWorkerRegistration) => [r.active, r.waiting, r.installing].some((w) => w?.scriptURL.endsWith(PUSH_WORKER))
-      const stale = regs.filter((r) => !isPush(r))
+      const stale = regs.filter((r) => isStaleWorker(r.scope, [r.active, r.waiting, r.installing].map((w) => w?.scriptURL), BASE_PATH, PUSH_WORKER))
       if (stale.length === 0) return
       await Promise.all(stale.map((r) => r.unregister()))
       const ctrl = navigator.serviceWorker.controller
@@ -31,6 +33,15 @@ if ('serviceWorker' in navigator) {
     .catch(() => {
       // ignore — not having permission to look is fine
     })
+}
+
+// The worker also shows a short "can't be reached" page when the server is
+// down (the installed app then doesn't open to the browser's error). It needs
+// a secure address (https or localhost); anywhere else it is simply skipped.
+if ('serviceWorker' in navigator && window.isSecureContext && !demoEnabled()) {
+  navigator.serviceWorker.register(PUSH_WORKER).catch(() => {
+    // not allowed here (a private window, a blocked setting): the app works the same
+  })
 }
 
 createRoot(document.getElementById('root')!).render(

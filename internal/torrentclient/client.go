@@ -291,12 +291,30 @@ func (c *Client) Torrents() int {
 	return len(c.tc.Torrents())
 }
 
+// MetadataTimeout is how long a magnet link may wait for a peer to send the
+// torrent's details (file list, pieces) before ErrNoMetadata. A dead or fake
+// magnet never gets them, and without a limit it would hold its place in the
+// download line for good. A variable so tests can shorten it.
+var MetadataTimeout = 10 * time.Minute
+
+// ErrNoMetadata is returned when a magnet link's details never arrive.
+var ErrNoMetadata = errors.New("no one sent the torrent's details within 10 minutes: no one seems to be sharing it")
+
 func (c *Client) waitForInfo(ctx context.Context, t *torrent.Torrent) error {
+	select {
+	case <-t.GotInfo():
+		return nil
+	default:
+	}
+	timer := time.NewTimer(MetadataTimeout)
+	defer timer.Stop()
 	select {
 	case <-t.GotInfo():
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-timer.C:
+		return ErrNoMetadata
 	}
 }
 

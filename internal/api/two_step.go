@@ -370,19 +370,30 @@ func (s *Server) handleTwoStepEnable(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkPassword confirms the signed-in person's password before a change to
-// their two-step sign-in.
+// their two-step sign-in, a new passkey or a single sign-on link. Wrong tries
+// count per address and per account (together with wrong tries when changing
+// the password), so a stolen session can't guess from many addresses.
 func (s *Server) checkPassword(w http.ResponseWriter, r *http.Request, user *auth.User, password string) bool {
 	ipKey := httpsec.LimitKey(s.clientIP(r))
-	if !s.LoginLimiter.Allow(ipKey) {
+	byUser := s.sec().byUser
+	guessKey := passwordGuessKey(user.ID)
+	if !s.LoginLimiter.Allow(ipKey) || !byUser.Allow(guessKey) {
 		writeError(w, http.StatusTooManyRequests, "Too many attempts. Wait a few minutes and try again.")
 		return false
 	}
 	if _, err := s.Auth.Authenticate(user.Username, password); err != nil {
 		s.LoginLimiter.RecordFailure(ipKey)
+		byUser.RecordFailure(guessKey)
 		writeError(w, http.StatusBadRequest, "That password isn't right.")
 		return false
 	}
 	return true
+}
+
+// passwordGuessKey is the per-account count of wrong tries at a signed-in
+// person's own password.
+func passwordGuessKey(userID int64) string {
+	return "password:" + strconv.FormatInt(userID, 10)
 }
 
 // POST /api/auth/two-step/disable {"password"}
@@ -431,6 +442,9 @@ func (s *Server) handleTwoStepRecovery(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/users/{id}/two-step: an administrator switches it off for
 // someone who lost their phone and their recovery codes.
 func (s *Server) handleUserTwoStepOff(w http.ResponseWriter, r *http.Request) {
+	if !requireSession(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "That isn't a valid account ID.")

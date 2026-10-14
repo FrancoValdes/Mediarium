@@ -116,7 +116,10 @@ function Player({ src, name, audio, subs = [], onClose }: { src: string; name: s
         try {
           const r = await fetch(s.url, { credentials: 'include' })
           if (!r.ok) return null
-          const url = URL.createObjectURL(new Blob([srtToVtt(await r.text())], { type: 'text/vtt' }))
+          const text = await r.text()
+          // The player closed while this was loading: the cleanup already ran.
+          if (cancelled) return null
+          const url = URL.createObjectURL(new Blob([srtToVtt(text)], { type: 'text/vtt' }))
           made.push(url)
           return { code: s.code, url }
         } catch {

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nwaples/rardecode/v2"
 
@@ -66,6 +67,11 @@ const (
 	// archive before it is stopped.
 	defaultSevenZipTimeout = 6 * time.Hour
 
+	// max7zListing is the most of `7z l -slt` that is kept. An entry takes
+	// about 250 bytes plus its name, so maxArchiveEntries entries with long
+	// names fit; a longer listing is refused, never cut short.
+	max7zListing = 64 << 20
+
 	// spaceReserveBytes is kept free on the destination disk on top of the
 	// size of each file about to be written, so unpacking never takes the
 	// disk to exactly zero.
@@ -92,7 +98,7 @@ type Extractor struct {
 	// Exposed so tests can simulate a full disk.
 	FreeSpace func(dir string) (free uint64, ok bool)
 
-	// Password opens encrypted RAR and 7z archives. Empty means none.
+	// Password opens encrypted RAR, 7z and ZIP archives. Empty means none.
 	Password string
 
 	// SevenZipTimeout stops the external 7z tool if it runs longer than this
@@ -175,23 +181,66 @@ func FindPrimaryArchives(dir string) ([]string, error) {
 	return primaries, nil
 }
 
+// Format is an archive format Extract knows.
+type Format string
+
+const (
+	FormatRAR Format = "rar"
+	FormatZip Format = "zip"
+	Format7z  Format = "7z"
+)
+
 // Extract unpacks archivePath into destDir. The format is chosen from the
 // file name: .rar (any volume naming) and .zip natively, .7z via the
 // external 7z tool.
 func (e *Extractor) Extract(archivePath, destDir string) error {
+	switch lower := strings.ToLower(archivePath); {
+	case strings.HasSuffix(lower, ".rar"), rarOldStyle.MatchString(lower):
+		return e.ExtractAs(archivePath, destDir, FormatRAR)
+	case strings.HasSuffix(lower, ".zip"):
+		return e.ExtractAs(archivePath, destDir, FormatZip)
+	case strings.HasSuffix(lower, ".7z"):
+		return e.ExtractAs(archivePath, destDir, Format7z)
+	default:
+		return fmt.Errorf("extract %s: %w", filepath.Base(archivePath), ErrUnsupportedArchive)
+	}
+}
+
+// ExtractAs unpacks archivePath into destDir as the given format, whatever
+// the file is called (a .cbr comic is a RAR, a .cb7 a 7z). A single file is
+// expected: volumes of a set are only found by their usual names.
+func (e *Extractor) ExtractAs(archivePath, destDir string, f Format) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("create extract dest dir: %w", err)
 	}
-	switch lower := strings.ToLower(archivePath); {
-	case strings.HasSuffix(lower, ".rar"), rarOldStyle.MatchString(lower):
+	switch f {
+	case FormatRAR:
 		return e.extractRAR(archivePath, destDir)
-	case strings.HasSuffix(lower, ".zip"):
+	case FormatZip:
 		return e.extractZip(archivePath, destDir)
-	case strings.HasSuffix(lower, ".7z"):
+	case Format7z:
 		return e.extract7z(archivePath, destDir)
 	default:
 		return fmt.Errorf("extract %s: %w", filepath.Base(archivePath), ErrUnsupportedArchive)
 	}
+}
+
+// DetectFormat reads the first bytes of r and says which archive format it
+// is, by its signature rather than its name: plenty of .cbr files are really
+// ZIPs, and plenty of .cbz files RARs. ok is false for anything else.
+func DetectFormat(r io.Reader) (f Format, ok bool) {
+	var head [8]byte
+	n, _ := io.ReadFull(r, head[:])
+	b := head[:n]
+	switch {
+	case bytes.HasPrefix(b, []byte("PK\x03\x04")), bytes.HasPrefix(b, []byte("PK\x05\x06")), bytes.HasPrefix(b, []byte("PK\x07\x08")):
+		return FormatZip, true
+	case bytes.HasPrefix(b, []byte("Rar!\x1a\x07\x00")), bytes.HasPrefix(b, []byte("Rar!\x1a\x07\x01\x00")):
+		return FormatRAR, true
+	case bytes.HasPrefix(b, []byte("7z\xbc\xaf\x27\x1c")):
+		return Format7z, true
+	}
+	return "", false
 }
 
 // extractRAR unpacks a RAR set natively. OpenReader on the first volume
@@ -368,6 +417,19 @@ func (e *Extractor) extractZip(archivePath, destDir string) error {
 	}
 	defer zr.Close()
 
+	// An encrypted ZIP (the old ZipCrypto or AES) is opened by the external
+	// 7z tool, which knows both, when there is a password. The standard
+	// library can't read either. The same checks run on its listing.
+	for _, f := range zr.File {
+		if f.Flags&0x1 != 0 {
+			if e.Password == "" {
+				return fmt.Errorf("extract %s: %w", name, ErrPasswordProtected)
+			}
+			zr.Close()
+			return e.extract7z(archivePath, destDir)
+		}
+	}
+
 	x := e.newExtraction(destDir)
 	for _, f := range zr.File {
 		if err := x.countEntry(); err != nil {
@@ -438,9 +500,14 @@ func (e *Extractor) extract7z(archivePath, destDir string) error {
 
 	// Without a password 7z fails instead of prompting (stdin is the null
 	// device), which is what we want for encrypted archives.
-	listing, err := e.run7z(ctx, append(e.sevenZipArgs("l", "-slt"), "--", archivePath)...)
+	// The whole listing is checked: a link or a size hidden after a cut-off
+	// point would be unpacked unchecked, so a listing too long to keep is refused.
+	listing, complete, err := e.run7z(ctx, max7zListing, append(e.sevenZipArgs("l", "-slt"), "--", archivePath)...)
 	if err != nil {
 		return e.sevenZipError(ctx, name, listing, err)
+	}
+	if !complete {
+		return fmt.Errorf("extract %s: the list of files is longer than %d bytes: %w", name, max7zListing, ErrArchiveTooLarge)
 	}
 	total, err := check7zListing(listing, e.maxTotal(), e.Password != "")
 	if err != nil {
@@ -457,7 +524,7 @@ func (e *Extractor) extract7z(archivePath, destDir string) error {
 		return fmt.Errorf("extract %s: create a working folder: %w", name, err)
 	}
 	defer os.RemoveAll(stage)
-	if out, err := e.run7z(ctx, append(e.sevenZipArgs("x", "-y", "-o"+stage), "--", archivePath)...); err != nil {
+	if out, _, err := e.run7z(ctx, 64<<10, append(e.sevenZipArgs("x", "-y", "-o"+stage), "--", archivePath)...); err != nil {
 		return e.sevenZipError(ctx, name, out, err)
 	}
 	if err := moveUnpacked(stage, destDir, e.maxTotal()); err != nil {
@@ -475,15 +542,15 @@ func (e *Extractor) sevenZipArgs(args ...string) []string {
 	return args
 }
 
-// run7z runs the 7z tool with the given arguments and returns what it printed
-// (at most 64 KB of it).
-func (e *Extractor) run7z(ctx context.Context, args ...string) ([]byte, error) {
+// run7z runs the 7z tool with the given arguments and returns what it printed,
+// at most limit bytes of it; complete is false when there was more.
+func (e *Extractor) run7z(ctx context.Context, limit int, args ...string) (out []byte, complete bool, err error) {
 	cmd := exec.CommandContext(ctx, e.binary(), args...)
 	cmd.WaitDelay = 5 * time.Second
-	out := &cappedBuffer{max: 64 << 10}
-	cmd.Stdout, cmd.Stderr = out, out
-	err := cmd.Run()
-	return out.Bytes(), err
+	buf := &cappedBuffer{max: limit}
+	cmd.Stdout, cmd.Stderr = buf, buf
+	err = cmd.Run()
+	return buf.Bytes(), !buf.dropped, err
 }
 
 // sevenZipError turns a failed 7z run into the error the caller reports.
@@ -500,19 +567,20 @@ func (e *Extractor) sevenZipError(ctx context.Context, name string, out []byte, 
 	return fmt.Errorf("extract %s: %w: %s", name, err, truncateOutput(out))
 }
 
-// cappedBuffer keeps the first max bytes written and drops the rest.
+// cappedBuffer keeps the first max bytes written and drops the rest, noting
+// that it did.
 type cappedBuffer struct {
-	buf bytes.Buffer
-	max int
+	buf     bytes.Buffer
+	max     int
+	dropped bool
 }
 
 func (c *cappedBuffer) Write(p []byte) (int, error) {
-	if room := c.max - c.buf.Len(); room > 0 {
-		if len(p) < room {
-			room = len(p)
-		}
-		c.buf.Write(p[:room])
+	room := max(c.max-c.buf.Len(), 0)
+	if len(p) > room {
+		c.dropped = true
 	}
+	c.buf.Write(p[:min(len(p), room)])
 	return len(p), nil
 }
 
@@ -527,6 +595,11 @@ var sevenZipPerms = regexp.MustCompile(`^[-dlbcps][-rwxsStT]{9}$`)
 // encrypted files (unless there is a password to open them with), too many
 // entries or more data than budget. It returns the total unpacked size the
 // listing declares.
+//
+// A file name can hold a line break, which could make one entry look like two
+// and hide the second half's link or size. So an entry whose lines are not all
+// "Key = value", a block of fields with no Path, a key given twice in one
+// entry and a name with control characters all make the archive unsafe.
 func check7zListing(out []byte, budget int64, havePassword bool) (int64, error) {
 	text := "\n" + strings.ReplaceAll(string(out), "\r\n", "\n")
 	_, body, found := strings.Cut(text, "\n----------\n")
@@ -539,14 +612,40 @@ func check7zListing(out []byte, budget int64, havePassword bool) (int64, error) 
 	)
 	for _, block := range strings.Split(body, "\n\n") {
 		fields := map[string]string{}
+		rawPath, loose := "", false
 		for _, line := range strings.Split(block, "\n") {
-			if k, v, ok := strings.Cut(line, " = "); ok {
-				fields[strings.TrimSpace(k)] = strings.TrimSpace(v)
+			if line == "" {
+				continue
 			}
+			k, v, ok := strings.Cut(line, " = ")
+			if !ok {
+				k, ok = strings.CutSuffix(line, " =") // an empty value, trimmed
+			}
+			if !ok {
+				loose = true
+				continue
+			}
+			k = strings.TrimSpace(k)
+			if _, dup := fields[k]; dup {
+				return 0, fmt.Errorf("an entry lists %q twice: %w", k, ErrUnsafeArchive)
+			}
+			if k == "Path" {
+				rawPath = v
+			}
+			fields[k] = strings.TrimSpace(v)
 		}
 		p, ok := fields["Path"]
 		if !ok {
-			continue
+			if len(fields) > 0 {
+				return 0, fmt.Errorf("an entry has no name: %w", ErrUnsafeArchive)
+			}
+			continue // text after the list, such as a warning
+		}
+		if loose {
+			return 0, fmt.Errorf("the name %q runs over more than one line: %w", p, ErrUnsafeArchive)
+		}
+		if strings.IndexFunc(rawPath, unicode.IsControl) >= 0 {
+			return 0, fmt.Errorf("the name %q holds a control character: %w", p, ErrUnsafeArchive)
 		}
 		entries++
 		if entries > maxArchiveEntries {
@@ -734,19 +833,29 @@ func (x *extraction) writeFile(name string, declared int64, r io.Reader) error {
 	if fi, err := os.Lstat(target); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%q would overwrite a link: %w", name, ErrUnsafeArchive)
 	}
-	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	// Written under a new name and renamed over the target, so a file that is
+	// already there is replaced, never rewritten: it may be hard-linked into
+	// the library by an earlier import, and truncating it in place would
+	// damage the library's copy too.
+	f, err := os.CreateTemp(filepath.Dir(target), ".unpack-*")
 	if err != nil {
 		return fmt.Errorf("create %s: %w", name, err)
 	}
 	lw := &limitedWriter{w: f, left: x.budget}
 	_, copyErr := io.Copy(lw, r)
+	if copyErr == nil {
+		copyErr = f.Chmod(0o644)
+	}
 	closeErr := f.Close()
 	x.budget = lw.left
 	if copyErr == nil {
 		copyErr = closeErr
 	}
+	if copyErr == nil {
+		copyErr = os.Rename(f.Name(), target)
+	}
 	if copyErr != nil {
-		os.Remove(target) // do not leave a truncated file for the video finder
+		os.Remove(f.Name()) // do not leave a partial file for the video finder
 		if errors.Is(copyErr, errLimitExceeded) {
 			return fmt.Errorf("%q: %w", name, ErrArchiveTooLarge)
 		}

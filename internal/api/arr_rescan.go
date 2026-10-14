@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,23 +19,30 @@ import (
 // the same: it checks that each downloaded file is still where it was (and
 // finds it again when only the extension changed, for example .mp4 to .mkv),
 // and asks the media servers to scan the folder, so the new file shows up
-// there. It never marks anything missing or deletes anything.
+// there. It never deletes anything, and only the Rescan files button (never an
+// app) marks a file that is gone as missing.
 
 // stillThere returns where the file is now: the same path when it is still
 // there, or the one video in its folder that has the same name apart from the
-// extension. "" means it can't be found.
-func stillThere(path string) string {
+// extension. gone is true only when the file surely isn't there any more; when
+// it can't be told (the disk can't be read, or two look-alikes are there) the
+// answer is "" and gone is false, and the title is left alone.
+func stillThere(path string) (now string, gone bool) {
 	if path == "" {
-		return ""
+		return "", false
 	}
-	if _, err := os.Stat(path); err == nil {
-		return path
+	_, err := os.Stat(path)
+	if err == nil {
+		return path, false
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return "", false
 	}
 	dir := filepath.Dir(path)
 	want := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return ""
+		return "", errors.Is(err, fs.ErrNotExist)
 	}
 	var found []string
 	for _, e := range entries {
@@ -45,10 +54,13 @@ func stillThere(path string) string {
 			found = append(found, filepath.Join(dir, name))
 		}
 	}
-	if len(found) == 1 {
-		return found[0]
+	switch len(found) {
+	case 0:
+		return "", true
+	case 1:
+		return found[0], false
 	}
-	return ""
+	return "", false
 }
 
 // rescanReport says what a rescan found.
@@ -56,7 +68,7 @@ type rescanReport struct {
 	Found   int `json:"found"`   // files that are where they should be
 	Renamed int `json:"renamed"` // files found again under another extension
 	Missing int `json:"missing"` // files that are gone (now wanted again when markMissing was asked for)
-	Skipped int `json:"skipped"` // files left alone because the library folder looks unavailable
+	Skipped int `json:"skipped"` // files left alone because the library folder looks unavailable or it couldn't be told whether they are there
 }
 
 // libraryAvailable says the library folder is there and has something in it. A
@@ -79,13 +91,20 @@ func (s *Server) rescanMovieFiles(id int64, markMissing bool) rescanReport {
 	if err != nil || m.Status != library.StatusDownloaded || m.FilePath == "" {
 		return rep
 	}
-	now := stillThere(m.FilePath)
+	now, gone := stillThere(m.FilePath)
 	if now == "" {
+		if !gone {
+			slog.Warn("rescan: couldn't tell whether a movie's file is still there, so it was left alone", "movie", m.Title, "path", m.FilePath)
+			if markMissing {
+				rep.Skipped++
+			}
+			return rep
+		}
 		if !markMissing {
 			slog.Warn("rescan: a movie's file is not where it was and no file with the same name was found", "movie", m.Title, "path", m.FilePath)
 			return rep
 		}
-		if !libraryAvailable(s.movieRootFor(m)) {
+		if !libraryAvailable(s.fileRoot(s.movieRootFor(m), m.FilePath)) {
 			rep.Skipped++
 			return rep
 		}
@@ -122,13 +141,20 @@ func (s *Server) rescanSeriesFiles(id int64, markMissing bool) rescanReport {
 		if e.Status != library.StatusDownloaded || e.FilePath == "" {
 			continue
 		}
-		now := stillThere(e.FilePath)
+		now, gone := stillThere(e.FilePath)
 		if now == "" {
+			if !gone {
+				slog.Warn("rescan: couldn't tell whether an episode's file is still there, so it was left alone", "series", id, "season", e.Season, "episode", e.Episode, "path", e.FilePath)
+				if markMissing {
+					rep.Skipped++
+				}
+				continue
+			}
 			if !markMissing {
 				slog.Warn("rescan: an episode's file is not where it was and no file with the same name was found", "series", id, "season", e.Season, "episode", e.Episode, "path", e.FilePath)
 				continue
 			}
-			if serr != nil || !libraryAvailable(s.seriesRootFor(series)) {
+			if serr != nil || !libraryAvailable(s.fileRoot(s.seriesRootFor(series), e.FilePath)) {
 				rep.Skipped++
 				continue
 			}

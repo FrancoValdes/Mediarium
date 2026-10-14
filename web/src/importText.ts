@@ -65,7 +65,8 @@ export function etaText(b: BatchCounts): string {
   const left = (elapsed / b.done) * (b.total - b.done)
   const seconds = left / 1000
   if (seconds < 10) return t('Almost done.')
-  if (seconds < 60) return t('About {n} seconds left.', { n: Math.max(10, Math.round(seconds / 5) * 5) })
+  const rounded = Math.max(10, Math.round(seconds / 5) * 5)
+  if (seconds < 60) return plural(rounded, 'About {n} second left.', 'About {n} seconds left.')
   const minutes = Math.ceil(seconds / 60)
   if (minutes < 90) return plural(minutes, 'About {n} minute left.', 'About {n} minutes left.')
   return t('More than an hour left.')

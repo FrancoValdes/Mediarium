@@ -119,6 +119,25 @@ func TestCloudBackupToWebDAVAndRestore(t *testing.T) {
 	delete(settings, "passphrase")
 	putJSONStatus(t, client, base+"/api/system/backups/cloud", settings, http.StatusOK)
 
+	// Pointed somewhere else, the saved secrets aren't used: a test or a save
+	// with another address needs them typed again.
+	elsewhere := map[string]any{}
+	for k, v := range settings {
+		elsewhere[k] = v
+	}
+	elsewhere["url"] = dav.URL + "/dav/other"
+	if code, out := doJSONStatus(t, client, http.MethodPost, base+"/api/system/backups/cloud/test", elsewhere); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "passphrase") {
+		t.Fatalf("test at another address with the saved secrets: %d %v", code, out)
+	}
+	putJSONStatus(t, client, base+"/api/system/backups/cloud", elsewhere, http.StatusBadRequest)
+	elsewhere["enabled"] = false
+	putJSONStatus(t, client, base+"/api/system/backups/cloud", elsewhere, http.StatusOK)
+	if st := getJSON[map[string]any](t, client, base+"/api/system/backups/cloud"); st["hasPassword"] != false || st["hasPassphrase"] != false {
+		t.Fatalf("the saved secrets followed the new address: %v", st)
+	}
+	settings["password"], settings["passphrase"] = "nas-password", passphrase
+	putJSONStatus(t, client, base+"/api/system/backups/cloud", settings, http.StatusOK)
+
 	// An API key can't read or change any of it.
 	req, _ := http.NewRequest(http.MethodGet, base+"/api/system/backups/cloud", nil)
 	req.Header.Set("X-API-Key", "anything")

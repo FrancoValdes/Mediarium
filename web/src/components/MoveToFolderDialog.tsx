@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { api, type BulkTitle, type MovePreview, type MoveStatus } from '../api'
 import { formatBytes } from '../format'
-import { plural, t } from '../i18n'
+import { plural, t, st } from '../i18n'
 import { useFocusTrap } from '../useFocusTrap'
 import { useToast } from './Toast'
 import Icon from './Icon'
@@ -234,7 +234,7 @@ function Preview({ preview, checking, noun }: { preview: MovePreview | null; che
             .filter((x) => x.note)
             .map((x) => (
               <li key={`${x.kind}-${x.id}`}>
-                <strong>{x.title}</strong>: {x.note}
+                <strong>{x.title}</strong>: {st(x.note)}
               </li>
             ))}
         </ul>
@@ -262,7 +262,7 @@ function Progress({ status, onStop }: { status: MoveStatus; onStop: () => void }
           </div>
         </>
       ) : (
-        <strong>{status.message}</strong>
+        <strong>{st(status.message)}</strong>
       )}
       {status.warnings.length > 0 && (
         <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -277,7 +277,7 @@ function Progress({ status, onStop }: { status: MoveStatus; onStop: () => void }
           <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
             {status.problems.map((p, i) => (
               <li key={i}>
-                <strong>{p.title || t('A title')}</strong>: {p.reason}
+                <strong>{p.title || t('A title')}</strong>: {st(p.reason)}
               </li>
             ))}
           </ul>

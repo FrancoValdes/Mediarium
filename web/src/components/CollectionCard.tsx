@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type CollectionInfo, type CollectionRef, type QualityProfile, type SourcePref } from '../api'
-import { plural, t } from '../i18n'
+import { plural, st, t } from '../i18n'
 import Icon from './Icon'
 import PosterCard from './PosterCard'
 import { sortProfiles } from './qualityBlurb'
@@ -155,7 +155,7 @@ function AddAll({ info, missing, onClose, onDone }: { info: CollectionInfo; miss
     setError('')
     try {
       const res = await api.addCollection(info.id, { profileId: profileId || undefined, rootPath: rootPath || undefined, monitored, sources, searchNow: searchNow && monitored, follow })
-      onDone(res.message)
+      onDone(st(res.message))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {

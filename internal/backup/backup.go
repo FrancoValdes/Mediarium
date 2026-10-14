@@ -525,7 +525,9 @@ func rollback(configDir, before string, moved []string) error {
 }
 
 // removeStaleStaging deletes temporary staging/scratch folders left by a
-// crash mid-upload. They only ever hold copies of an uploaded backup.
+// crash mid-upload. They only ever hold copies of an uploaded backup; an
+// unlocked copy of a passphrase-locked one (.restore-unlocked-*) holds the
+// database and secret.key in the clear, so it must not outlive a crash.
 func removeStaleStaging(configDir string) {
 	entries, err := os.ReadDir(configDir)
 	if err != nil {
@@ -536,7 +538,7 @@ func removeStaleStaging(configDir string) {
 		if e.IsDir() && (strings.HasPrefix(n, PendingDir+".tmp-") || strings.HasPrefix(n, ".restore-validate-")) {
 			os.RemoveAll(filepath.Join(configDir, n))
 		}
-		if !e.IsDir() && (strings.HasPrefix(n, ".backup-snapshot-") || strings.HasPrefix(n, ".restore-upload-")) {
+		if !e.IsDir() && (strings.HasPrefix(n, ".backup-snapshot-") || strings.HasPrefix(n, ".restore-upload-") || strings.HasPrefix(n, ".restore-unlocked-")) {
 			os.Remove(filepath.Join(configDir, n))
 		}
 	}

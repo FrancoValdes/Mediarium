@@ -504,15 +504,25 @@ func TestLDAPWorksWhenPasswordSignInIsOff(t *testing.T) {
 	e.must(e.admin, "PUT", "/api/users/"+id, map[string]string{"role": "admin"}, http.StatusOK)
 	sam, _, _ := e.login("sam", "dir-password")
 	e.must(sam, "PUT", "/api/auth/sign-in", map[string]any{"localSignIn": false}, http.StatusOK)
-	if _, status, _ := e.login("ryan", adminPassword); status != http.StatusForbidden {
-		t.Errorf("a local account while the password form is off: %d", status)
-	}
 	if _, status, _ := e.login("sam", "dir-password"); status != http.StatusOK {
 		t.Errorf("a directory account while the password form is off: %d", status)
 	}
+	// A name with a password here and a name nobody has get the same answer,
+	// so the form doesn't tell which names exist, and the tries count.
+	_, s1, o1 := e.login("ryan", adminPassword)
+	_, s2, o2 := e.login("nobody", "whatever")
+	if s1 != http.StatusUnauthorized || s2 != s1 || o1["error"] != o2["error"] {
+		t.Errorf("a local account while the password form is off: %d %v / unknown %d %v", s1, o1["error"], s2, o2["error"])
+	}
+	for i := 0; i < 3; i++ {
+		e.login("ryan", adminPassword)
+	}
+	if _, status, _ := e.login("sam", "dir-password"); status != http.StatusTooManyRequests {
+		t.Errorf("tries at a local name while the password form is off were not counted: %d", status)
+	}
 	// The directory going away puts the password form back by itself.
 	e.saveConfig(map[string]any{"enabled": false})
-	if _, status, _ := e.login("ryan", adminPassword); status != http.StatusOK {
+	if status, _ := e.call(e.client(), "POST", "/api/auth/login", map[string]string{"username": "ryan", "password": adminPassword}, "X-Forwarded-For", "192.168.1.77"); status != http.StatusOK {
 		t.Errorf("after the directory was switched off: %d", status)
 	}
 }

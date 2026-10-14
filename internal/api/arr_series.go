@@ -89,7 +89,7 @@ type arrSeriesContext struct {
 }
 
 func (s *Server) newArrSeriesContext() arrSeriesContext {
-	c := arrSeriesContext{defaultProfile: s.defaultProfileID(), numbers: s.tagNumbers()}
+	c := arrSeriesContext{defaultProfile: s.defaultTVProfileOrDefault(), numbers: s.tagNumbers()}
 	c.tags, _ = s.MovieRepo.AllTitleTags(library.TagSeries)
 	c.added, _ = s.MovieRepo.AddedTimes(true)
 	c.stats, _ = s.MovieRepo.SeasonStats(today())
@@ -433,7 +433,7 @@ func (s *Server) arrAddSeries(w http.ResponseWriter, r *http.Request) {
 	if created.TVDBID == 0 && req.TVDBID > 0 {
 		_ = s.MovieRepo.SetSeriesExternalIDs(created.ID, req.TVDBID, "", "")
 	}
-	if p := s.arrPickProfile(req.QualityProfileID); p != 0 && p != s.defaultProfileID() {
+	if p := s.arrPickProfile(req.QualityProfileID); p != 0 && p != s.defaultTVProfileOrDefault() {
 		_ = s.MovieRepo.SetSeriesProfile(created.ID, p)
 	}
 	if t := strings.ToLower(req.SeriesType); t == library.SeriesAnime || t == library.SeriesDaily {
@@ -542,7 +542,7 @@ func (s *Server) arrApplySeries(sr *library.Series, monitored *bool, profileID i
 			}
 		}
 	}
-	if p := s.arrPickProfile(profileID); p != 0 && p != s.arrProfileID(sr.ProfileID, s.defaultProfileID()) {
+	if p := s.arrPickProfile(profileID); p != 0 && p != s.arrProfileID(sr.ProfileID, s.defaultTVProfileOrDefault()) {
 		if err := s.MovieRepo.SetSeriesProfile(sr.ID, p); err == nil {
 			sr.ProfileID = p
 		}

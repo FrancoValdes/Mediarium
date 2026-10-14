@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type MonitorStatus, type NotificationTarget, type NotifyField, type NotifyTestStep, type NotifyType } from '../../api'
 import Icon from '../../components/Icon'
 import QuietHours from '../../components/QuietHours'
+import WeeklySummary from '../../components/WeeklySummary'
 import ServiceIcon from '../../components/ServiceIcon'
 import TerminalLog from '../../components/TerminalLog'
 import { useToast } from '../../components/Toast'
@@ -22,6 +23,7 @@ const EVENTS: { key: string; label: string; hint: string }[] = [
   { key: 'subtitle', label: t('Subtitles'), hint: t('A subtitle was downloaded') },
   { key: 'health', label: t('Something is wrong'), hint: t('Your Usenet provider or an indexer stopped working, for example because a subscription expired') },
   { key: 'update', label: t('New version'), hint: t('A new version of Mediarium is available') },
+  { key: 'digest', label: t('Weekly summary'), hint: t('A short summary once a week of what arrived, what failed and what is still missing') },
 ]
 
 const FALLBACK_TYPES: NotifyType[] = [
@@ -698,6 +700,7 @@ export default function NotificationSettings() {
       </fieldset>
 
       <QuietHours />
+      <WeeklySummary />
 
 
       <Watch />

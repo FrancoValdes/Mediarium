@@ -5,10 +5,11 @@
 import { noteBusy, noteFine, startRead } from './busyState'
 import { outsideService, slowServiceMessage } from './outsideService'
 import { signalFor } from './requestSignal'
-import { t } from './i18n.ts'
+import { st, t } from './i18n.ts'
 import type { Diagnostics } from './supportReport'
 import type { ProblemCounts, ProblemList } from './problemsView'
-import { withBase } from './base'
+import { BASE_PATH, rebasePictures, withBase } from './base'
+import { noteSessionEnded, sessionEnded } from './sessionEnd'
 
 const BASE = withBase('/api')
 
@@ -91,6 +92,7 @@ async function send<T>(path: string, init?: ReadOptions): Promise<T> {
   } finally {
     endRead?.()
   }
+  if (sessionEnded(path, res.status, text)) noteSessionEnded()
   let data: { error?: string; busy?: boolean } | null = null
   try {
     data = text ? JSON.parse(text) : null
@@ -101,12 +103,15 @@ async function send<T>(path: string, init?: ReadOptions): Promise<T> {
   }
   if (res.status === 503 && data?.busy) {
     noteBusy()
-    throw new ApiError(503, data.error ?? SLOW_MESSAGE, true)
+    throw new ApiError(503, st(data.error) || SLOW_MESSAGE, true)
   }
   if (!res.ok) {
-    throw new ApiError(res.status, data?.error ?? t('Something went wrong on the server (error {status}).', { status: String(res.status) }))
+    throw new ApiError(res.status, st(data?.error) || t('Something went wrong on the server (error {status}).', { status: String(res.status) }))
   }
   noteFine()
+  // Covers Mediarium serves itself come as "/api/...": under a URL base they
+  // need the base in front, like every other address the page uses.
+  rebasePictures(BASE_PATH, data)
   if (revalidate && res.ok) {
     const etag = res.headers.get('ETag')
     if (etag) lastAnswer.set(path, { etag, data })
@@ -567,6 +572,30 @@ export interface NamingTokens {
   schemes: { id: string; name: string; movie: string; episode: string }[]
 }
 
+// Another program that runs next to Mediarium, with a link to it (Settings > Add-ons).
+export interface AppLink {
+  id: string
+  name: string
+  url: string
+  mode: 'tab' | 'frame'
+  icon: string
+  enabled: boolean
+}
+
+// "Quiet for a while": whether the heavy background work is held, and until when (RFC 3339).
+export interface QuietState {
+  active: boolean
+  until?: string
+}
+
+// One line of the speed schedule: on these days (0 is Sunday; none = every day), from one hour to another (the same hour twice = all day), limit to this many MB/s (0 = none).
+export interface SpeedRule {
+  days: number[]
+  from: number
+  to: number
+  limitMB: number
+}
+
 export interface Settings {
   moviesPath: string
   tvPath?: string
@@ -583,6 +612,7 @@ export interface Settings {
   torrentSeedTimeLimitH?: string
   automationEnabled?: boolean
   defaultProfileId?: number
+  defaultTvProfileId?: number // the profile shows use when they have none of their own; 0 = the same as movies
   defaultSources?: SourcePref
   qualityLanguage?: string
   infoLanguage?: string // the TMDB language titles are read in, like "de-DE"
@@ -626,6 +656,8 @@ export interface Settings {
   illegalCharMode?: string
   illegalCharReplacement?: string
   requireVpnForTorrents?: boolean
+  // Send indexer traffic through the VPN; off until switched on.
+  routeIndexersThroughVpn?: boolean
   importConflictPolicy?: string
   torrentEnabled?: boolean
   flareSolverrUrl?: string
@@ -637,13 +669,17 @@ export interface Settings {
   backupAuto?: boolean
   backupKeep?: number
   speedLimitMB?: number
+  newestFirst?: boolean // among the automatic downloads, newer releases start first
   speedLimitHours?: string
+  speedSchedule?: SpeedRule[] // lines of the speed schedule; the first that fits the moment sets the limit
   downloadHours?: string // when new downloads may start, "1-7"; "" = any time
   minFreeGB?: number
   moviesExtraPaths?: string[] // more movie folders next to the main one
   tvExtraPaths?: string[] // more TV folders next to the main one
   torrentStallHours?: number // hours a torrent may get no data before it is given up on; 0 = never; -1 or absent = each client's own default
   notifyQuietHours?: string
+  digestDay?: number // the day of the weekly summary, 0 is Sunday; -1 = none
+  digestHour?: number
   // How often, in minutes, the connection watch checks your providers and indexers; 0 is off.
   monitorIntervalMinutes?: number
   publicUrl?: string // the address Mediarium is opened at; links in notification messages use it
@@ -2021,6 +2057,8 @@ export interface CalendarEntry {
   releaseDate: string
   status: 'missing' | 'downloading' | 'downloaded'
   posterUrl?: string // the poster or cover, when there is one
+  backdropUrl?: string // a wide still, once it has been fetched (the calendar's Backdrops view)
+  logoUrl?: string // the title's logo, once it has been fetched
 }
 
 // ---- Books (ebooks and audiobooks) -------------------------------------
@@ -2907,7 +2945,7 @@ export const api = {
   downloadSubtitle: (movieId: number, pick: Pick<SubtitleResult, 'fileId' | 'source' | 'link' | 'variant'>, language = 'en') =>
     post<{ path: string }>(`/movies/${movieId}/subtitles/download`, { fileId: pick.fileId, source: pick.source ?? '', link: pick.link ?? '', language, variant: pick.variant ?? '' }),
 
-  listProfiles: () => get<{ profiles: QualityProfile[]; tiers: string[]; defaultId: number }>('/quality-profiles'),
+  listProfiles: () => get<{ profiles: QualityProfile[]; tiers: string[]; defaultId: number; defaultTvId: number }>('/quality-profiles'),
   createProfile: (data: QualityProfileInput) =>
     post<QualityProfile>('/quality-profiles', data),
   updateProfile: (id: number, data: QualityProfileInput) =>
@@ -2949,6 +2987,7 @@ export const api = {
   resolveConflict: (id: number, overwrite: boolean) => post<null>(`/queue/${id}/resolve-conflict`, { overwrite }),
   getWanted: (kind: 'missing' | 'cutoff') => request<WantedItem[]>(`/wanted?kind=${kind}`, { revalidate: true }),
   searchNowMovie: (id: number) => post<{ grabbed: number; message: string }>(`/movies/${id}/search-now`),
+  replaceMovieSmaller: (id: number) => post<{ grabbed: number; message: string }>(`/movies/${id}/replace-smaller`),
   searchNowSeries: (id: number, scope: { season?: number; episode?: number } = {}) =>
     post<{ grabbed: number; message: string }>(`/series/${id}/search-now`, scope),
   movieSearch: (id: number) => get<SearchAnswer<SearchResult>>(`/movies/${id}/search?detail=1`),
@@ -3048,6 +3087,9 @@ export const api = {
   bookWork: (key: string) => get<BookWork>(`/book-works/${encodeURIComponent(key)}`),
   bookImportStatus: () => get<BookImportState>('/books/import'),
   startBookImport: (format?: BookFormat) => post<BookImportState>('/books/import', { format: format ?? '' }),
+  retryBookImport: (format?: BookFormat) => post<BookImportState>('/books/import/retry', { format: format ?? '' }),
+  matchBookImport: (body: { path: string; kind: BookFormat; olKey: string; title: string; author: string; authorKey?: string; year?: number; coverId?: number; rename: boolean }) =>
+    post<BookImportState>('/books/import/match', body),
   bookSubjects: () => get<{ label: string; subject: string }[]>('/books/subjects'),
   addBook: (data: { olKey: string; title: string; author: string; authorKey?: string; year?: number; coverId?: number; ebook: boolean; audiobook: boolean; searchNow?: boolean }) =>
     post<Book | Requested>('/books', data),
@@ -3236,6 +3278,11 @@ export const api = {
   createNotificationTarget: (data: Record<string, unknown>) => post<NotificationTarget>('/notifications', data),
   updateNotificationTarget: (id: number, data: Record<string, unknown>) => put<NotificationTarget>(`/notifications/${id}`, data),
   notificationTypes: () => get<NotifyType[]>('/notifications/types'),
+  listApps: () => get<AppLink[]>('/apps'),
+  saveApps: (list: AppLink[]) => put<AppLink[]>('/apps', list),
+  getQuiet: () => get<QuietState>('/automation/quiet'),
+  setQuiet: (minutes: number) => put<QuietState>('/automation/quiet', { minutes }),
+  sendDigest: () => post<{ sent: number }>('/notifications/digest'),
   testNotification: (data: Record<string, unknown>) => post<{ sent: boolean; error?: string; steps?: NotifyTestStep[] }>('/notifications/test', data),
   monitorStatus: () => get<MonitorStatus[]>('/monitor/status'),
   runMonitor: () => post<null>('/monitor/run'),
@@ -3264,6 +3311,7 @@ export const api = {
   bulkProfile: (items: BulkTitle[], profileId: number) => put<BulkResult>('/library/bulk/profile', { items, profileId }),
   bulkSources: (items: BulkTitle[], sources: SourcePref) => put<BulkResult>('/library/bulk/sources', { items, sources }),
   bulkSearchNow: (items: BulkTitle[]) => post<BulkSearchResult>('/library/bulk/search-now', { items }),
+  bulkReplaceSmaller: (items: BulkTitle[]) => post<BulkSearchResult>('/library/bulk/replace-smaller', { items }),
   // deleteFiles is sent every time and is false unless the person ticked it.
   bulkRemove: (items: BulkTitle[], deleteFiles: boolean) => post<BulkResult>('/library/bulk/remove', { items, deleteFiles }),
   bulkArtistFollow: (ids: number[], monitored: boolean) => put<BulkResult>('/music/bulk/follow', { ids, monitored }),

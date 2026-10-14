@@ -43,8 +43,12 @@ var homeHostSuffixes = []string{".local", ".lan", ".home", ".home.arpa", ".inter
 
 // IsHomeHost reports whether the host a visitor typed (the Host header, with
 // or without a port) is an address or a name that belongs to a home network:
-// an IP address, "localhost", a name without a dot (a NAS called "nas") or one
-// ending in .local, .lan, .home, .home.arpa or .internal. A public host name
+// a home address (IsHomeAddress), "localhost", a name without a dot (a NAS
+// called "nas") or one ending in .local, .lan, .home, .home.arpa or .internal.
+// A public IP address is not: Docker's userland proxy (and rootless Podman)
+// can hand a visitor who typed the server's public address to Mediarium from
+// a private gateway address, so the address typed is what counts. A public
+// host name
 // such as media.example.com is not, even when it points at a private address
 // on the home network: a web page on another site can make a visitor's
 // browser send requests to a private address under a name of its own
@@ -59,7 +63,7 @@ func IsHomeHost(hostport string) bool {
 		return false
 	}
 	if _, err := netip.ParseAddr(host); err == nil {
-		return true
+		return IsHomeAddress(host)
 	}
 	if !strings.Contains(host, ".") {
 		return true

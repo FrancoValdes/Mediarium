@@ -89,6 +89,7 @@ var memberRoutes = []string{
 	"GET /api/movies/{id}/search",
 	"POST /api/movies/{id}/search-now",
 	"POST /api/movies/{id}/grab",
+	"POST /api/movies/{id}/replace-smaller",
 	"GET /api/tags",
 	"PUT /api/movies/{id}/tags",
 	"PUT /api/series/{id}/tags",
@@ -166,7 +167,7 @@ var memberRoutes = []string{
 	"GET /api/movies/{id}/events",
 	"GET /api/series/{id}/events",
 	"GET /api/files/stream",
-	"GET /api/media-servers/links",
+	"GET /api/media-servers/links", "GET /api/apps", "GET /api/books/{id}/comic", "GET /api/books/{id}/comic/{n}", "GET /api/books/{id}/file-cover",
 	"GET /api/queue",
 	"POST /api/queue/{id}/retry",
 	"GET /api/subtitles/wanted", "GET /api/book-covers/{file}", "GET /api/music/tracks/{id}/play",
@@ -210,12 +211,13 @@ var mustBeAdmin = []string{
 	"GET /api/downloads/torrent-options", "PUT /api/downloads/torrent-options", "GET /api/indexers/seed-rules", "PUT /api/indexers/{id}/seed-rules",
 	"POST /api/library/import", "GET /api/metrics", "GET /api/usage",
 	"PUT /api/library/bulk/monitored", "PUT /api/library/bulk/no-upgrade", "PUT /api/library/bulk/profile", "PUT /api/library/bulk/sources", "PUT /api/library/bulk/tags",
-	"POST /api/library/bulk/search-now", "POST /api/library/bulk/remove",
+	"POST /api/library/bulk/search-now", "POST /api/library/bulk/replace-smaller", "POST /api/library/bulk/remove",
 	"PUT /api/music/bulk/follow", "PUT /api/music/bulk/profile", "POST /api/music/bulk/remove",
 	"GET /api/search/delay", "PUT /api/search/delay", "GET /api/quality/size-limits", "PUT /api/quality/size-limits", "POST /api/quality/size-limits/reset",
 	"POST /api/indexers/{id}/resume", "GET /api/stats/indexers",
 	"GET /api/irc-announce", "POST /api/irc-announce", "POST /api/irc-announce/test", "PUT /api/irc-announce/{id}", "DELETE /api/irc-announce/{id}", "PUT /api/irc-announce/{id}/enabled", "GET /api/irc-announce/{id}/log",
 	"PUT /api/music/player-settings",
+	"PUT /api/apps", "GET /api/automation/quiet", "PUT /api/automation/quiet", "POST /api/notifications/digest", "POST /api/books/import/retry", "POST /api/books/import/match",
 }
 
 func TestEveryRouteIsClassified(t *testing.T) {

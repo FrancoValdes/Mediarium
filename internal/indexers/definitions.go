@@ -443,9 +443,12 @@ func extractDefinitions(archive []byte, maxSchema int) (map[string][]byte, int, 
 			return nil
 		}
 		v, _ := strconv.Atoi(m[1])
-		data, err := io.ReadAll(io.LimitReader(r, maxDefinitionBytes))
+		data, err := io.ReadAll(io.LimitReader(r, maxDefinitionBytes+1))
 		if err != nil {
 			return fmt.Errorf("read %s: %w", name, err)
+		}
+		if len(data) > maxDefinitionBytes {
+			return nil // larger than it said it was: a cut-off copy would be read wrongly, so leave it out
 		}
 		if kept += int64(len(data)); kept > maxDefinitionsTotal {
 			return fmt.Errorf("the definitions are larger than %d MB in total", maxDefinitionsTotal>>20)

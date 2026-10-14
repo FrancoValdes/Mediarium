@@ -23,6 +23,7 @@ const (
 	EventHealth   = "health"   // something is wrong with the app (or recovered)
 	EventUpdate   = "update"   // a new version of Mediarium is available
 	EventRequest  = "request"  // someone asked for a title (see Activity > Requests)
+	EventDigest   = "digest"   // the weekly summary
 )
 
 // EventInfo describes one subscribable event for the UI.
@@ -43,6 +44,7 @@ func EventKinds() []EventInfo {
 		{EventHealth, "Health", "A Usenet server or indexer stopped working, or came back."},
 		{EventUpdate, "New version", "A new version of Mediarium is available."},
 		{EventRequest, "Requests", "Someone asked for a movie, show, artist or book."},
+		{EventDigest, "Weekly summary", "Once a week: what arrived, what failed and what is still missing."},
 	}
 }
 

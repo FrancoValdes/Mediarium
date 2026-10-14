@@ -107,27 +107,33 @@ func (s *Server) downloadDebrid(ctx context.Context, queueID int64, downloadURL,
 	defer progress.Flush()
 	report := func(pct float64) { progress.Report(int64(pct*100), 10000) }
 	lastProgress, lastMove := -1.0, time.Now()
+	var fails pollFailures
 	for {
 		st, err := svc.Status(ctx, id)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return s.debridError(label, err)
-		}
-		if st.State == debrid.Failed {
-			s.debridForget(svc, id, idPath)
-			return badRelease(errors.New(st.Message))
-		}
-		if st.State == debrid.Ready {
-			break
-		}
-		if st.Progress != lastProgress {
-			lastProgress, lastMove = st.Progress, time.Now()
-			report(st.Progress * 50)
-		} else if stall := s.torrentStall(true); stall > 0 && time.Since(lastMove) > stall {
-			s.debridForget(svc, id, idPath)
-			return badRelease(fmt.Errorf("%s couldn't download it: nothing moved for %s, so probably no one is sharing it", label, stall))
+			if !fails.tolerate(err, debrid.ErrAuth) {
+				return s.debridError(label, err)
+			}
+			slog.Warn("debrid: status check failed, trying again", "queueId", queueID, "err", err)
+		} else {
+			fails.reset()
+			if st.State == debrid.Failed {
+				s.debridForget(svc, id, idPath)
+				return badRelease(errors.New(st.Message))
+			}
+			if st.State == debrid.Ready {
+				break
+			}
+			if st.Progress != lastProgress {
+				lastProgress, lastMove = st.Progress, time.Now()
+				report(st.Progress * 50)
+			} else if stall := s.torrentStall(true); stall > 0 && time.Since(lastMove) > stall {
+				s.debridForget(svc, id, idPath)
+				return badRelease(fmt.Errorf("%s couldn't download it: nothing moved for %s, so probably no one is sharing it", label, stall))
+			}
 		}
 		select {
 		case <-ctx.Done():

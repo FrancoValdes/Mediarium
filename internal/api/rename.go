@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,7 +41,9 @@ func (s *Server) renamePlan(kind string) ([]renameItem, error) {
 			return nil, err
 		}
 		for _, m := range movies {
-			root := s.movieRootFor(m)
+			// The file is renamed where it is: a folder chosen for the movie
+			// after it arrived is only for its next file.
+			root := s.fileRoot(s.movieRootFor(m), m.FilePath)
 			if m.FilePath == "" || root == "" {
 				continue
 			}
@@ -59,7 +62,8 @@ func (s *Server) renamePlan(kind string) ([]renameItem, error) {
 			return nil, err
 		}
 		for _, sr := range shows {
-			if s.seriesRootFor(sr) == "" {
+			title := s.seriesRootFor(sr)
+			if title == "" {
 				continue
 			}
 			eps, err := s.MovieRepo.ListEpisodes(sr.ID)
@@ -77,8 +81,15 @@ func (s *Server) renamePlan(kind string) ([]renameItem, error) {
 				if err != nil {
 					return nil, err
 				}
+				// As for movies, the file stays in the library folder it is in.
+				root := s.fileRoot(title, ep.FilePath)
+				if root != title {
+					if rel, err := filepath.Rel(title, to); err == nil {
+						to = filepath.Join(root, rel)
+					}
+				}
 				if to != ep.FilePath {
-					out = append(out, renameItem{Kind: "episode", ID: ep.ID, Title: fmt.Sprintf("%s S%02dE%02d", sr.Title, ep.Season, ep.Episode), From: ep.FilePath, To: to, root: s.seriesRootFor(sr)})
+					out = append(out, renameItem{Kind: "episode", ID: ep.ID, Title: fmt.Sprintf("%s S%02dE%02d", sr.Title, ep.Season, ep.Episode), From: ep.FilePath, To: to, root: root})
 				}
 			}
 		}
@@ -197,19 +208,49 @@ func renameWithSidecars(root, from, to string) error {
 	if err := fileperms.MkdirAll(filepath.Dir(to)); err != nil {
 		return err
 	}
+	// The video goes last, so a side file that can't be renamed stops the
+	// work before the video (the file the library points at) has moved; what
+	// was already renamed is put back.
+	var order []string
+	video := false
+	absFrom, _ := filepath.Abs(from)
 	for _, f := range files {
+		if f == absFrom {
+			video = true
+		} else {
+			order = append(order, f)
+		}
+	}
+	if video {
+		order = append(order, absFrom)
+	}
+	var done [][2]string
+	undo := func() {
+		for i := len(done) - 1; i >= 0; i-- {
+			if err := renameFile(done[i][1], done[i][0]); err != nil {
+				slog.Warn("rename: couldn't put a file back", "file", done[i][1], "err", err)
+			}
+		}
+		cleanup.PruneEmptyFolders(root, filepath.Dir(to))
+	}
+	for _, f := range order {
 		name := filepath.Base(f)
 		dest := to
-		if f != from {
+		if f != absFrom {
 			dest = filepath.Join(filepath.Dir(to), newStem+strings.TrimPrefix(name, oldStem))
 			if _, err := os.Lstat(dest); err == nil {
 				continue // leave a side file where it is rather than overwrite one
 			}
 		}
-		if err := os.Rename(f, dest); err != nil {
+		if err := renameFile(f, dest); err != nil {
+			undo()
 			return fmt.Errorf("rename %s: %w", name, err)
 		}
+		done = append(done, [2]string{f, dest})
 	}
 	cleanup.PruneEmptyFolders(root, filepath.Dir(from))
 	return nil
 }
+
+// renameFile is os.Rename; tests replace it to make one rename fail.
+var renameFile = os.Rename

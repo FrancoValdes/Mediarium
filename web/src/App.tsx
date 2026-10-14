@@ -91,6 +91,8 @@ const MetadataSettings = lazy(() => import('./pages/settings/MetadataSettings'))
 const ListsSettings = lazy(() => import('./pages/settings/ListsSettings'))
 const MediaServerSettings = lazy(() => import('./pages/settings/MediaServerSettings'))
 const OtherAppsSettings = lazy(() => import('./pages/settings/OtherAppsSettings'))
+const AppLinksSettings = lazy(() => import('./pages/settings/AppLinksSettings'))
+const AppFrame = lazy(() => import('./pages/AppFrame'))
 const MigrateSettings = lazy(() => import('./pages/settings/MigrateSettings'))
 const NotificationSettings = lazy(() => import('./pages/settings/NotificationSettings'))
 const QualitySettings = lazy(() => import('./pages/settings/QualitySettings'))
@@ -178,6 +180,7 @@ function Gate() {
         <Route path="/wanted" element={<Upcoming tab="wanted" />} />
         <Route path="/calendar" element={<Upcoming tab="calendar" />} />
         <Route path="/queue" element={<Queue />} />
+        <Route path="/apps/:id" element={<AppFrame />} />
         <Route path="/help" element={<Guide />} />
         <Route path="/help/:topic" element={<Guide />} />
         <Route path="/settings" element={<SettingsLayout />}>
@@ -197,6 +200,7 @@ function Gate() {
           <Route path="lists" element={<AdminOnly><ListsSettings /></AdminOnly>} />
           <Route path="media-servers" element={<AdminOnly><MediaServerSettings /></AdminOnly>} />
           <Route path="other-apps" element={<AdminOnly><OtherAppsSettings /></AdminOnly>} />
+          <Route path="addons" element={<AdminOnly><AppLinksSettings /></AdminOnly>} />
           <Route path="migrate" element={<AdminOnly><MigrateSettings /></AdminOnly>} />
           <Route path="notifications" element={<AdminOnly><NotificationSettings /></AdminOnly>} />
           <Route path="profile" element={<Profile />} />

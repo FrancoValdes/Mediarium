@@ -134,6 +134,54 @@ func TestScanSymlinkLoopsAndBrokenLinksTerminate(t *testing.T) {
 	}
 }
 
+// Libraries spread over several drives use symlinks: a linked root, linked
+// movie folders and linked files are all found, under the path scanned.
+func TestScanFollowsSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	real := t.TempDir()
+	other := t.TempDir()
+	touch(t, real, "Heat (1995)/Heat (1995).mkv", 10)
+	touch(t, other, "Alien (1979)/Alien (1979).mkv", 20)
+	touch(t, other, "Big (1988).mkv", 30)
+	if err := os.Symlink(filepath.Join(other, "Alien (1979)"), filepath.Join(real, "Alien (1979)")); err != nil {
+		t.Skip("cannot make a symlink here")
+	}
+	if err := os.MkdirAll(filepath.Join(real, "Big (1988)"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(other, "Big (1988).mkv"), filepath.Join(real, "Big (1988)", "Big (1988).mkv")); err != nil {
+		t.Fatal(err)
+	}
+	// A second link to a folder already scanned doesn't count it twice.
+	if err := os.Symlink(filepath.Join(other, "Alien (1979)"), filepath.Join(real, "Alien again")); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "movies")
+	if err := os.Symlink(real, root); err != nil {
+		t.Fatal(err)
+	}
+	res, err := libimport.ScanMovies(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	files := 0
+	for _, g := range res.Groups {
+		for _, f := range g.Files {
+			files++
+			got[g.Title] = f.SizeBytes
+			if !strings.HasPrefix(f.Path, root+string(filepath.Separator)) {
+				t.Errorf("path not under the scanned folder: %s", f.Path)
+			}
+		}
+	}
+	if files != 3 || got["Heat"] != 10 || got["Alien"] != 20 || got["Big"] != 30 {
+		t.Fatalf("found %+v", res.Groups)
+	}
+}
+
 func TestScanUnreadableFolders(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("permissions are not enforced here")

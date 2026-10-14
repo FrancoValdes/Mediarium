@@ -83,11 +83,18 @@ type Item struct {
 	// LineSeq. Enqueue sets both; List and Get fill them in.
 	Priority Priority
 	LineSeq  int64
+	// Released is the day the movie came out or the episode aired ("" when
+	// unknown), for the "newest first" rule of the download line.
+	Released string
 	// SourcePath/DestPath are only set for StatusConflict items (see
 	// SetConflict) — the file still sitting under /downloads, and where it
 	// would go once resolved.
 	SourcePath string
 	DestPath   string
+	// ReplacesFile is set when the download is meant to take the place of the
+	// file a movie has now (a smaller version of it): the path of that file.
+	// Get fills it in; List leaves it out.
+	ReplacesFile string
 	// AddedAt/CompletedAt are set by List (RFC 3339 text; CompletedAt is
 	// empty until the item finishes).
 	AddedAt     string
@@ -196,12 +203,13 @@ func (r *Repo) Enqueue(item Item) (int64, error) {
 		return 0, err
 	}
 	// The new item goes to the back of the line: one number past the highest
-	// place anyone has taken.
+	// place anyone has taken, and always above 0 (0 and below mark resumed
+	// items, see Requeue).
 	res, err := r.db.Exec(
-		`INSERT INTO download_queue (movie_id, series_id, season, episode, album_id, book_id, book_format, indexer_id, release_title, nzb_url, size_bytes, protocol, status, priority, line_seq)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(line_seq), 0) + 1 FROM download_queue))`,
+		`INSERT INTO download_queue (movie_id, series_id, season, episode, album_id, book_id, book_format, indexer_id, release_title, nzb_url, size_bytes, protocol, status, priority, replaces_file, line_seq)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT MAX(COALESCE(MAX(line_seq), 0), 0) + 1 FROM download_queue))`,
 		nullIfZero(item.MovieID), nullIfZero(item.SeriesID), nullIfZero(int64(item.Season)), nullIfZero(int64(item.Episode)), nullIfZero(item.AlbumID), nullIfZero(item.BookID), item.BookFormat,
-		item.IndexerID, item.ReleaseTitle, storedURL, item.SizeBytes, string(item.Protocol), string(StatusQueued), int(item.Priority),
+		item.IndexerID, item.ReleaseTitle, storedURL, item.SizeBytes, string(item.Protocol), string(StatusQueued), int(item.Priority), item.ReplacesFile,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("enqueue download: %w", err)
@@ -240,6 +248,25 @@ func (r *Repo) SetStatus(id int64, status Status, errMsg string) error {
 	return nil
 }
 
+// Stop marks item id stopped, but only while it has not finished: waiting,
+// downloading, importing or paused. It reports false (and changes nothing)
+// for an item that completed, failed or was stopped in the meantime.
+func (r *Repo) Stop(id int64) (bool, error) {
+	res, err := r.db.Exec(
+		`UPDATE download_queue SET status = ?, error = NULL, completed_at = ?, interrupted = 0
+		 WHERE id = ? AND status IN ('queued', 'downloading', 'importing', 'paused')`,
+		string(StatusStopped), nowRFC3339(), id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("stop queue item %d: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	r.statusEvent(id, StatusStopped)
+	return true, nil
+}
+
 // SetConflict parks item id in StatusConflict with the source file's
 // current location and its proposed (but not-yet-taken) destination, for
 // a person to resolve later via Get/List + a caller-driven overwrite-or-
@@ -265,8 +292,8 @@ func (r *Repo) Get(id int64) (Item, error) {
 	var status, protocol string
 	var sourcePath, destPath sql.NullString
 	err := r.db.QueryRow(
-		`SELECT id, COALESCE(movie_id, 0), COALESCE(series_id, 0), COALESCE(season, 0), COALESCE(episode, 0), COALESCE(album_id, 0), COALESCE(book_id, 0), book_format, indexer_id, release_title, nzb_url, size_bytes, protocol, status, progress_pct, COALESCE(error, ''), source_path, dest_path, interrupted, priority, line_seq FROM download_queue WHERE id = ?`, id,
-	).Scan(&it.ID, &it.MovieID, &it.SeriesID, &it.Season, &it.Episode, &it.AlbumID, &it.BookID, &it.BookFormat, &it.IndexerID, &it.ReleaseTitle, &it.NZBURL, &it.SizeBytes, &protocol, &status, &it.ProgressPct, &it.Error, &sourcePath, &destPath, &it.Interrupted, &it.Priority, &it.LineSeq)
+		`SELECT id, COALESCE(movie_id, 0), COALESCE(series_id, 0), COALESCE(season, 0), COALESCE(episode, 0), COALESCE(album_id, 0), COALESCE(book_id, 0), book_format, indexer_id, release_title, nzb_url, size_bytes, protocol, status, progress_pct, COALESCE(error, ''), source_path, dest_path, interrupted, priority, line_seq, replaces_file, COALESCE((SELECT release_date FROM movies WHERE id = download_queue.movie_id), (SELECT air_date FROM episodes WHERE series_id = download_queue.series_id AND season = download_queue.season AND episode = download_queue.episode), '') FROM download_queue WHERE id = ?`, id,
+	).Scan(&it.ID, &it.MovieID, &it.SeriesID, &it.Season, &it.Episode, &it.AlbumID, &it.BookID, &it.BookFormat, &it.IndexerID, &it.ReleaseTitle, &it.NZBURL, &it.SizeBytes, &protocol, &status, &it.ProgressPct, &it.Error, &sourcePath, &destPath, &it.Interrupted, &it.Priority, &it.LineSeq, &it.ReplacesFile, &it.Released)
 	if err != nil {
 		return Item{}, fmt.Errorf("get queue item %d: %w", id, err)
 	}
@@ -280,9 +307,11 @@ func (r *Repo) Get(id int64) (Item, error) {
 
 // Pause parks item id as paused. interrupted says nobody paused it: Mediarium
 // was stopped or restarted while it was downloading. Its progress is left as
-// it is and its error text is cleared.
+// it is and its error text is cleared. Only an item that is waiting,
+// downloading or importing is paused: one that has finished in the meantime
+// keeps its status, and sql.ErrNoRows is returned.
 func (r *Repo) Pause(id int64, interrupted bool) error {
-	res, err := r.db.Exec(`UPDATE download_queue SET status = ?, interrupted = ?, error = NULL WHERE id = ?`, string(StatusPaused), interrupted, id)
+	res, err := r.db.Exec(`UPDATE download_queue SET status = ?, interrupted = ?, error = NULL WHERE id = ? AND status IN ('queued', 'downloading', 'importing')`, string(StatusPaused), interrupted, id)
 	if err != nil {
 		return fmt.Errorf("pause queue item %d: %w", id, err)
 	}
@@ -353,7 +382,7 @@ func (r *Repo) ListUnfinished() ([]Item, error) {
 
 func (r *Repo) list(where string) ([]Item, error) {
 	rows, err := r.db.Query(
-		`SELECT id, COALESCE(movie_id, 0), COALESCE(series_id, 0), COALESCE(season, 0), COALESCE(episode, 0), COALESCE(album_id, 0), COALESCE(book_id, 0), book_format, indexer_id, release_title, nzb_url, size_bytes, protocol, status, progress_pct, COALESCE(error, ''), dest_path, added_at, COALESCE(completed_at, ''), interrupted, priority, line_seq FROM download_queue ` + where + ` ORDER BY added_at DESC, id DESC`)
+		`SELECT id, COALESCE(movie_id, 0), COALESCE(series_id, 0), COALESCE(season, 0), COALESCE(episode, 0), COALESCE(album_id, 0), COALESCE(book_id, 0), book_format, indexer_id, release_title, nzb_url, size_bytes, protocol, status, progress_pct, COALESCE(error, ''), dest_path, added_at, COALESCE(completed_at, ''), interrupted, priority, line_seq, COALESCE((SELECT release_date FROM movies WHERE id = download_queue.movie_id), (SELECT air_date FROM episodes WHERE series_id = download_queue.series_id AND season = download_queue.season AND episode = download_queue.episode), '') FROM download_queue ` + where + ` ORDER BY added_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list queue: %w", err)
 	}
@@ -364,7 +393,7 @@ func (r *Repo) list(where string) ([]Item, error) {
 		var it Item
 		var status, protocol string
 		var destPath sql.NullString
-		if err := rows.Scan(&it.ID, &it.MovieID, &it.SeriesID, &it.Season, &it.Episode, &it.AlbumID, &it.BookID, &it.BookFormat, &it.IndexerID, &it.ReleaseTitle, &it.NZBURL, &it.SizeBytes, &protocol, &status, &it.ProgressPct, &it.Error, &destPath, &it.AddedAt, &it.CompletedAt, &it.Interrupted, &it.Priority, &it.LineSeq); err != nil {
+		if err := rows.Scan(&it.ID, &it.MovieID, &it.SeriesID, &it.Season, &it.Episode, &it.AlbumID, &it.BookID, &it.BookFormat, &it.IndexerID, &it.ReleaseTitle, &it.NZBURL, &it.SizeBytes, &protocol, &status, &it.ProgressPct, &it.Error, &destPath, &it.AddedAt, &it.CompletedAt, &it.Interrupted, &it.Priority, &it.LineSeq, &it.Released); err != nil {
 			return nil, fmt.Errorf("scan queue item: %w", err)
 		}
 		it.Protocol = Protocol(protocol)
@@ -411,6 +440,16 @@ func (r *Repo) RecentFailed(since time.Time) (int, error) {
 	err := r.db.QueryRow(`SELECT COUNT(*) FROM download_queue WHERE status = 'failed' AND completed_at >= ?`, since.UTC().Format(time.RFC3339Nano)).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("count recent failures: %w", err)
+	}
+	return n, nil
+}
+
+// CountEventsSince counts the events of one kind in the activity feed since the given time.
+func (r *Repo) CountEventsSince(kind string, since time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM activity WHERE event_type = ? AND created_at >= ?`, kind, since.UTC().Format("2006-01-02T15:04:05.000Z")).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count %s events: %w", kind, err)
 	}
 	return n, nil
 }
@@ -590,6 +629,10 @@ type ActivityEntry struct {
 	ArtistID    int64
 }
 
+// likeEscaper makes % and _ in a search plain characters in a LIKE pattern
+// (with ESCAPE '\'), so "100%" finds "100%" and not everything after "100".
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 func (r *Repo) ListActivity(limit int) ([]ActivityEntry, error) {
 	return r.ListActivityFor(limit, "")
 }
@@ -603,8 +646,8 @@ func (r *Repo) ListActivityFor(limit int, query string) ([]ActivityEntry, error)
 		FROM activity a
 		LEFT JOIN movies m ON m.id = a.movie_id
 		LEFT JOIN albums al ON al.id = a.album_id
-		WHERE a.item_only = 0 AND (? = '' OR a.message LIKE '%' || ? || '%')
-		ORDER BY a.created_at DESC LIMIT ?`, query, query, limit)
+		WHERE a.item_only = 0 AND (? = '' OR a.message LIKE '%' || ? || '%' ESCAPE '\')
+		ORDER BY a.created_at DESC LIMIT ?`, query, likeEscaper.Replace(query), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list activity: %w", err)
 	}

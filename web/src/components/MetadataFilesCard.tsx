@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type MetadataFileCounts, type MetadataFilesSettings, type MetadataFilesStatus } from '../api'
 import { DOCS_URL } from '../docs'
-import { plural, t } from '../i18n'
+import { plural, t, st } from '../i18n'
 import { useLive } from '../useLive'
 import Icon from './Icon'
 import Switch from './Switch'
@@ -139,7 +139,7 @@ export default function MetadataFilesCard() {
         </div>
         {preview && !running && (
           <p role="status" style={{ margin: 0 }}>
-            <strong>{preview.message}</strong>
+            <strong>{st(preview.message)}</strong>
             {total(preview.needed) > 0 && <span className="field-hint"> {countsText(preview.needed)}</span>}
           </p>
         )}
@@ -156,7 +156,7 @@ export default function MetadataFilesCard() {
         )}
         {finished && status && !preview && (
           <div role="status">
-            <p style={{ margin: 0 }}>{status.message}</p>
+            <p style={{ margin: 0 }}>{st(status.message)}</p>
             {status.failedCount > 0 && (
               <ul className="field-hint" style={{ margin: '6px 0 0', paddingLeft: 18 }}>
                 {status.failed.slice(0, 5).map((f, i) => (

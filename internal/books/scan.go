@@ -26,6 +26,9 @@ type LocalBook struct {
 	Year   int    `json:"year,omitempty"`
 	Format string `json:"format"` // the file format: epub, m4b, mp3...
 	Files  int    `json:"files"`
+	// A comic's own words about itself (ComicInfo.xml), when it has them.
+	Series   string `json:"series,omitempty"`
+	Position string `json:"position,omitempty"`
 }
 
 var (
@@ -118,10 +121,46 @@ func hidden(name string) bool {
 	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "@") || name == "#recycle"
 }
 
+var (
+	// Issue numbers in a comic's file name: "Batman #12", "Batman Issue 4",
+	// "Batman 001", "Saga v3".
+	comicHash   = regexp.MustCompile(`^(.*?)\s*#\s*(\d+(?:\.\d+)?)\b`)
+	comicIssue  = regexp.MustCompile(`(?i)^(.*?)\s*\b(?:issue|no\.?)\s*(\d+(?:\.\d+)?)\b`)
+	comicNumber = regexp.MustCompile(`^(.*?)\s*\b(\d{1,3}(?:\.\d+)?|0\d{3})$`)
+	comicVolume = regexp.MustCompile(`(?i)^(.*?)\s*\bv(?:ol(?:ume)?)?\.?\s*(\d{1,3})$`)
+)
+
+// GuessComicIssue reads a series name and an issue (or volume) number from a
+// comic's file name, without its extension. Either may be "".
+func GuessComicIssue(name string) (series, position string) {
+	s := strings.ReplaceAll(name, "_", " ")
+	s = strings.TrimSpace(spaces.ReplaceAllString(bracketed.ReplaceAllString(s, ""), " "))
+	for _, re := range []*regexp.Regexp{comicHash, comicIssue, comicVolume, comicNumber} {
+		if m := re.FindStringSubmatch(s); m != nil {
+			whole, frac, _ := strings.Cut(m[2], ".")
+			if whole = strings.TrimLeft(whole, "0"); whole == "" {
+				whole = "0"
+			}
+			position = whole
+			if frac != "" {
+				position += "." + frac
+			}
+			return strings.TrimSpace(strings.TrimRight(m[1], " -–_.,:")), position
+		}
+	}
+	return "", ""
+}
+
+type scannedFile struct {
+	path, ext string
+}
+
 // ScanEbooks lists the ebooks under root: one per folder and title, in the
-// best format there is.
+// best format there is. Comics are the exception: in a folder of several
+// comic files (one per issue, the usual layout) each file is its own book.
 func ScanEbooks(root string) ([]LocalBook, error) {
-	best := map[string]LocalBook{} // folder + title
+	var files []scannedFile
+	comics := map[string]int{} // comic files per folder
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // an unreadable folder is skipped
@@ -133,26 +172,66 @@ func ScanEbooks(root string) ([]LocalBook, error) {
 			return nil
 		}
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-		if EbookRank(ext) == 0 || hidden(d.Name()) {
+		if ScanRank(ext) == 0 || hidden(d.Name()) {
 			return nil
 		}
+		files = append(files, scannedFile{path, ext})
+		if ComicFormat(ext) {
+			comics[filepath.Dir(path)]++
+		}
+		return nil
+	})
+	best := map[string]LocalBook{} // folder + title
+	for _, f := range files {
+		path, ext := f.path, f.ext
 		parts := relParts(root, strings.TrimSuffix(path, filepath.Ext(path)))
 		author, title, year := Guess(parts, true)
+		var series, position string
+		if ComicFormat(ext) && comics[filepath.Dir(path)] > 1 && len(parts) >= 2 {
+			// One issue of many: the file names the book, the folder the series.
+			if _, t, y := Guess([]string{parts[0], parts[len(parts)-1]}, false); t != "" {
+				series, position = GuessComicIssue(parts[len(parts)-1])
+				if folder, _ := cleanName(parts[len(parts)-2]); series == "" && position != "" && folder != "" {
+					// Just a number ("001.cbr"): the folder is the series.
+					series, t = folder, folder+" #"+position
+				}
+				title = t
+				if y > 0 {
+					year = y
+				}
+			}
+		}
+		if ext == "cbz" {
+			// A comic says what it is: the series, the number, who wrote it.
+			if ci, ok := ReadComicInfo(path); ok {
+				if name := ci.DisplayTitle(); name != "" {
+					title = name
+				}
+				if ci.Writer != "" {
+					author = strings.TrimSpace(strings.Split(ci.Writer, ",")[0])
+				}
+				if ci.Year > 0 {
+					year = ci.Year
+				}
+				if ci.Series != "" || ci.Number != "" {
+					series, position = ci.Series, ci.Number
+				}
+			}
+		}
 		if title == "" {
-			return nil
+			continue
 		}
 		key := filepath.Dir(path) + "|" + strings.ToLower(title)
 		if cur, ok := best[key]; ok {
 			cur.Files++
-			if EbookRank(ext) > EbookRank(cur.Format) {
+			if ScanRank(ext) > ScanRank(cur.Format) {
 				cur.Path, cur.Format = path, ext
 			}
 			best[key] = cur
-			return nil
+			continue
 		}
-		best[key] = LocalBook{Path: path, Author: author, Title: title, Year: year, Format: ext, Files: 1}
-		return nil
-	})
+		best[key] = LocalBook{Path: path, Author: author, Title: title, Year: year, Format: ext, Files: 1, Series: series, Position: position}
+	}
 	return sorted(best), err
 }
 

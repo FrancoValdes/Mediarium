@@ -11,16 +11,35 @@
 // - plural(n, '{n} movie', '{n} movies') picks the right form for the language.
 import { Fragment, createElement, type ReactNode } from 'react'
 
-export type Lang = 'en' | 'es' | 'de' | 'fr' | 'pt' | 'pt-PT'
+export type Lang = 'en' | 'es' | 'de' | 'fr' | 'it' | 'nl' | 'pl' | 'pt' | 'pt-PT' | 'ru' | 'uk'
 
 export const LANGUAGES: { code: Lang; name: string }[] = [
   { code: 'en', name: 'English' },
   { code: 'es', name: 'Español' },
   { code: 'de', name: 'Deutsch' },
   { code: 'fr', name: 'Français' },
+  { code: 'it', name: 'Italiano' },
+  { code: 'nl', name: 'Nederlands' },
+  { code: 'pl', name: 'Polski' },
   { code: 'pt', name: 'Português (Brasil)' },
   { code: 'pt-PT', name: 'Português (Portugal)' },
+  { code: 'ru', name: 'Русский' },
+  { code: 'uk', name: 'Українська' },
 ]
+
+// Each language's catalogue is its own file, fetched only when it is chosen.
+const CATALOGUES: Record<Exclude<Lang, 'en'>, () => Promise<{ default: unknown }>> = {
+  es: () => import('./locales/es.json'),
+  de: () => import('./locales/de.json'),
+  fr: () => import('./locales/fr.json'),
+  it: () => import('./locales/it.json'),
+  nl: () => import('./locales/nl.json'),
+  pl: () => import('./locales/pl.json'),
+  pt: () => import('./locales/pt.json'),
+  'pt-PT': () => import('./locales/pt-PT.json'),
+  ru: () => import('./locales/ru.json'),
+  uk: () => import('./locales/uk.json'),
+}
 
 const STORAGE_KEY = 'mediarium-lang'
 
@@ -57,16 +76,7 @@ export async function loadLanguage(): Promise<void> {
   const want = preferredLanguage(storedChoice(), typeof navigator === 'undefined' ? [] : navigator.languages ?? [navigator.language])
   if (want !== 'en') {
     try {
-      const mod =
-        want === 'es'
-          ? await import('./locales/es.json')
-          : want === 'de'
-            ? await import('./locales/de.json')
-            : want === 'pt'
-              ? await import('./locales/pt.json')
-              : want === 'pt-PT'
-                ? await import('./locales/pt-PT.json')
-                : await import('./locales/fr.json')
+      const mod = await CATALOGUES[want]()
       setCatalogue(want, mod.default as Record<string, string>)
     } catch {
       // A failed download leaves the app in English rather than broken.
@@ -79,6 +89,7 @@ export async function loadLanguage(): Promise<void> {
 export function setCatalogue(code: Lang, entries: Record<string, string>) {
   lang = code
   table = entries
+  serverPatterns = null
 }
 
 export function currentLanguage(): Lang {
@@ -140,9 +151,72 @@ export function tx(text: string, parts: Record<string, ReactNode>): ReactNode {
   return createElement(Fragment, null, ...out)
 }
 
-// The singular or plural form for n. French counts 0 and 1 as singular,
-// the other languages here only 1.
+// The singular or plural form for n. French counts 0 and 1 as singular, the
+// other languages here only 1. Russian, Ukrainian and Polish have a third
+// form for 2 to 4 (and 22 to 24 ...): it is the entry "<plural phrase>|few",
+// and the plural phrase itself is used for the rest (5 to 21 ...).
+//
+// The language's "one" form also covers 21, 31, 101 ... in Russian and
+// Ukrainian and 0 in French. The singular sentence only fits those when it
+// shows the count ("{n} movie"); a sentence written for exactly one ("Remove
+// this download?") is used for 1 only, and the others get the entry
+// "<plural phrase>|one" when there is one, or else the plural phrase.
 export function plural(n: number, one: string, other: string, vars?: Record<string, string | number>): string {
-  const form = new Intl.PluralRules(lang).select(n) === 'one' ? one : other
-  return t(form, { n, ...vars })
+  const category = new Intl.PluralRules(lang).select(n)
+  if (category === 'one' && (n === 1 || one.includes('{n}'))) return t(one, { n, ...vars })
+  const special = category === 'other' ? '' : table[`${other}|${category}`]
+  return fill(special || table[other] || other, { n, ...vars })
+}
+
+// Sentences the server sends (error messages, notes in the activity feed...)
+// are in English. Each one the server can send is a phrase in the catalogue,
+// with {0}, {1} ... where the server puts a name or a number (tools/msgextract
+// lists them in serverText.json). st() finds the translation of a sentence the
+// server sent, filling the pieces in again; a sentence it does not know stays
+// as it came.
+interface ServerPattern {
+  re: RegExp
+  key: string
+  head: string // the fixed text the sentence starts with
+  tail: string // and ends with
+  weight: number // how much of the sentence is fixed text: the most specific match wins
+}
+let serverPatterns: ServerPattern[] | null = null
+
+// Longer text is shown as it came. The patterns backtrack, and a long message
+// that starts like a known sentence could otherwise keep the tab busy for
+// seconds; no sentence the server writes itself is this long.
+const MAX_SERVER_TEXT = 500
+
+function compileServerPatterns(): ServerPattern[] {
+  const out: ServerPattern[] = []
+  for (const key of Object.keys(table)) {
+    if (!/\{\d+\}/.test(key) || !table[key]) continue
+    const parts = key.split(/\{\d+\}/)
+    const re = new RegExp('^' + parts.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(.+?)') + '$', 's')
+    out.push({ re, key, head: parts[0], tail: parts[parts.length - 1], weight: parts.reduce((n, p) => n + p.length, 0) })
+  }
+  return out.sort((a, b) => b.weight - a.weight)
+}
+
+export function st(text: string | undefined | null): string {
+  if (!text) return text ?? ''
+  if (lang === 'en') return text
+  const exact = table[text]
+  if (exact) return exact
+  if (text.length > MAX_SERVER_TEXT) return text
+  if (!serverPatterns) serverPatterns = compileServerPatterns()
+  for (const p of serverPatterns) {
+    if (!text.startsWith(p.head) || !text.endsWith(p.tail)) continue
+    const m = p.re.exec(text)
+    if (!m) continue
+    // The pieces come in the order of the English sentence: {0}, {1} ... as numbered there.
+    const order = [...p.key.matchAll(/\{(\d+)\}/g)].map((x) => Number(x[1]))
+    const args: string[] = []
+    order.forEach((idx, i) => {
+      args[idx] = m[i + 1]
+    })
+    return table[p.key].replace(/\{(\d+)\}/g, (whole, n: string) => args[Number(n)] ?? whole)
+  }
+  return text
 }

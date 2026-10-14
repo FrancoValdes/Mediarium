@@ -28,14 +28,16 @@ func checkComponent(c, ext string) string {
 		return "is too long once the extension and temporary suffix are added"
 	case strings.HasSuffix(c, ".") || strings.HasSuffix(c, " "):
 		return "ends in a dot or a space"
+	case strings.HasPrefix(c, ".") || strings.HasPrefix(c, " "):
+		return "starts with a dot or a space (a dot hides it)"
 	}
 	stem := c
 	if i := strings.IndexByte(stem, '.'); i >= 0 {
 		stem = stem[:i]
 	}
 	switch strings.ToUpper(strings.TrimRight(stem, " ")) {
-	case "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-		"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+		"COM¹", "COM²", "COM³", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT¹", "LPT²", "LPT³":
 		return "is a Windows device name"
 	}
 	for _, r := range c {
@@ -73,7 +75,7 @@ func TestSanitizeEdgeCases(t *testing.T) {
 		{"not reserved", "Console", organizer.SanitizeStrip, "", "Console"},
 		{"not reserved with digit", "COM10", organizer.SanitizeStrip, "", "COM10"},
 		{"parent folder", "..", organizer.SanitizeStrip, "", "_"},
-		{"parent folder with separators", "../../etc", organizer.SanitizeStrip, "", "....etc"},
+		{"parent folder with separators", "../../etc", organizer.SanitizeStrip, "", "etc"},
 		{"windows drive", `C:\Windows`, organizer.SanitizeStrip, "", "CWindows"},
 		{"absolute path", "/etc/passwd", organizer.SanitizeStrip, "", "etcpasswd"},
 		{"NUL byte", "a\x00b", organizer.SanitizeStrip, "", "ab"},
@@ -88,7 +90,15 @@ func TestSanitizeEdgeCases(t *testing.T) {
 		{"emoji", "Movie 🎬", organizer.SanitizeStrip, "", "Movie 🎬"},
 		{"255 bytes is cut", long255, organizer.SanitizeStrip, "", strings.Repeat("a", organizer.MaxNameBytes)},
 		{"multi-byte cut on a character", longCJK, organizer.SanitizeStrip, "", strings.Repeat("日", organizer.MaxNameBytes/3)},
-		{"leading dots stay", "...And Justice for All (1979)", organizer.SanitizeStrip, "", "...And Justice for All (1979)"},
+		{"leading dots go: the folder would be hidden", "...And Justice for All (1979)", organizer.SanitizeStrip, "", "And Justice for All (1979)"},
+		{"a leading dot", ".hack", organizer.SanitizeStrip, "", "hack"},
+		{"leading spaces", "  Title", organizer.SanitizeStrip, "", "Title"},
+		{"a leading dot from a replacement", ":Title", organizer.SanitizeReplace, ".", "Title"},
+		{"console input name", "CONIN$", organizer.SanitizeStrip, "", "CONIN$_"},
+		{"console output name", "conout$.2020", organizer.SanitizeStrip, "", "conout$_.2020"},
+		{"superscript port name", "COM¹", organizer.SanitizeStrip, "", "COM¹_"},
+		{"superscript printer name", "lpt³", organizer.SanitizeStrip, "", "lpt³_"},
+		{"a reserved name after a leading dot", ".nul", organizer.SanitizeStrip, "", "nul_"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,8 +136,9 @@ func TestRenderEdgeCases(t *testing.T) {
 		ctx    organizer.NamingContext
 		want   string
 	}{
-		{"empty title and year", "{Movie Title} ({Year})", organizer.NamingContext{}, ""},
-		{"only an empty pair of brackets", "[{Quality}]", organizer.NamingContext{}, ""},
+		{"empty title and year", "{Movie Title} ({Year})", organizer.NamingContext{}, "Unknown"},
+		{"empty title and year, with an id", "{Movie Title} ({Year})", organizer.NamingContext{TMDBID: 603}, "tmdb-603"},
+		{"only an empty pair of brackets", "[{Quality}]", organizer.NamingContext{}, "Unknown"},
 		{"unknown token", "{Nope} {Movie Title}", organizer.NamingContext{MovieTitle: "A"}, "A"},
 		{"unclosed brace", "{Movie Title", organizer.NamingContext{MovieTitle: "A"}, "{Movie Title"},
 		{"nested braces", "{{Movie Title}}", organizer.NamingContext{MovieTitle: "A"}, "{A}"},
@@ -175,6 +186,32 @@ func TestLibraryPathStaysInsideTheRoot(t *testing.T) {
 				_, _, full := libraryPath(root, organizer.TVSeriesFolder+"/"+organizer.TVSeasonFolder, preset, ".mkv", ctx, mode, "-")
 				assertInside(t, root, full)
 			}
+		}
+	}
+}
+
+// A title with no name gets a folder and a file with a name, and a title
+// starting with a dot is not hidden.
+func TestLibraryPathIsNeverEmptyOrHidden(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "library", "movies")
+	cases := []struct {
+		title      string
+		tmdb       int
+		folder     string
+		file       string
+		formatFile string
+	}{
+		{"", 603, "tmdb-603", "tmdb-603", organizer.Presets["minimal"]},
+		{"", 0, "Unknown", "Unknown", organizer.Presets["minimal"]},
+		{"...", 603, "_", "_", organizer.Presets["minimal"]},
+		{".hack", 0, "hack", "hack", organizer.Presets["minimal"]},
+		{".hack", 0, "hack", "hack [1080p]", organizer.Presets["jellyfin"]},
+	}
+	for _, tc := range cases {
+		ctx := organizer.NamingContext{MovieTitle: tc.title, TMDBID: tc.tmdb, Quality: "1080p"}
+		folder, file, _ := libraryPath(root, organizer.Presets["plex"], tc.formatFile, ".mkv", ctx, organizer.SanitizeStrip, "")
+		if folder != tc.folder || file != tc.file {
+			t.Errorf("title %q: folder %q, file %q; want %q, %q", tc.title, folder, file, tc.folder, tc.file)
 		}
 	}
 }

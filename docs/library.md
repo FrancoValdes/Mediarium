@@ -24,7 +24,11 @@ To do the same thing to many titles at once, use **Select**.
 
 If you delete or rename files outside Mediarium, its list doesn't know until you tell it. **Rescan files** (on a show's page, and on a movie's page) looks at every downloaded file of that title: a file that is still there is fine, a file that was renamed (for example `.mp4` to `.mkv`) is found under its new name, and a file that is gone makes its episode or movie **wanted** again. The media servers are asked to scan the folder afterwards. Administrators only.
 
-A rescan won't believe that everything is gone when the library folder itself is empty or missing (a drive that isn't plugged in): those files are left alone and the message says so. **Refresh episodes** is a different thing: it only reloads the episode list from TMDB. Scripts: `POST /api/movies/{id}/rescan` and `POST /api/series/{id}/rescan` answer with `found`, `renamed`, `missing` and `skipped`.
+A rescan won't believe that everything is gone when the library folder itself is empty or missing (a drive that isn't plugged in): those files are left alone and the message says so. The same goes for a file it can't check (the disk gives an error, or two files with the same name and different extensions are there): it is skipped, never marked missing. **Refresh episodes** is a different thing: it only reloads the episode list from TMDB. Scripts: `POST /api/movies/{id}/rescan` and `POST /api/series/{id}/rescan` answer with `found`, `renamed`, `missing` and `skipped`.
+
+## Finding the missing episodes of one season
+
+A show with many seasons doesn't have to be searched all at once. **Find missing** in a season's header searches your indexers right now for that season's missing episodes only, and downloads what it finds. The rest of the show is left alone, and the search keeps to the same indexer limits and pacing as any other search. **Find missing episodes** at the top of the show page does the whole show. Scripts: `POST /api/series/{id}/search-now` with `{"season": 2}`.
 
 ## Deleting a file and keeping the title
 
@@ -67,6 +71,7 @@ On a phone the bar takes one row and the actions fold away behind an **Actions**
 | **Download from** | Usenet only, torrents only, both, or the choice in Settings. |
 | **Move to folder** | Appears once you have more than one movie or TV folder. Sends the next files of the selected titles to the folder you pick, or moves the files that are already there as well. See [Moving titles to another folder](#moving-titles-to-another-folder). |
 | **Search now** | Looks for releases of the selected titles that are **monitored and missing something**. A confirmation says how many will be searched, for example "42 of the 64 selected are monitored and missing something". At most **25 titles** are searched per press, and the rest are left to the automatic search. The search runs in the background, one title after another, and the result is written to Activity ("Searched for 25 titles and started 3 downloads."). Only one such search runs at a time. Movies that aren't out yet are skipped. |
+| **Replace with smaller** | Movies tab only. For movies you gave a lower quality profile: looks for a smaller release that the profile accepts, downloads it, and only then removes the big file. A confirmation names the titles and how much space their files take. At most **25 movies** per press, one after another in the background, with the result in Activity. A file that has no suitable replacement stays. See [Moving a title to a lower profile](quality-profiles.md#moving-a-title-to-a-lower-profile). |
 | **Remove from library** | Takes them out of the library. See below. |
 
 Every action says how it went. When all went well you get a short message such as **Done: 12 updated.** If some couldn't be done, a note stays on the page with the reason for each ("Alpha: It isn't in your library any more.") until you dismiss it, and the message says how many worked: "Done: 10 updated. 2 titles could not be changed."
@@ -227,7 +232,9 @@ With **Custom** you can:
 - **Paste the format you already use in Radarr or Sonarr.** Mediarium understands their token names, so `{Movie CleanTitle} ({Release Year}) - {Custom Formats}{ - Edition Tags}` works as it is.
 - **Click a token** in the list next to the boxes to add it where the cursor is.
 
-There is one box for movies and one for episodes. An episode name needs `{Season}` and `{Episode}` (or `{Air-Date}` for daily shows), so two episodes never get the same name. A movie name needs its title.
+There is one box for movies and one for episodes. An episode name needs `{Season}` and `{Episode}`, also for daily shows (two episodes can air on the same day), so two episodes never get the same name. A movie name needs its title. A format you wrote while another style was picked is checked when you switch to **Custom**.
+
+A title with no name gets a folder and file called `tmdb-` and its TMDB number, and dots or spaces at the start of a name are left out, since a name starting with a dot is hidden.
 
 **Tokens.** Names aren't case sensitive, and `{Movie.CleanTitle}` or `{Movie_CleanTitle}` puts a dot or underscore between the words.
 

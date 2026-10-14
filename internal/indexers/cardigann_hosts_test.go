@@ -24,7 +24,10 @@ func TestResolvePathOnlyLeadsToTheSite(t *testing.T) {
 		{"absolute path on the same host", mk("https://www.private.example/"), "https://www.private.example/login", ""},
 		{"an api host of the same site", mk("https://www.private.example/"), "https://api.private.example/v1/login", ""},
 		{"the bare domain of the site", mk("https://www.private.example/"), "https://private.example/login", ""},
-		{"a mirror the definition lists", mk("https://private.example/", "https://private.example/", "https://mirror.example.net/"), "https://mirror.example.net/login", ""},
+		// the list of links comes from the same public repository: a host added
+		// to it is not the site the person chose
+		{"another host the definition lists", mk("https://private.example/", "https://private.example/", "https://mirror.example.net/"), "https://mirror.example.net/login", "not one of the site's own addresses"},
+		{"the chosen mirror itself", mk("https://mirror.example.net/", "https://private.example/", "https://mirror.example.net/"), "https://mirror.example.net/login", ""},
 		{"a host on another domain", mk("https://www.private.example/"), "https://evil.example.org/collect", "not one of the site's own addresses"},
 		{"a look-alike domain", mk("https://www.private.example/"), "https://private.example.evil.org/login", "not one of the site's own addresses"},
 		{"the same second-level name under a shared suffix", mk("https://www.private.co.uk/"), "https://evil.co.uk/login", "not one of the site's own addresses"},

@@ -172,12 +172,13 @@ type CalendarEpisode struct {
 	Status     Status
 	SeriesName string
 	PosterPath string
+	SeriesTMDB int // the show's TMDB id
 }
 
 // CalendarEpisodes lists the monitored episodes of monitored main shows that
 // air from from to to (both "YYYY-MM-DD", inclusive), show by show.
 func (r *Repo) CalendarEpisodes(from, to string) ([]CalendarEpisode, error) {
-	rows, err := r.db.Query(`SELECT e.id, e.series_id, e.season, e.episode, COALESCE(e.title, ''), e.air_date, e.status, s.title, COALESCE(s.poster_path, '')
+	rows, err := r.db.Query(`SELECT e.id, e.series_id, e.season, e.episode, COALESCE(e.title, ''), e.air_date, e.status, s.title, COALESCE(s.poster_path, ''), s.tmdb_id
 		FROM episodes e JOIN series s ON s.id = e.series_id
 		WHERE s.copy_of IS NULL AND s.monitored = 1 AND e.monitored = 1 AND COALESCE(e.air_date, '') <> '' AND e.air_date >= ? AND e.air_date <= ?
 		ORDER BY s.added_at DESC, s.id, e.season, e.episode`, from, to)
@@ -189,7 +190,7 @@ func (r *Repo) CalendarEpisodes(from, to string) ([]CalendarEpisode, error) {
 	for rows.Next() {
 		var e CalendarEpisode
 		var status string
-		if err := rows.Scan(&e.ID, &e.SeriesID, &e.Season, &e.Episode, &e.Title, &e.AirDate, &status, &e.SeriesName, &e.PosterPath); err != nil {
+		if err := rows.Scan(&e.ID, &e.SeriesID, &e.Season, &e.Episode, &e.Title, &e.AirDate, &status, &e.SeriesName, &e.PosterPath, &e.SeriesTMDB); err != nil {
 			return nil, fmt.Errorf("scan calendar episode: %w", err)
 		}
 		e.Status = Status(status)

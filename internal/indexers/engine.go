@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/rdborg/mediarium/internal/netproxy"
 	"github.com/rdborg/mediarium/internal/problems"
 )
 
@@ -121,9 +124,25 @@ func SearchAll(ctx context.Context, instances []Instance, query string, categori
 		wg.Add(1)
 		go func(i int, inst Instance) {
 			defer wg.Done()
+			// A bug, or a site that finds one, must cost this indexer's
+			// results only, not the whole program.
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("indexers: search crashed", "indexer", inst.Name, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+					outcomes[i] = Outcome{IndexerName: inst.Name, Err: fmt.Errorf("%s: the search failed because of an internal error", inst.Name)}
+				}
+			}()
 			timeout := FeedWait(inst.BaseURL)
 			if inst.IsCardigann() {
 				timeout = cardigannTimeout
+			}
+			// One search after another on an indexer, never a burst.
+			if err := inst.Tracker.Pace(ctx, inst.ID, inst.Tracker.SearchGap(inst.ID)); err != nil {
+				if errors.Is(err, ErrSearchQueueFull) {
+					err = fmt.Errorf("%s: %w, so this search was skipped", inst.Name, err)
+				}
+				outcomes[i] = Outcome{IndexerName: inst.Name, Err: err}
+				return
 			}
 			reqCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
@@ -150,8 +169,9 @@ func SearchAll(ctx context.Context, instances []Instance, query string, categori
 				results[j].Priority = inst.Priority
 			}
 			outcomes[i] = Outcome{IndexerName: inst.Name, Results: results, Err: err}
-			// A search cut short by the caller says nothing about the indexer.
-			if ctx.Err() == nil && !errors.Is(err, context.Canceled) {
+			// A search cut short by the caller, or waiting for the VPN, says
+			// nothing about the indexer.
+			if ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, netproxy.ErrWaitingForVPN) {
 				inst.Tracker.RecordSearch(inst.ID, results, err)
 			}
 		}(i, inst)
@@ -167,8 +187,10 @@ func SearchAll(ctx context.Context, instances []Instance, query string, categori
 
 // noteSearchProblem puts an indexer that failed in the problem log: it
 // limited the requests, refused the key, could not be reached or gave an error.
+// A wait for the VPN isn't logged: health already reports the VPN.
 func noteSearchProblem(o Outcome) {
-	if o.Err == nil || errors.Is(o.Err, context.Canceled) {
+	// a search skipped because others were waiting says nothing about the indexer
+	if o.Err == nil || errors.Is(o.Err, context.Canceled) || errors.Is(o.Err, ErrSearchQueueFull) || errors.Is(o.Err, netproxy.ErrWaitingForVPN) {
 		return
 	}
 	problems.Record(problems.Problem{Code: problems.IndexerCode(o.Err), Subject: o.IndexerName, Message: ProblemMessage(o), Err: o.Err})
@@ -180,6 +202,9 @@ func noteSearchProblem(o Outcome) {
 func ProblemMessage(o Outcome) string {
 	if o.Err == nil {
 		return ""
+	}
+	if msg := netproxy.WaitMessage(o.Err); msg != "" {
+		return msg
 	}
 	switch problems.IndexerCode(o.Err) {
 	case problems.CodeIndexerRateLimited:

@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -192,6 +193,45 @@ func describeRoots(roots map[string][]string, effective []PathMapping, suggested
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
+}
+
+// titleFolderProblem says why folder can't be one title's own folder, or ""
+// when it can: the other app may report a whole library folder (one of roots)
+// or the top of a disk as a title's folder, and linking "its" files would
+// then link everything in the library to that one title.
+func titleFolderProblem(folder string, roots []string) string {
+	if strings.TrimSpace(folder) == "" {
+		return ""
+	}
+	clean := filepath.Clean(folder)
+	parts := 0
+	for _, p := range strings.Split(filepath.ToSlash(strings.TrimPrefix(clean, filepath.VolumeName(clean))), "/") {
+		if p != "" && p != "." {
+			parts++
+		}
+	}
+	if parts < 2 {
+		return fmt.Sprintf("its folder %s is too near the top of the disk to be the title's own folder, so its files aren't linked", folder)
+	}
+	for _, r := range roots {
+		if strings.TrimSpace(r) != "" && filepath.Clean(r) == clean {
+			return fmt.Sprintf("its folder %s is a whole library folder, not the title's own folder, so its files aren't linked", folder)
+		}
+	}
+	return ""
+}
+
+// noteFolderProblem turns a title whose files would be linked from a folder
+// that can't be its own into a skip (or, when it is already in the library,
+// says its files are not linked).
+func noteFolderProblem(item *TitleItem, problem string) {
+	switch {
+	case problem == "":
+	case item.Action == ActionAdd:
+		item.Action, item.Reason = ActionSkip, problem
+	case item.Action == ActionExists:
+		item.Reason = "already in your library; " + problem
+	}
 }
 
 // insideFolder reports whether p is libRoot or inside it.

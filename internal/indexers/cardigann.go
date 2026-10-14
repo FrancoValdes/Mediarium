@@ -400,6 +400,9 @@ func (v *defValidator) run() {
 		v.css("rows", s.Rows.Selector)
 		v.css("rows remove", s.Rows.Remove)
 	}
+	if s.Rows.After < 0 || s.Rows.After > maxSearchRows {
+		v.add("rows after must be between 0 and %d", maxSearchRows)
+	}
 	for _, f := range s.Rows.Filters {
 		if f.Name != "andmatch" && f.Name != "strdump" {
 			v.add("row filter %q is not supported", f.Name)
@@ -497,7 +500,15 @@ func (v *defValidator) field(what string, f SelectorField, json bool) {
 	v.filters(what, f.Filters)
 }
 
+// maxFilters is the longest filter list one value may have. Real definitions
+// use a handful.
+const maxFilters = 32
+
 func (v *defValidator) filters(what string, fs []FilterBlock) {
+	if len(fs) > maxFilters {
+		v.add("%s: more than %d filters", what, maxFilters)
+		return
+	}
 	for _, f := range fs {
 		if !knownFilters[f.Name] {
 			v.add("%s: filter %q is not supported", what, f.Name)
@@ -505,9 +516,11 @@ func (v *defValidator) filters(what string, fs []FilterBlock) {
 		}
 		args := filterArgs(f.Args)
 		switch f.Name {
-		case "regexp": // (re_replace falls back to leaving the text unchanged)
+		case "regexp", "re_replace":
+			// re_replace falls back to leaving the text unchanged when Go can't
+			// express the pattern, but never runs one that is too costly
 			if p := argAt(args, 0); !strings.Contains(p, "{{") {
-				if _, err := compileDotNetRegex(p); err != nil {
+				if _, err := compileDotNetRegex(p); err != nil && (f.Name == "regexp" || errors.Is(err, errRegexTooBig)) {
 					v.add("%s: %v", what, err)
 				}
 			}

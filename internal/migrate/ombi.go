@@ -67,10 +67,10 @@ type ombiData struct {
 
 func fetchOmbi(ctx context.Context, hc *http.Client, c Conn) (ombiData, error) {
 	var d ombiData
-	if err := read(ctx, hc, c, call{path: "/api/v1/Request/movie", keyHeader: "ApiKey"}, &d.Movies); err != nil {
+	if err := read(ctx, hc, c, call{path: "/api/v1/Request/movie", keyHeader: "ApiKey", list: true}, &d.Movies); err != nil {
 		return d, err
 	}
-	if err := read(ctx, hc, c, call{path: "/api/v1/Request/tvlite", keyHeader: "ApiKey"}, &d.Shows); err != nil {
+	if err := read(ctx, hc, c, call{path: "/api/v1/Request/tvlite", keyHeader: "ApiKey", list: true}, &d.Shows); err != nil {
 		return d, fmt.Errorf("read show requests: %w", err)
 	}
 	return d, nil

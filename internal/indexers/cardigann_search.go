@@ -16,8 +16,10 @@ import (
 
 // search runs a keyword search ("" lists the newest releases).
 func (s *cgSession) search(ctx context.Context, query string, cats []int) ([]Result, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if err := s.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer s.unlock()
 	if err := s.ensureLogin(ctx); err != nil {
 		return nil, err
 	}
@@ -144,6 +146,9 @@ func (s *cgSession) searchPath(ctx context.Context, p SearchPath, vars *tmplVars
 		if strings.HasPrefix(resp.location, "magnet:") {
 			break
 		}
+		if err := s.checkPageAddress(resp.location); err != nil {
+			return nil, 0, nil, err
+		}
 		if resp, err = s.do(ctx, cgRequest{url: resp.location, headers: headers, noFollow: true}); err != nil {
 			return nil, 0, nil, err
 		}
@@ -154,7 +159,7 @@ func (s *cgSession) searchPath(ctx context.Context, p SearchPath, vars *tmplVars
 
 	body := string(resp.body)
 	if len(sb.PreprocessingFilters) > 0 {
-		if body, err = applyFilters(body, sb.PreprocessingFilters, vars); err != nil {
+		if body, err = applyFiltersWith(body, sb.PreprocessingFilters, vars, newWorkBudget()); err != nil {
 			return nil, 0, nil, fmt.Errorf("%s: preprocessing: %w", s.name, err)
 		}
 	}
@@ -230,13 +235,19 @@ func (s *cgSession) parseHTMLRows(doc *html.Node, vars *tmplVars, page *url.URL,
 	if len(rows) > maxSearchRows {
 		rows = rows[:maxSearchRows]
 	}
-	if rb.After > 0 {
+	if after := min(rb.After, maxSearchRows); after > 0 { // checked when the definition loads, too
 		var merged []*html.Node
-		for i := 0; i < len(rows); i += 1 + rb.After {
+		for i := 0; i < len(rows); i += 1 + after {
 			row := rows[i]
-			for j := 1; j <= rb.After && i+j < len(rows); j++ {
+			for j := 1; j <= after && i+j < len(rows); j++ {
 				for c := rows[i+j].FirstChild; c != nil; c = c.NextSibling {
-					row.AppendChild(cloneNode(c))
+					// rows nested inside each other would copy the page over and
+					// over: every copied node is paid for
+					cl, ok := cloneNodeWith(c, budget)
+					if !ok {
+						return nil, 0, nil, fmt.Errorf("%s: %w", s.name, errPageTooComplex)
+					}
+					row.AppendChild(cl)
 				}
 			}
 			merged = append(merged, row)
@@ -333,6 +344,8 @@ func (s *cgSession) parseJSONRows(body []byte, vars *tmplVars, page *url.URL, qu
 	var (
 		out      []Result
 		firstErr error
+		read     int // items read, across all rows: "multiple" rows hold many each
+		budget   = newWorkBudget()
 	)
 	for _, row := range rows {
 		items := []any{row}
@@ -346,8 +359,12 @@ func (s *cgSession) parseJSONRows(body []byte, vars *tmplVars, page *url.URL, qu
 				items = arr
 			}
 		}
+		if left := maxSearchRows - read; len(items) > left {
+			items = items[:left]
+		}
+		read += len(items)
 		for _, item := range items {
-			res, err := s.parseRow(jsonRow{item: item, parent: row}, vars, page, query)
+			res, err := s.parseRow(jsonRow{item: item, parent: row, b: budget}, vars, page, query)
 			if err != nil {
 				if firstErr == nil {
 					firstErr = err
@@ -357,6 +374,9 @@ func (s *cgSession) parseJSONRows(body []byte, vars *tmplVars, page *url.URL, qu
 			if res != nil {
 				out = append(out, *res)
 			}
+		}
+		if read >= maxSearchRows {
+			break
 		}
 	}
 	return out, len(rows), firstErr, nil
@@ -451,6 +471,9 @@ func (s *cgSession) applyField(rb *releaseBuilder, name, val string, mods []stri
 		if err != nil {
 			return "", err
 		}
+		if err := s.checkPageAddress(u); err != nil {
+			return "", err
+		}
 		rb.link = u
 		return u, nil
 	case "magnet":
@@ -459,6 +482,9 @@ func (s *cgSession) applyField(rb *releaseBuilder, name, val string, mods []stri
 	case "details", "comments":
 		u, err := s.resolve(val, page)
 		if err != nil {
+			return "", err
+		}
+		if err := s.checkPageAddress(u); err != nil {
 			return "", err
 		}
 		if name == "details" || rb.details == "" {
@@ -503,6 +529,27 @@ const maxSearchRows = 5000
 // maxTitleBytes is the longest release title kept.
 const maxTitleBytes = 1024
 
+// maxReleaseBytes is the largest release size believed (1 PiB). A bigger one
+// is a broken or hostile page, and adding such sizes up would overflow.
+const maxReleaseBytes = 1 << 50
+
+// saneSize drops a size no release can have.
+func saneSize(n int64) int64 {
+	if n < 0 || n > maxReleaseBytes {
+		return 0
+	}
+	return n
+}
+
+// saneDate drops a date years off: a "99999999 years ago" from a hostile page
+// is no date at all, and one outside years 0-9999 cannot even be stored.
+func saneDate(t time.Time) time.Time {
+	if y := t.Year(); !t.IsZero() && (y < 1970 || y > time.Now().Year()+1) {
+		return time.Time{}
+	}
+	return t
+}
+
 func sane(n int64) int64 {
 	if n < 0 || n >= 5000000 {
 		return 0
@@ -523,11 +570,8 @@ func (s *cgSession) finish(rb *releaseBuilder) (*Result, error) {
 		return nil, fmt.Errorf("empty title")
 	}
 	title = shortenText(title, maxTitleBytes)
-	// a date years off (a "99999999 years ago" from a hostile page) is no
-	// date at all, and one outside years 0-9999 cannot even be stored
-	if y := rb.date.Year(); !rb.date.IsZero() && (y < 1970 || y > time.Now().Year()+1) {
-		rb.date = time.Time{}
-	}
+	rb.date = saneDate(rb.date)
+	rb.size = saneSize(rb.size)
 	link, magnet := rb.link, rb.magnet
 	if link == "" && magnet == "" && rb.infohash != "" {
 		magnet = buildMagnet(rb.infohash, title)
@@ -623,7 +667,7 @@ func (r htmlRow) value(f SelectorField, vars *tmplVars) (string, bool, error) {
 		if err != nil {
 			return "", false, err
 		}
-		v, err = applyFilters(v, f.Filters, vars)
+		v, err = applyFiltersWith(v, f.Filters, vars, r.b)
 		return v, err == nil, err
 	}
 	selection := r.n
@@ -655,7 +699,11 @@ func (r htmlRow) value(f SelectorField, vars *tmplVars) (string, bool, error) {
 		if err != nil {
 			return "", false, err
 		}
-		selection = cloneNode(selection)
+		cl, ok := cloneNodeWith(selection, r.b)
+		if !ok {
+			return "", false, errPageTooComplex
+		}
+		selection = cl
 		removeMatches(selection, rsel, r.b)
 	}
 	var val string
@@ -689,9 +737,13 @@ func (r htmlRow) value(f SelectorField, vars *tmplVars) (string, bool, error) {
 		}
 		val = v
 	default:
-		val = textContent(selection)
+		v, ok := textContentWith(selection, r.b)
+		if !ok {
+			return "", false, errPageTooComplex
+		}
+		val = v
 	}
-	val, err := applyFilters(strings.TrimSpace(val), f.Filters, vars)
+	val, err := applyFiltersWith(strings.TrimSpace(val), f.Filters, vars, r.b)
 	if err != nil {
 		return "", false, err
 	}
@@ -706,18 +758,66 @@ func removeMatches(root *html.Node, sel *Selector, budget *workBudget) {
 	}
 }
 
-func cloneNode(n *html.Node) *html.Node {
+// cloneNodeCost is what copying one node spends from a page's work budget. A
+// copy takes memory as well as time, so it costs far more than a matching
+// step: a page can copy a few hundred thousand nodes at most.
+const cloneNodeCost = 500
+
+// cloneNodeWith deep-copies n, paying for every node from budget. ok is false
+// (and the copy unusable) once the budget runs out.
+func cloneNodeWith(n *html.Node, budget *workBudget) (*html.Node, bool) {
+	if !budget.spend(cloneNodeCost) {
+		return nil, false
+	}
 	c := &html.Node{Type: n.Type, DataAtom: n.DataAtom, Data: n.Data, Namespace: n.Namespace}
 	c.Attr = append([]html.Attribute(nil), n.Attr...)
 	for ch := n.FirstChild; ch != nil; ch = ch.NextSibling {
-		c.AppendChild(cloneNode(ch))
+		cc, ok := cloneNodeWith(ch, budget)
+		if !ok {
+			return nil, false
+		}
+		c.AppendChild(cc)
 	}
-	return c
+	return c, true
+}
+
+// textContentWith is textContent paying from budget for every node read and
+// every 8 bytes of text copied: rows nested inside each other would otherwise
+// read the whole page once per row. ok is false once the budget runs out.
+func textContentWith(n *html.Node, budget *workBudget) (string, bool) {
+	if n.Type == html.TextNode {
+		return n.Data, budget.spend(1)
+	}
+	var sb strings.Builder
+	ok := true
+	var rec func(*html.Node)
+	rec = func(n *html.Node) {
+		for c := n.FirstChild; c != nil && ok; c = c.NextSibling {
+			if !budget.spend(1 + int64(len(c.Data))/8) {
+				ok = false
+				return
+			}
+			switch c.Type {
+			case html.TextNode:
+				sb.WriteString(c.Data)
+			case html.ElementNode, html.DocumentNode:
+				rec(c)
+			}
+		}
+	}
+	rec(n)
+	if !ok {
+		return "", false
+	}
+	return sb.String(), true
 }
 
 // --- JSON rows ---
 
-type jsonRow struct{ item, parent any }
+type jsonRow struct {
+	item, parent any
+	b            *workBudget // shared by the whole reply; nil = unlimited
+}
 
 func (r jsonRow) value(f SelectorField, vars *tmplVars) (string, bool, error) {
 	if f.Text != nil {
@@ -725,7 +825,7 @@ func (r jsonRow) value(f SelectorField, vars *tmplVars) (string, bool, error) {
 		if err != nil {
 			return "", false, err
 		}
-		v, err = applyFilters(v, f.Filters, vars)
+		v, err = applyFiltersWith(v, f.Filters, vars, r.b)
 		return v, err == nil, err
 	}
 	selStr, err := applyTemplate(f.Selector, vars, nil)
@@ -768,7 +868,7 @@ func (r jsonRow) value(f SelectorField, vars *tmplVars) (string, bool, error) {
 			return "", false, nil
 		}
 	}
-	val, err = applyFilters(val, f.Filters, vars)
+	val, err = applyFiltersWith(val, f.Filters, vars, r.b)
 	if err != nil {
 		return "", false, err
 	}

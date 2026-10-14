@@ -225,6 +225,12 @@ func TestArrAPIForOverseerr(t *testing.T) {
 	if cmd := obj(arrCall(t, "POST", sonarr+"/command", key, map[string]any{"name": "SeriesSearch", "seriesId": seriesID}, http.StatusCreated)); cmd["status"] == nil {
 		t.Fatalf("command: %v", cmd)
 	}
+	// One command may name at most 200 titles.
+	many := make([]int64, 201)
+	for i := range many {
+		many[i] = int64(i + 1)
+	}
+	arrCall(t, "POST", sonarr+"/command", key, map[string]any{"name": "EpisodeSearch", "episodeIds": many}, http.StatusBadRequest)
 	waitBackground(t, server)
 	if wm := obj(arrCall(t, "GET", sonarr+"/wanted/missing?includeSeries=true", key, nil, http.StatusOK)); wm["totalRecords"] != float64(3) {
 		t.Fatalf("wanted episodes: %v", wm)

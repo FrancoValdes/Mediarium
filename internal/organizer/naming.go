@@ -126,11 +126,14 @@ const (
 const MaxNameBytes = 230
 
 // windowsReserved are the device names Windows (and SMB shares served to
-// it) refuse as a file name, with or without an extension.
+// it) refuse as a file name, with or without an extension. Windows also
+// counts the superscript digits ¹ ² ³ as digits here.
 var windowsReserved = map[string]bool{
-	"CON": true, "PRN": true, "AUX": true, "NUL": true,
+	"CON": true, "PRN": true, "AUX": true, "NUL": true, "CONIN$": true, "CONOUT$": true,
 	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true, "COM6": true, "COM7": true, "COM8": true, "COM9": true,
+	"COM¹": true, "COM²": true, "COM³": true,
 	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true, "LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
+	"LPT¹": true, "LPT²": true, "LPT³": true,
 }
 
 // Sanitize removes or replaces characters illegal in filenames on the host
@@ -138,10 +141,10 @@ var windowsReserved = map[string]bool{
 // climb out of the folder it is joined onto: path separators never survive
 // (not even inside the replacement text), and a name made only of dots and
 // spaces (".." would be the parent folder) becomes "_". The result is valid
-// UTF-8, has no trailing dots or spaces (Windows and SMB shares drop them),
-// does not start a Windows device name ("CON", "NUL"...) and is at most
-// MaxNameBytes long. An empty name stays empty: the caller decides what an
-// unnamed title is called.
+// UTF-8, has no leading or trailing dots or spaces (a leading dot hides the
+// file or folder; Windows and SMB shares drop trailing ones), does not start
+// a Windows device name ("CON", "NUL"...) and is at most MaxNameBytes long.
+// An empty name stays empty: the caller decides what an unnamed title is called.
 func Sanitize(name string, mode SanitizeMode, replacement string) string {
 	name = strings.ToValidUTF8(name, "")
 	var out string
@@ -152,6 +155,7 @@ func Sanitize(name string, mode SanitizeMode, replacement string) string {
 	default:
 		out = illegalChars.ReplaceAllString(name, "")
 	}
+	out = strings.TrimLeft(out, ". ")
 	// A device name is fixed before the cut: it adds a byte, and the cut
 	// only ever removes from the end, so the answer is the same the second time.
 	stem := out

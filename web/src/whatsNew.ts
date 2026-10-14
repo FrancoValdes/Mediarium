@@ -10,6 +10,19 @@ export interface ReleaseNotes {
 
 export const WHATS_NEW: ReleaseNotes[] = [
   {
+    version: '3.1.0',
+    items: [
+      t('Five more screen languages: Italian, Dutch, Polish, Russian and Ukrainian. Error messages and notes from the server now come in your language too.'),
+      t('Comics: .cbz, .cbr and .cb7 files open in the reader, one page or two, left to right or right to left.'),
+      t('Plan your downloads: a speed schedule by day and hour, a weekly summary message, a Quiet for a while button and a switch to start newer releases first.'),
+      t('The settings file now holds your indexers, Usenet servers, media servers and quality profiles too.'),
+      t('A Backdrops view in the calendar, a page-turn animation in the ebook reader, and an Add-ons page for the programs you run next to Mediarium.'),
+      t('A better installed app: shortcuts on the icon, a page that says when the server cannot be reached, and layouts for tablets and foldables.'),
+      t('Send indexer traffic through the VPN, pick a book by hand when it is not found, and replace a movie with a smaller version.'),
+      t('Movies and shows can have their own default quality profile, and each season has its own Find missing button.'),
+    ],
+  },
+  {
     version: '3.0.4',
     items: [
       t('Transmission works as a download client (Settings > Downloading > Torrents).'),

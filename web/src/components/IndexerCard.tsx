@@ -7,7 +7,7 @@ import SeedRules from './SeedRules'
 import { useToast } from './Toast'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
 import { apiKey as apiKeyCheck, firstError, maxLength, required, url as urlCheck } from '../validate'
-import { plural, t } from '../i18n'
+import { plural, t, st } from '../i18n'
 import { untilText } from '../delayText'
 import TipLabel from './TipLabel'
 
@@ -152,7 +152,7 @@ export default function IndexerCard({ indexer: i, onChanged, onToggle, onRemove 
 
       {result && (
         <div className={`indexer-result ${result.ok ? 'ok' : 'bad'}`}>
-          <Icon name={result.ok ? 'check' : 'warning'} size={14} /> {result.message}
+          <Icon name={result.ok ? 'check' : 'warning'} size={14} /> {st(result.message)}
         </div>
       )}
 

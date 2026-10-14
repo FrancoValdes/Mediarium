@@ -73,6 +73,11 @@ type requestInfo struct {
 // second click must not answer the same request again.
 var requestsMu sync.Mutex
 
+// fileRequestMu makes new requests take turns between the duplicate and
+// quota checks and saving the request. It is separate from requestsMu so a
+// slow approval doesn't hold up people asking for titles.
+var fileRequestMu sync.Mutex
+
 // describeRequest works out what a request is for, from the add it carries.
 func (s *Server) describeRequest(ctx context.Context, kind string, body []byte) (requestInfo, error) {
 	switch kind {
@@ -207,25 +212,13 @@ func (s *Server) fileRequest(w http.ResponseWriter, r *http.Request, kind string
 		return
 	}
 	by, byline := requester(r)
-	mine, err := s.Requests.List(by)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	key := requestKey(kind, string(body))
-	for _, x := range mine {
-		if x.Status == requests.Pending && x.Kind == kind && key != "" && requestKey(x.Kind, x.Payload) == key {
-			writeError(w, http.StatusConflict, "You already asked for "+info.title+". An administrator will look at it.")
-			return
-		}
-	}
-	if q := s.requestQuota(by); q.Limit > 0 && q.Left == 0 {
-		writeError(w, http.StatusTooManyRequests, quotaRefusal(q, time.Now()))
-		return
-	}
-	req, err := s.Requests.Create(requests.Request{Kind: kind, Title: info.title, Year: info.year, Poster: info.poster, Payload: string(body), RequestedBy: by, FourK: fourK})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	// The duplicate check, the quota and the new request go together, so many
+	// requests sent at once can't all slip past the checks. The slow lookup
+	// above stays outside.
+	fileRequestMu.Lock()
+	req, ok := s.checkAndFileRequest(w, kind, string(body), info, by, fourK)
+	fileRequestMu.Unlock()
+	if !ok {
 		return
 	}
 	name := requestName(req)
@@ -235,6 +228,33 @@ func (s *Server) fileRequest(w http.ResponseWriter, r *http.Request, kind string
 	_ = s.QueueRepo.LogActivity(0, "added", fmt.Sprintf("Asked for %s%s", name, byline))
 	s.notifyEvent("request", "New request: "+name, fmt.Sprintf("%s asked for %s. Approve or decline it under Activity > Requests.", strings.TrimPrefix(byline, " by "), name))
 	writeJSON(w, http.StatusAccepted, map[string]any{"requested": true, "request": req, "message": "Sent to an administrator. You'll see the answer under Activity > Requests."})
+}
+
+// checkAndFileRequest refuses a request the person already sent, or one over
+// their quota, and otherwise saves it. The caller holds fileRequestMu.
+func (s *Server) checkAndFileRequest(w http.ResponseWriter, kind, body string, info requestInfo, by int64, fourK bool) (requests.Request, bool) {
+	mine, err := s.Requests.List(by)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return requests.Request{}, false
+	}
+	key := requestKey(kind, body)
+	for _, x := range mine {
+		if x.Status == requests.Pending && x.Kind == kind && key != "" && requestKey(x.Kind, x.Payload) == key {
+			writeError(w, http.StatusConflict, "You already asked for "+info.title+". An administrator will look at it.")
+			return requests.Request{}, false
+		}
+	}
+	if q := s.requestQuota(by); q.Limit > 0 && q.Left == 0 {
+		writeError(w, http.StatusTooManyRequests, quotaRefusal(q, time.Now()))
+		return requests.Request{}, false
+	}
+	req, err := s.Requests.Create(requests.Request{Kind: kind, Title: info.title, Year: info.year, Poster: info.poster, Payload: body, RequestedBy: by, FourK: fourK})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return requests.Request{}, false
+	}
+	return req, true
 }
 
 func requestName(r requests.Request) string {

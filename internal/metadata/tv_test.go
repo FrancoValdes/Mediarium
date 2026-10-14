@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/rdborg/mediarium/internal/metadata"
@@ -102,5 +103,36 @@ func TestGetShowEpisodesSeasonFailurePropagates(t *testing.T) {
 	c := metadata.NewWithBaseURL("k", srv.URL)
 	if _, _, err := c.GetShowEpisodes(context.Background(), 5); err == nil {
 		t.Fatal("expected a season fetch failure to fail the whole call rather than silently return a partial episode list")
+	}
+}
+
+// A season TMDB lists twice is read once, and a show can't list endless seasons.
+func TestGetShowEpisodesDedupesAndCapsSeasons(t *testing.T) {
+	var seasons []map[string]any
+	for i := 0; i < 3; i++ {
+		seasons = append(seasons, map[string]any{"season_number": 1})
+	}
+	for n := 2; n < 1000; n++ {
+		seasons = append(seasons, map[string]any{"season_number": n})
+	}
+	var calls atomic.Int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("/tv/7", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": 7, "name": "Long", "seasons": seasons})
+	})
+	mux.HandleFunc("/tv/7/season/", func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		json.NewEncoder(w).Encode(map[string]any{"episodes": []map[string]any{{"episode_number": 1, "name": "One"}}})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := metadata.NewWithBaseURL("k", srv.URL)
+	_, eps, err := c.GetShowEpisodes(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n != 200 || len(eps) != 200 || eps[0].Season != 1 || eps[1].Season != 2 {
+		t.Fatalf("%d season requests, %d episodes", n, len(eps))
 	}
 }

@@ -22,6 +22,8 @@ type legacyShow struct {
 	TMDBID   int
 	Location string // the show's folder as the app sees it
 	Paused   bool
+	// Err is set when the show's details could not be read: it is skipped.
+	Err string
 }
 
 // planLegacyShows adds the shows of app (Medusa or SickChill) to the plan.
@@ -33,7 +35,7 @@ func (im *Importer) planLegacyShows(ctx context.Context, p *plan, tp *TitlesPrev
 		sem = make(chan struct{}, lookupWorkers)
 	)
 	for i, s := range shows {
-		if s.TMDBID > 0 || s.TVDBID <= 0 {
+		if s.TMDBID > 0 || s.TVDBID <= 0 || s.Err != "" {
 			tmdbIDs[i] = s.TMDBID
 			continue
 		}
@@ -55,6 +57,8 @@ func (im *Importer) planLegacyShows(ctx context.Context, p *plan, tp *TitlesPrev
 		}
 		_, exists := st.series[item.TMDBID]
 		switch {
+		case s.Err != "":
+			item.Action, item.Reason = ActionSkip, fmt.Sprintf("couldn't read it from %s: %s", app, s.Err)
 		case lookupErrs[i] != nil:
 			item.Action, item.Reason = ActionSkip, "TMDB lookup failed: "+lookupErrs[i].Error()
 		case item.TMDBID == 0 && s.TVDBID > 0:
@@ -72,6 +76,11 @@ func (im *Importer) planLegacyShows(ctx context.Context, p *plan, tp *TitlesPrev
 		default:
 			item.Action, item.Reason = ActionAdd, "the episode files in its folder are linked where they are"
 		}
+		var bad string
+		if item.FolderFound {
+			bad = titleFolderProblem(folder, st.libraryRoots)
+			noteFolderProblem(&item, bad)
+		}
 		if item.Action == ActionAdd && s.Paused {
 			item.Reason += "; paused in " + app + ", so added unmonitored"
 		}
@@ -82,10 +91,11 @@ func (im *Importer) planLegacyShows(ctx context.Context, p *plan, tp *TitlesPrev
 		var stats arrSeriesStats
 		stats.EpisodeFileCount = -1
 		p.series = append(p.series, seriesPlan{
-			item:   item,
-			series: arrSeries{Title: s.Title, Year: s.Year, TVDBID: s.TVDBID, TMDBID: item.TMDBID, Monitored: !s.Paused, Path: s.Location, Statistics: stats},
-			folder: folder,
-			app:    app,
+			item:      item,
+			series:    arrSeries{Title: s.Title, Year: s.Year, TVDBID: s.TVDBID, TMDBID: item.TMDBID, Monitored: !s.Paused, Path: s.Location, Statistics: stats},
+			folder:    folder,
+			folderBad: bad,
+			app:       app,
 		})
 	}
 }

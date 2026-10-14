@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { api } from '../api'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
 import { USENET_PROVIDERS } from '../usenetProviders'
 import Icon from './Icon'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
@@ -199,7 +199,7 @@ export default function UsenetServerForm({
       )}
       {test.forKey === detailsKey && test.state === 'fail' && (
         <div className="test-result fail">
-          <Icon name="warning" size={15} /> {test.message}
+          <Icon name="warning" size={15} /> {st(test.message)}
         </div>
       )}
     </div>

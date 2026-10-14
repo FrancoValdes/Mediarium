@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rdborg/mediarium/internal/netguard"
 )
@@ -140,13 +141,28 @@ func newPushSender(raw string) (*PushSender, error) {
 type pushPayload struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
-	URL   string `json:"url"`
+	URL   string `json:"url,omitempty"`
 	Tag   string `json:"tag,omitempty"`
 }
 
 // maxPushPayload keeps the encrypted message under the 4 KB push services
 // accept.
 const maxPushPayload = 3000
+
+// maxPushTitle is the most bytes of a title sent in a push message; phones
+// show only one line of it anyway.
+const maxPushTitle = 200
+
+// cutText shortens s to at most max bytes without splitting a character.
+func cutText(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
+	}
+	return s[:max]
+}
 
 func (s *PushSender) Send(ctx context.Context, ev Event) error {
 	if s.VAPID == nil || s.VAPID.Private == nil {
@@ -161,14 +177,16 @@ func (s *PushSender) Send(ctx context.Context, ev Event) error {
 		}
 		body = b.String()
 	}
-	link := "/"
+	// With no link the browser's worker opens Mediarium's own start page; "/"
+	// would be the domain root, another app when Mediarium runs under a URL base.
+	link := ""
 	if u, err := url.Parse(ev.LinkURL); err == nil && strings.HasPrefix(u.Path, "/") {
 		link = u.Path
 	}
-	p := pushPayload{Title: ev.Title, Body: body, URL: link, Tag: ev.Type}
+	p := pushPayload{Title: cutText(ev.Title, maxPushTitle), Body: body, URL: link, Tag: ev.Type}
 	raw, _ := json.Marshal(p)
 	for len(raw) > maxPushPayload && len(p.Body) > 0 {
-		p.Body = p.Body[:len(p.Body)*3/4]
+		p.Body = cutText(p.Body, len(p.Body)*3/4)
 		raw, _ = json.Marshal(p)
 	}
 	enc, err := encryptPush(raw, s.Sub)

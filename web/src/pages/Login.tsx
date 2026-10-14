@@ -10,6 +10,7 @@ import { titleFor } from '../documentTitle'
 import { required } from '../validate'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
 import { LANGUAGES, chooseLanguage, currentLanguage, plural, t, tx, type Lang } from '../i18n'
+import { withBase } from '../base'
 
 // Reads the problem code from the address and takes it out again, so a reload doesn't show it twice.
 function takeSignInError(): string {
@@ -132,7 +133,7 @@ export default function Login() {
           <div className="auth-alt">
             {showForm && <span className="auth-or">{t('or')}</span>}
             {methods.oidc && (
-              <a className="btn auth-alt-btn" href="/api/auth/oidc/start">
+              <a className="btn auth-alt-btn" href={withBase('/api/auth/oidc/start')}>
                 {t('Sign in with {name}', { name: methods.oidc.name })}
               </a>
             )}

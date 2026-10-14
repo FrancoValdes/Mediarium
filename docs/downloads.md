@@ -204,6 +204,9 @@ Downloads run in a line. **Downloads at the same time** (Settings > Downloading 
 
 - **A download keeps its place for the whole trip:** downloading, repairing (PAR2), unpacking and moving into your library. When it's done, or fails, the next one in line starts. A failed download waits in Activity to retry and doesn't stop the line.
 - **Releases that cannot be finished stop early:** Usenet posts lose articles over time. If articles are missing on all your servers and the release has no PAR2 repair files, or too few to rebuild what is gone, Mediarium stops at once instead of downloading the rest. The release goes on the blocklist and, when automation is on, the next-best release is tried. The reason shows in Activity and in Logs and errors as "Parts of a download are missing". A second Usenet provider from a different company often has the missing pieces.
+- **Damaged articles are fetched again:** an article whose checksum doesn't match what it says was damaged on the way, so it is asked from your next Usenet server, and counts as missing when no server has a good copy.
+- **One connection failing is not the end:** when a connection to your last (or only) Usenet server keeps failing while the others work, it waits a little and tries again. The download only fails when every connection to the server is failing.
+- **An indexer limit doesn't blocklist anything:** when the indexer sends something other than an NZB file (its "request limit reached" answer, a sign-in or maintenance page), the download fails with that reason, but the release is not put on the blocklist and no other release is grabbed from it in a hurry.
 - **Obfuscated releases:** many releases are posted with random file names (`wFvDJHhDrbESDBLq.mkv`, `-Bz4tuzCT0GRU49jgjrQx.par2`). Before repairing, Mediarium reads the real names from the PAR2 files, which also hold a fingerprint of the start of each file, and gives every matching file its real name back. Repair, unpacking and import then work as with any other release. par2 is also given every file in the download, so it finds the data and recovery files whatever they're called. When a release truly can't be repaired, the reason says how many recovery blocks are short.
 - **Folders Mediarium can't write to are caught first:** before a download starts, Mediarium checks it may write to the folder the file will go in (or the closest folder above it that exists). If not, nothing is downloaded and the reason says which folder and why, instead of finding out after the whole download.
 - **A torrent that's only seeding after it was imported doesn't hold a place.** The next download starts while it seeds.
@@ -211,7 +214,11 @@ Downloads run in a line. **Downloads at the same time** (Settings > Downloading 
 - **Paused and stopped downloads don't hold a place.** **Resume** puts a paused download back at the front of its group, and it starts when a place is free.
 - **Changing the number.** Raising it starts waiting downloads at once. Lowering it never stops a running download. The running ones finish, and nothing new starts until fewer than the new number are running.
 - **After a restart** the downloads that were waiting are still waiting and start about a minute after Mediarium starts. A download that was running comes back paused (see [Activity](activity.md#after-a-restart)).
-- **Safe mode** (`MEDIARIUM_PAUSE_AUTOMATION`) starts nothing by itself. Waiting downloads come back paused, and a download you start yourself still runs.
+- **Safe mode** (`MEDIARIUM_PAUSE_AUTOMATION`) starts nothing by itself. Waiting downloads come back paused, and a download you start yourself still runs. The download line and the speed schedule are still checked every minute, so a download you started outside the download hours begins when they do, and the speed limit follows its schedule.
+
+### Newer releases first
+
+Tick **Start newer releases first** (under **Downloads at the same time**) and, among the downloads Mediarium found by itself, the movie that came out most recently, or the episode that aired most recently, starts first. Older ones wait their turn. It is off by default: the line is first come, first served. What you started by hand, and what you moved to the front of the line, still go before everything else, and a download you resume goes back to the front of its group whatever its date. A download with no date (a season pack, an album, a book) counts as if it came out the day it was added, so it takes its turn instead of waiting behind every newer release that comes along. Stored as `downloads.newest_first`; scripts use `newestFirst` in `PUT /api/settings`.
 
 ### Limits on the automatic searches
 
@@ -245,7 +252,7 @@ With the switch off, the release is treated like any other. Stored as `downloads
 
 ### Password-protected downloads
 
-Some releases are RAR or 7z archives with a password. Mediarium reads the password the way NZBGet and SABnzbd do: from the NZB file itself (its `password` entry), or from the release name when it ends in `{{password}}`, for example `My.Movie.2024{{secret}}`. It is kept in the download's own folder until the download is imported, never shown in the activity or the logs. If there is no password, or it is wrong, the download fails with "password protected" and the release goes on the blocklist like any other bad release. ZIP files with a password are not supported yet.
+Some releases are RAR, 7z or ZIP archives with a password. Mediarium reads the password the way NZBGet and SABnzbd do: from the NZB file itself (its `password` entry), or from the release name when it ends in `{{password}}`, for example `My.Movie.2024{{secret}}`. It is kept in the download's own folder until the download is imported, never shown in the activity or the logs. If there is no password, or it is wrong, the download fails with "password protected" and the release goes on the blocklist like any other bad release. A ZIP with a password is opened with the same `7z` tool that opens 7z archives, so it needs that tool (it is in the Docker image). While `7z` runs, the password is on its command line, so a program that can list the processes in the container can see it for that time.
 
 ### Skipping duplicates
 
@@ -288,6 +295,10 @@ Things to know:
 
 A torrent that gets no data at all for 2 hours counts as stalled: usually no one is sharing it any more. In a download client (qBittorrent and the like) or on a debrid service the wait is 6 hours. Mediarium stops it, puts the release on the blocklist and, when automation is on, looks for another release, the same as for a broken Usenet post. Activity shows the reason.
 
+A magnet link first needs a peer to send the torrent's details (its file list). In the built-in client, a magnet whose details don't arrive within 10 minutes is treated the same way: dead, blocklisted, and the next release is tried. It no longer holds its place in the line for good.
+
+Not every stop is the release's fault, and those never go on the blocklist: a disk that refuses the data (full, or not writable) stops the torrent at once with that reason, and when the VPN connection a torrent runs through is replaced or closed (another server chosen, or Disconnect pressed), the torrent is stopped with "the VPN connection changed". Press **Retry** to carry on through the current connection.
+
 The times can be changed under **Settings > Downloading > Torrents > Stalled torrents**, in **Give up on a torrent that gets no data for**: 1 hour to 72 hours, **never**, or the usual time. One choice covers the built-in client, download clients and debrid services (`torrentStallHours` in `PUT /api/settings`; `downloads.stall_hours`; absent or -1 is the usual time, 0 is never).
 
 A torrent you want to give up on sooner can be dealt with by hand on **Activity > Download clients**: **Give up and search again** blocklists the release, removes the torrent and its files and searches for another.
@@ -296,9 +307,20 @@ A torrent you want to give up on sooner can be dealt with by hand on **Activity 
 
 **Settings > Downloading > Download rules** has a **Speed, hours and free space** box:
 
-- **Limit download speed to** caps Usenet and torrents together (no limit by default; 1 to 100 MB/s). Tick **Only from ... to ...** to apply it only between two hours, for example from 8:00 to 23:00 so downloads run at full speed at night. The hours are server time and may cross midnight (22:00 to 6:00). Running downloads follow a change at once. The built-in torrent client has its own upload limit, which uses the same hours (see [Speed limits](#speed-limits)). Stored as `downloads.speed_limit_mb` and `downloads.speed_limit_hours` ("8-23"); scripts use `speedLimitMB` and `speedLimitHours` in `PUT /api/settings`.
+- **Limit download speed to** caps Usenet, torrents and files brought home from a debrid service together (no limit by default; 1 to 100 MB/s). Tick **Only from ... to ...** to apply it only between two hours, for example from 8:00 to 23:00 so downloads run at full speed at night. The hours are server time and may cross midnight (22:00 to 6:00). Running downloads follow a change at once. The built-in torrent client has its own upload limit, which uses the same hours (see [Speed limits](#speed-limits)). Stored as `downloads.speed_limit_mb` and `downloads.speed_limit_hours` ("8-23"); scripts use `speedLimitMB` and `speedLimitHours` in `PUT /api/settings`.
 - **Only start downloads from ... to ...** (off by default) sets the hours new downloads may start, for example from 1:00 to 7:00 to download only at night. Outside them, grabbed releases wait in line and start by themselves when the window opens; a download that is already running finishes. Server time, and it may cross midnight. Stored as `downloads.hours` ("1-7"); scripts use `downloadHours` in `PUT /api/settings` ("" for any time).
 - **Keep at least ... free in the downloads folder** (5 GB by default, or no minimum): with less free space than that, no new download starts. Running downloads carry on, the rest wait in line and start by themselves once there is room, and Logs and errors says why ("Downloads are waiting: the disk is nearly full"). Stored as `downloads.min_free_gb`; scripts use `minFreeGB`.
+
+## Speed schedule
+
+For a limit that changes by day and hour, use **Settings > Downloading > Download rules > Speed schedule**. Each line has the days it counts for (all seven by default; press a day to leave it out), a start and an end hour, and a speed (or **no limit**). For example, a line for the weekday evenings at 2 MB/s while people watch, and a line for 0:00 to 7:00 with no limit.
+
+- The first line that fits the moment sets the limit. When no line fits, the plain limit above is used.
+- A line that goes past midnight (22:00 to 6:00) belongs to the day it starts on, so a Friday line also covers early Saturday.
+- The same hour twice (for example 0:00 to 0:00) means the whole day.
+- The schedule sets the download limit only. The upload limit of the built-in torrent client follows the plain limit's hours.
+- The schedule is checked every minute, so a new hour's limit applies within a minute of the hour.
+- Up to 14 lines. Hours are server time. Stored as `downloads.speed_schedule`; scripts and the [settings file](config-file.md) use `speedSchedule`, a list of `days` (0 is Sunday), `from`, `to` and `limitMB`.
 
 ## Pausing and stopping
 

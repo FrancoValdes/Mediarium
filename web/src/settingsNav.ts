@@ -25,6 +25,7 @@ export const SETTINGS_NAV: { to: string; label: string; icon: IconName; color: s
   { to: '/settings/media-servers', label: t('Media servers'), icon: 'monitor', color: '#f2c14e', blurb: t('Plex, Jellyfin and the rest: scan after a download and link to them.'), help: 'media-servers' },
   { to: '/settings/notifications', label: t('Notifications'), icon: 'mail', color: '#f7b27a', blurb: t('Messages when something is added, downloaded or goes wrong.'), help: 'notifications' },
   { to: '/settings/other-apps', label: t('Other apps'), icon: 'server', color: '#9fd4a8', blurb: t('Let Overseerr, Homepage and phone apps talk to Mediarium.'), help: 'media-servers#overseerr-dashboards-and-phone-apps' },
+  { to: '/settings/addons', label: t('Add-ons'), icon: 'grid', color: '#9fd4a8', blurb: t('Other programs you run next to Mediarium, with a link to each.'), help: 'media-servers#add-ons' },
   { to: '/settings/profile', label: t('Your profile'), icon: 'user', color: '#8fb8f5', blurb: t('Your name, email and password, and the messages you get about your requests.'), member: true },
   { to: '/settings/security', label: t('Security'), icon: 'shield', color: '#8fb8f5', blurb: t('Passkeys, two-step sign-in, a linked single sign-on account and your API keys.'), member: true, help: 'accounts#two-step-sign-in' },
   { to: '/settings/services', label: t('Linked services'), icon: 'external', color: '#8fb8f5', blurb: t('Your Plex watchlist, ListenBrainz and your e-reader.'), member: true, notViewer: true },
@@ -74,7 +75,7 @@ const GROUPS: { key: string; label: string; icon: IconName; color: string; pages
   { key: 'indexers', label: t('Indexers & Search'), icon: 'search', color: '#a5b4fc', pages: ['/settings/indexers'] },
   { key: 'downloads', label: tc('section', 'Downloading'), icon: 'download', color: '#86dca4', pages: ['/settings/usenet', '/settings/torrents', '/settings/vpn', '/settings/download-rules'] },
   { key: 'metadata', label: t('Info, lists and subtitles'), icon: 'globe', color: '#c1acf7', pages: ['/settings/metadata', '/settings/lists', '/settings/subtitles'] },
-  { key: 'connections', label: t('Connections'), icon: 'monitor', color: '#f2c14e', pages: ['/settings/media-servers', '/settings/notifications', '/settings/other-apps'] },
+  { key: 'connections', label: t('Connections'), icon: 'monitor', color: '#f2c14e', pages: ['/settings/media-servers', '/settings/notifications', '/settings/other-apps', '/settings/addons'] },
   { key: 'profile', label: t('Account & Access'), icon: 'user', color: '#8fb8f5', pages: ['/settings/profile', '/settings/security', '/settings/services', '/settings/accounts', '/settings/requests', '/settings/sign-in'] },
   { key: 'system', label: t('System'), icon: 'hard', color: '#b4bfcc', pages: ['/settings/system', '/settings/backup', '/settings/statistics', '/settings/logs', '/settings/migrate', '/settings/about'] },
 ]

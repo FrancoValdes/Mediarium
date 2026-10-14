@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type ClientTorrent, type ClientTorrentsAnswer, type DebridTorrent, type DebridTorrentsAnswer } from '../api'
 import { formatBytes, timeAgo } from '../format'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
 import { etaText } from '../transferRate'
 import { useLive } from '../useLive'
 import ActionMenu from './ActionMenu'
@@ -66,7 +66,7 @@ function ClientSection({ data, scope, setScope, reload }: { data: ClientTorrents
           </button>
         </div>
       </div>
-      {data.error && <p className="error-text">{data.error}</p>}
+      {data.error && <p className="error-text">{st(data.error)}</p>}
       {!data.error && data.torrents.length === 0 && <p className="hint">{scope === 'mine' ? t('Nothing from Mediarium is in {name} right now.', { name: label }) : t('{name} has no torrents.', { name: label })}</p>}
       {data.torrents.map((tor) => (
         <TorrentRow key={tor.hash} tor={tor} label={label} reload={reload} />
@@ -232,7 +232,7 @@ function DebridSection({ data, reload }: { data: { label?: string; error?: strin
         <h2>{label}</h2>
         <span>{data.torrents.length === 1 ? t('1 torrent') : t('{n} torrents', { n: data.torrents.length })}</span>
       </div>
-      {data.error && <p className="error-text">{data.error}</p>}
+      {data.error && <p className="error-text">{st(data.error)}</p>}
       {!data.error && data.torrents.length === 0 && <p className="hint">{t('{name} has no torrents.', { name: label })}</p>}
       {data.torrents.map((d) => (
         <div key={d.id} className={`qrow st-${d.stage === 'downloading' ? 'downloading' : d.stage === 'problem' ? 'failed' : 'queued'} kind-movie`}>

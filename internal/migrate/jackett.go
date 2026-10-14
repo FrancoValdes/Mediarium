@@ -144,6 +144,7 @@ func (im *Importer) planJackettIndexer(ctx context.Context, d *jackettData, x ja
 			ipl.secret = sum.IsSecret
 		}
 		ipl.item = item
+		skipBadIndexer(&ipl)
 		return ipl
 	}
 
@@ -167,5 +168,6 @@ func (im *Importer) planJackettIndexer(ctx context.Context, d *jackettData, x ja
 		ipl.inst = indexers.Instance{Name: name, Kind: indexers.KindTorznab, BaseURL: addr, APIKey: d.Key, Protocol: indexers.ProtocolTorrent, Enabled: true}
 	}
 	ipl.item = item
+	skipBadIndexer(&ipl)
 	return ipl
 }

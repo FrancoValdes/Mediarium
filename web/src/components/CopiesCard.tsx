@@ -5,7 +5,7 @@ import { formatBytes } from '../format'
 import { useConfirm } from './ConfirmProvider'
 import Icon from './Icon'
 import { useToast } from './Toast'
-import { plural, t, tx } from '../i18n'
+import { plural, t, tx, st } from '../i18n'
 
 // Second copies of a movie or show: the same title kept again in another
 // quality (a 4K copy next to the 1080p one), each downloaded into the copies
@@ -59,7 +59,7 @@ export default function CopiesCard({ kind, id, admin }: { kind: 'movie' | 'serie
   async function searchNow(copyId: number) {
     try {
       const r = kind === 'movie' ? await api.searchNowMovie(copyId) : await api.searchNowSeries(copyId)
-      toast.info(r.message)
+      toast.info(st(r.message))
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

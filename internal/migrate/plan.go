@@ -4,15 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/rdborg/mediarium/internal/download"
 	"github.com/rdborg/mediarium/internal/indexers"
+	"github.com/rdborg/mediarium/internal/inputcheck"
 	"github.com/rdborg/mediarium/internal/library"
 	"github.com/rdborg/mediarium/internal/quality"
 )
@@ -85,16 +89,18 @@ func (im *Importer) fetch(ctx context.Context, src Sources) snapshot {
 }
 
 type moviePlan struct {
-	item   TitleItem
-	movie  arrMovie
-	folder string
+	item      TitleItem
+	movie     arrMovie
+	folder    string
+	folderBad string // why folder can't be the movie's own: its files aren't linked
 }
 
 type seriesPlan struct {
-	app    string // the app it came from, "" = Sonarr
-	item   TitleItem
-	series arrSeries
-	folder string
+	app       string // the app it came from, "" = Sonarr
+	item      TitleItem
+	series    arrSeries
+	folder    string
+	folderBad string // why folder can't be the show's own: its files aren't linked
 }
 
 type indexerPlan struct {
@@ -130,8 +136,13 @@ type state struct {
 	servers     []download.StoredClient
 	profiles    []quality.Profile
 	defaultName string
-	moviesRoot  string
-	tvRoot      string
+	// defaultTVName is the default profile's name for shows.
+	defaultTVName string
+	moviesRoot    string
+	tvRoot        string
+	// libraryRoots are the library folders of Mediarium and of the other
+	// apps (as Mediarium sees them): never one title's own folder.
+	libraryRoots []string
 }
 
 func (im *Importer) loadState() (state, error) {
@@ -164,6 +175,16 @@ func (im *Importer) loadState() (state, error) {
 		for _, p := range st.profiles {
 			if p.ID == def {
 				st.defaultName = p.Name
+			}
+		}
+	}
+	st.defaultTVName = st.defaultName
+	if im.deps.DefaultTVProfileID != nil {
+		if def := im.deps.DefaultTVProfileID(); def != 0 {
+			for _, p := range st.profiles {
+				if p.ID == def {
+					st.defaultTVName = p.Name
+				}
 			}
 		}
 	}
@@ -230,6 +251,17 @@ func (im *Importer) plan(ctx context.Context, snap snapshot, opts Options) (*pla
 		p.preview.PathMap = []PathMapping{}
 	}
 	p.preview.SuggestedPathMap = append(p.preview.SuggestedPathMap, suggested...)
+	st.libraryRoots = []string{st.moviesRoot, st.tvRoot}
+	allRoots := []map[string][]string{radarrRoots, sonarrRoots}
+	for _, roots := range legacyRoots {
+		allRoots = append(allRoots, roots)
+	}
+	for _, roots := range allRoots {
+		for r := range roots {
+			mapped, _ := translate(r, effective)
+			st.libraryRoots = append(st.libraryRoots, mapped)
+		}
+	}
 
 	seenServers := knownServers(st)
 	seenIdx := knownIndexers(st)
@@ -328,10 +360,15 @@ func (im *Importer) planMovies(p *plan, tp *TitlesPreview, d *radarrData, st sta
 		default:
 			item.Action, item.Reason = ActionAdd, "Radarr has no file for it yet: added as wanted, no search is started"
 		}
+		var bad string
+		if m.HasFile && item.FolderFound && !(exists && existing.Status == library.StatusDownloaded) {
+			bad = titleFolderProblem(folder, st.libraryRoots)
+			noteFolderProblem(&item, bad)
+		}
 		libraryNote(&item, st.moviesRoot, "movies")
 		tp.Summary.count(item.Action)
 		tp.Items = append(tp.Items, item)
-		p.movies = append(p.movies, moviePlan{item: item, movie: m, folder: folder})
+		p.movies = append(p.movies, moviePlan{item: item, movie: m, folder: folder, folderBad: bad})
 	}
 }
 
@@ -366,7 +403,7 @@ func (im *Importer) planSeries(ctx context.Context, p *plan, tp *TitlesPreview, 
 	for _, s := range d.Series {
 		titles[s.QualityProfileID]++
 	}
-	choice, list := mapProfiles("sonarr", d.Profiles, st.profiles, st.defaultName, override, titles)
+	choice, list := mapProfiles("sonarr", d.Profiles, st.profiles, st.defaultTVName, override, titles)
 	tp.Profiles = list
 	p.profiles = append(p.profiles, list...)
 
@@ -433,10 +470,15 @@ func (im *Importer) planSeries(ctx context.Context, p *plan, tp *TitlesPreview, 
 		default:
 			item.Action, item.Reason = ActionAdd, "Sonarr has no episode files for it yet: added, no search is started"
 		}
+		var bad string
+		if hasFiles && item.FolderFound {
+			bad = titleFolderProblem(folder, st.libraryRoots)
+			noteFolderProblem(&item, bad)
+		}
 		libraryNote(&item, st.tvRoot, "TV")
 		tp.Summary.count(item.Action)
 		tp.Items = append(tp.Items, item)
-		p.series = append(p.series, seriesPlan{item: item, series: s, folder: folder})
+		p.series = append(p.series, seriesPlan{item: item, series: s, folder: folder, folderBad: bad})
 	}
 }
 
@@ -541,7 +583,46 @@ func (im *Importer) planIndexer(ctx context.Context, x prowlarrIndexer, d *prowl
 		item.Reason = strings.Join(notes, "; ")
 	}
 	ipl.item = item
+	skipBadIndexer(&ipl)
 	return ipl
+}
+
+// indexerProblem checks an indexer an import would add with the same rules as
+// adding one by hand: a name of sane length, an http or https address with no
+// login in it, a key and settings that look like ones. "" when it's fine.
+// The address itself is never repeated, as it may carry a key.
+func indexerProblem(inst indexers.Instance) string {
+	if utf8.RuneCountInString(inst.Name) > 80 || strings.IndexFunc(inst.Name, unicode.IsControl) >= 0 {
+		return "its name is too long or has hidden characters in it"
+	}
+	addr := strings.TrimSpace(inst.BaseURL)
+	if addr == "" || len(addr) > 2000 || strings.IndexFunc(addr, unicode.IsControl) >= 0 ||
+		inputcheck.HTTPURL(addr, "https://api.example.com", true) != "" {
+		return "its address isn't a usable http or https web address"
+	}
+	if u, err := url.Parse(addr); err != nil || u.User != nil {
+		return "its address has a username or password in it, which Mediarium doesn't send"
+	}
+	if inputcheck.APIKey(inst.APIKey) != "" {
+		return "its API key doesn't look like one"
+	}
+	for name, v := range inst.Settings {
+		if strings.ContainsRune(v, 0) || len(v) > 8000 {
+			return fmt.Sprintf("its setting %q is too long or has hidden characters in it", name)
+		}
+	}
+	return ""
+}
+
+// skipBadIndexer turns an indexer that would be added but fails
+// indexerProblem into a skip with the reason.
+func skipBadIndexer(ipl *indexerPlan) {
+	if ipl.item.Action != ActionAdd {
+		return
+	}
+	if problem := indexerProblem(ipl.inst); problem != "" {
+		ipl.item.Action, ipl.item.Reason = ActionSkip, problem+": add it by hand"
+	}
 }
 
 // planSiteIndexer maps an indexer Prowlarr runs from a community definition
@@ -761,8 +842,10 @@ func planServer(p *plan, sp *ServersPreview, app string, s newsServer, seen map[
 	k := serverKey{strings.ToLower(host), s.Username}
 	var notes []string
 	switch {
-	case host == "" || strings.ContainsAny(host, "/ "):
+	case host == "" || inputcheck.Host(host, "news.example.com") != "":
 		item.Action, item.Reason = ActionSkip, "no usable host name"
+	case item.Port < 1 || item.Port > 65535:
+		item.Action, item.Reason = ActionSkip, fmt.Sprintf("its port %d isn't a number between 1 and 65535", item.Port)
 	case seen[k]:
 		item.Action, item.Reason = ActionExists, "already added (same host and username)"
 	default:

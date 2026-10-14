@@ -96,7 +96,7 @@ export default function ReportDialog({ onClose, initialKind = 'problem' }: { onC
   const [error, setError] = useState('')
   const [checked, setChecked] = useState(false)
   const [sentId, setSentId] = useState('')
-  const [github, setGithub] = useState<{ reportLeftOut: boolean } | null>(null)
+  const [github, setGithub] = useState<{ withReport: boolean } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -188,12 +188,16 @@ export default function ReportDialog({ onClose, initialKind = 'problem' }: { onC
     }
   }
 
-  function openOnGitHub() {
+  async function openOnGitHub() {
     setChecked(true)
     if (problem) return
-    const { url, reportFits } = githubIssueURL({ kind, title, message, version, report: includeReport ? report : undefined })
+    // The support report is copied, not put in the link (see githubIssueURL).
+    const withReport = kind === 'problem' && includeReport && report.trim() !== ''
+    const { url } = githubIssueURL({ kind, title, message, version, report: withReport ? report : undefined })
+    const copied = withReport && (await copyText(report))
     window.open(url, '_blank', 'noopener,noreferrer')
-    setGithub({ reportLeftOut: includeReport && !reportFits })
+    setGithub({ withReport })
+    if (copied) toast.success(t('Support report copied. Paste it into the Support report box.'))
   }
 
   async function copyReport() {
@@ -247,11 +251,11 @@ export default function ReportDialog({ onClose, initialKind = 'problem' }: { onC
             </div>
             {closeButton}
           </div>
-          {github && (github.reportLeftOut || shot) && (
+          {github && (github.withReport || shot) && (
             <div className="report-steps">
-              {github.reportLeftOut && (
+              {github.withReport && (
                 <div className="report-step">
-                  <p>{t('The support report was too long to fit in the link. Copy it and paste it into the Support report box.')}</p>
+                  <p>{t('The support report is not put in the link. Paste it into the Support report box, and copy it again here if you need to.')}</p>
                   <button className="btn-with-icon" onClick={() => void copyReport()}>
                     <Icon name="copy" size={15} /> {t('Copy the support report')}
                   </button>
@@ -421,7 +425,7 @@ export default function ReportDialog({ onClose, initialKind = 'problem' }: { onC
             {t('Sending privately goes only to the developer, through mediarium.app. GitHub issues are public: check the text and the report for anything private, like folder names, before you post.')}
           </p>
           <div className="share-actions">
-            <button className="btn-with-icon" onClick={openOnGitHub} disabled={sending}>
+            <button className="btn-with-icon" onClick={() => void openOnGitHub()} disabled={sending}>
               <Icon name="github" size={15} /> {t('Open on GitHub')}
             </button>
             <button className="primary btn-with-icon" onClick={() => void sendPrivately()} disabled={sending || shotBusy || (withReport && admin && kind === 'problem' && !report && !reportError)}>

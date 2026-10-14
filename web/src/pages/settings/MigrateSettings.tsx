@@ -17,10 +17,11 @@ import Switch from '../../components/Switch'
 import { useToast } from '../../components/Toast'
 import { DOCS_URL } from '../../docs'
 import { importReason } from '../../importReasons'
-import { locale, plural, t, tx } from '../../i18n'
+import { locale, plural, t, tx, st } from '../../i18n'
 import { FieldError, FormProblem, useValidation } from '../../useValidation'
 import { apiKey as apiKeyCheck, firstError, folderPath, required, url as urlCheck } from '../../validate'
 import TipLabel from '../../components/TipLabel'
+import TypeTag from '../../components/TypeTag'
 
 interface AppDef {
   key: ArrApp
@@ -372,14 +373,14 @@ export default function MigrateSettings() {
             <div className="mig-summary">
               {titleApps.map((t) => {
                 const p = preview[t.key]
-                return p ? <TitlesCard key={t.key} label={t.label} p={p} on={include[t.toggle]} onToggle={(v) => setInclude({ ...include, [t.toggle]: v })} /> : null
+                return p ? <TitlesCard key={t.key} label={t.label} kind={t.toggle === 'movies' ? 'movie' : 'tv'} p={p} on={include[t.toggle]} onToggle={(v) => setInclude({ ...include, [t.toggle]: v })} /> : null
               })}
               {(['prowlarr', 'jackett', 'nzbhydra'] as const).map((k) => {
                 const p = preview[k]
                 if (!p) return null
                 const name = ALL_APPS.find((a) => a.key === k)!.name
                 return (
-                  <SimpleCard key={k} label={t('Indexers from {app}', { app: name })} ok={p.ok} error={p.error} summary={p.summary} on={include.indexers} onToggle={(v) => setInclude({ ...include, indexers: v })}>
+                  <SimpleCard key={k} label={t('Indexers from {app}', { app: name })} ok={p.ok} error={st(p.error)} summary={p.summary} on={include.indexers} onToggle={(v) => setInclude({ ...include, indexers: v })}>
                     {p.items.map((i) => (
                       <li key={`${i.name}-${i.baseUrl ?? ''}`}>
                         <span className={`mig-act act-${i.action}`}>{ACTION_LABEL[i.action]}</span> {i.name} <small>{i.protocol}</small>
@@ -394,7 +395,7 @@ export default function MigrateSettings() {
                 if (!p) return null
                 const name = ALL_APPS.find((a) => a.key === k)!.name
                 return (
-                  <SimpleCard key={k} label={t('Usenet servers from {app}', { app: name })} ok={p.ok} error={p.error} summary={p.summary} on={include.usenetServers} onToggle={(v) => setInclude({ ...include, usenetServers: v })}>
+                  <SimpleCard key={k} label={t('Usenet servers from {app}', { app: name })} ok={p.ok} error={st(p.error)} summary={p.summary} on={include.usenetServers} onToggle={(v) => setInclude({ ...include, usenetServers: v })}>
                     {p.items.map((s) => (
                       <li key={`${s.host}-${s.username}`}>
                         <span className={`mig-act act-${s.action}`}>{ACTION_LABEL[s.action]}</span> {s.name || s.host} <small>{s.priority === 0 ? t('main') : t('backup {n}', { n: s.priority })}</small>
@@ -409,7 +410,7 @@ export default function MigrateSettings() {
                 if (!p) return null
                 const name = k === 'overseerr' ? 'Overseerr / Jellyseerr' : 'Ombi'
                 return (
-                  <SimpleCard key={k} label={t('Requests from {app}', { app: name })} ok={p.ok} error={p.error} summary={p.summary} on={include.requests} onToggle={(v) => setInclude({ ...include, requests: v })}>
+                  <SimpleCard key={k} label={t('Requests from {app}', { app: name })} ok={p.ok} error={st(p.error)} summary={p.summary} on={include.requests} onToggle={(v) => setInclude({ ...include, requests: v })}>
                     {p.items.map((r) => (
                       <li key={`${r.mediaType}-${r.tmdbId ?? r.tvdbId}-${r.title}`}>
                         <span className={`mig-act act-${r.action}`}>{ACTION_LABEL[r.action]}</span> {r.title} {r.year ? <small>({r.year})</small> : null}
@@ -498,13 +499,13 @@ function Counts({ s }: { s: MigrateSummary }) {
   )
 }
 
-function TitlesCard({ label, p, on, onToggle }: { label: string; p: MigrateTitlesPreview; on: boolean; onToggle: (v: boolean) => void }) {
+function TitlesCard({ label, kind, p, on, onToggle }: { label: string; kind: 'movie' | 'tv'; p: MigrateTitlesPreview; on: boolean; onToggle: (v: boolean) => void }) {
   const [open, setOpen] = useState(false)
   if (!p.ok)
     return (
       <div className="mig-card bad">
         <strong>{label}</strong>
-        <p className="error-text">{p.error}</p>
+        <p className="error-text">{st(p.error)}</p>
       </div>
     )
   const skipped = p.items.filter((i) => i.action === 'skip')
@@ -523,7 +524,8 @@ function TitlesCard({ label, p, on, onToggle }: { label: string; p: MigrateTitle
         <ul className="mig-list">
           {p.items.map((i) => (
             <li key={`${i.tmdbId ?? i.tvdbId}-${i.title}`}>
-              <span className={`mig-act act-${i.action}`}>{ACTION_LABEL[i.action]}</span> {i.title} {i.year ? <small>({i.year})</small> : null}
+              <span className={`mig-act act-${i.action}`}>{ACTION_LABEL[i.action]}</span> <TypeTag kind={kind} />
+              {i.title} {i.year ? <small>({i.year})</small> : null}
               <small>
                 {' '}
                 · {plural(i.files, '{n} file', '{n} files')}
@@ -569,7 +571,7 @@ function BazarrCard({ p, on, onToggle }: { p: MigrateBazarr; on: boolean; onTogg
     return (
       <div className="mig-card bad">
         <strong>{t('Subtitle languages from Bazarr')}</strong>
-        <p className="error-text">{p.error}</p>
+        <p className="error-text">{st(p.error)}</p>
       </div>
     )
   const noEquivalent = (p.providers ?? []).filter((x) => !x.equivalent)

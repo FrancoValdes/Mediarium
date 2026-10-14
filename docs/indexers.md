@@ -34,6 +34,8 @@ While an indexer is paused:
 
 The first answer that works clears the count, and so does **Try again now**, a **Test** that passes, or editing the indexer. When a pause ends, the next search asks the indexer again; if that fails too, the next pause is longer. The pauses are kept across restarts. A search that you cancel yourself is never counted as a failure.
 
+Searches on one indexer are also spaced out, a second and a half apart (six seconds for one that recently said you made too many requests), so a search of the whole library never sends a burst. When so many searches are already lined up for an indexer that a new one would wait more than 10 minutes, the new one skips that indexer instead of waiting; this isn't counted as a failure.
+
 Scripts: `POST /api/indexers/{id}/resume` is **Try again now**; `GET /api/indexers` adds `failures`, `pausedUntil`, `pausedNote` and `pausedWhy` to a paused indexer.
 
 ## How each indexer is doing
@@ -47,7 +49,7 @@ Trackers post every new release in an IRC channel seconds after it is uploaded. 
 ## Usenet or torrent?
 
 - **Usenet**: you pay a Usenet provider for access and use an indexer to find NZBs. Downloads are a direct, encrypted connection to your provider. Nobody else sees what you fetch.
-- **Torrents**: free, but you download from (and upload to) other people. Everyone in a swarm can see your IP address. Mediarium's built-in VPN (Settings > Downloading > VPN and proxy, see [vpn.md](./vpn.md)) can hide it. Torrents can be switched off in Settings, and torrent indexers are then skipped.
+- **Torrents**: free, but you download from (and upload to) other people. Everyone in a swarm can see your IP address. Mediarium's built-in VPN (Settings > Downloading > VPN and proxy, see [vpn.md](./vpn.md)) can hide it. Torrents can be switched off in Settings, and torrent indexers are then skipped. The VPN can carry your indexer searches too ([Indexers through the VPN](./vpn.md#indexers-through-the-vpn)).
 
 ## Adding a Newznab or Torznab indexer
 
@@ -147,7 +149,7 @@ services:
 
 Then set its address in the **Cloudflare sites (optional)** section of Settings > Indexers & Search (stored as `flaresolverr.url`, `flareSolverrUrl` in `GET/PUT /api/settings`): `http://flaresolverr:8191` when both are in the same compose file, otherwise `http://<host>:8191`. With no address set, Cloudflare-protected sites fail with the message above.
 
-Cloudflare's clearance is tied to your IP address and the browser's User-Agent, so FlareSolverr should reach the internet the same way Mediarium does (same host, same VPN or none). The built-in helper of the `-full` image always does, because it runs in the same container.
+Cloudflare's clearance is tied to your IP address and the browser's User-Agent, so FlareSolverr should reach the internet the same way Mediarium does (same host, same VPN or none). The built-in helper of the `-full` image does while **Send indexer traffic through the VPN** is off, because it runs in the same container. With the switch on, Mediarium's own requests use the VPN but FlareSolverr's don't, which breaks that rule unless FlareSolverr is behind the same VPN.
 
 Technical: the `-full` image sets `BUNDLED_FLARESOLVERR=1` and runs the helper on `127.0.0.1:8191`. `GET /api/flaresolverr/status` (administrators) reports `{bundled, configured, running, version}`, and the dashboard shows a warning if the built-in helper stops answering.
 

@@ -1,10 +1,13 @@
 package subtitles
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 func srt(starts []int64, scale float64, offset int64) []byte {
@@ -35,6 +38,65 @@ func TestStampsRoundTrip(t *testing.T) {
 	}
 	if _, ok := parseStamp("nonsense"); ok {
 		t.Error("nonsense parsed")
+	}
+	if ms, ok := parseStamp("999:00:00,000"); !ok || ms != 999*3600000 {
+		t.Errorf("999 hours: %d %v", ms, ok)
+	}
+	for _, in := range []string{"1000:00:00,000", "1234567890123:00:00,000"} {
+		if _, ok := parseStamp(in); ok {
+			t.Errorf("%q parsed", in)
+		}
+	}
+	// A timing line with absurd hours is not a cue at all.
+	if got := Starts([]byte("1\n1234567890123:00:00,000 --> 1234567890123:00:01,000\nHi\n")); len(got) != 0 {
+		t.Errorf("absurd hours read as %v", got)
+	}
+}
+
+func TestAlignLimits(t *testing.T) {
+	var ref []int64
+	at := int64(5000)
+	for i := 0; i < 400; i++ {
+		ref = append(ref, at)
+		at += 1500 + int64((i*7919)%5300)
+	}
+	// Cues that start together count once.
+	var doubled []int64
+	for _, s := range ref {
+		doubled = append(doubled, s, s, s)
+	}
+	m, err := Align(srt(doubled, 1, 3000), srt(ref, 1, 0))
+	if err != nil || m.OffsetMs < -3020 || m.OffsetMs > -2980 || m.Matched < 0.95 || m.Matched > 1 {
+		t.Errorf("repeated starts: %+v %v", m, err)
+	}
+
+	// Too many cues.
+	many := make([]int64, maxAlignCues+1)
+	for i := range many {
+		many[i] = int64(i) * 2000
+	}
+	if _, err := Align(srt(many, 1, 0), srt(ref, 1, 0)); !errors.Is(err, ErrTooManyCues) {
+		t.Errorf("too many cues: %v", err)
+	}
+
+	// Under the cue cap, but so dense that every pair would vote.
+	dense := make([]int64, 9000)
+	for i := range dense {
+		dense[i] = int64(i) * 30
+	}
+	start := time.Now()
+	if _, err := Align(srt(dense, 1, 0), srt(dense, 1, 0)); !errors.Is(err, ErrTooManyCues) {
+		t.Errorf("dense: %v", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("refusing a dense pair took %v", d)
+	}
+
+	// A cancelled request stops the work.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := AlignContext(ctx, srt(ref, 1, 0), srt(ref, 1, 0)); !errors.Is(err, context.Canceled) {
+		t.Errorf("cancelled: %v", err)
 	}
 }
 

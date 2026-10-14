@@ -10,7 +10,7 @@ import ViewerNotice from './ViewerNotice'
 import { MusicFallback } from './PosterCard'
 import { useToast } from './Toast'
 import { useFocusTrap } from '../useFocusTrap'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
 
 // What was picked on Discover: a whole artist, or one album (which may belong
 // to an artist that is already in the library).
@@ -83,7 +83,7 @@ function AddMusicForm({ target, onClose, onAdded }: { target: AddMusicTarget; on
           albumTitle: albumOnly ? item.title : undefined,
         })
         if (isRequested(added)) {
-          toast.success(added.message)
+          toast.success(st(added.message))
           onClose()
           return
         }

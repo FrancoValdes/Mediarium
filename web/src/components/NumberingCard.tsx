@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, can, type SeriesNumbering, type SeriesType } from '../api'
 import { useAuth } from '../AuthContext'
-import { t } from '../i18n'
+import { locale, t, st } from '../i18n'
 import { useToast } from './Toast'
 
 // What the numbering services say about a show: its AniList, AniDB and
@@ -10,7 +10,7 @@ import { useToast } from './Toast'
 function when(iso?: string): string {
   if (!iso) return ''
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale(), { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 function sceneLine(n: SeriesNumbering): string {
@@ -169,7 +169,7 @@ export default function NumberingCard({ id, seriesType }: { id: number; seriesTy
           </table>
         </details>
       )}
-      {n.note && <p className="numbering-note">{n.note}</p>}
+      {n.note && <p className="numbering-note">{st(n.note)}</p>}
       <p className="numbering-foot">
         {n.checkedAt ? t('Last looked up {date}.', { date: when(n.checkedAt) }) : t('Not looked up yet.')}{' '}
         {anime && !n.lookup ? t('Automatic lookups are off in Settings, so this only changes when you press the button.') : ''}

@@ -26,6 +26,7 @@ import (
 	"github.com/rdborg/mediarium/internal/logbuf"
 	"github.com/rdborg/mediarium/internal/selfupdate"
 	"github.com/rdborg/mediarium/internal/store"
+	"github.com/rdborg/mediarium/internal/torrentclient"
 )
 
 // defaultTMDBAPIKey is empty in source control on purpose (no secrets in
@@ -120,7 +121,10 @@ func run() error {
 	// Settings > System can copy the recent lines for a support request.
 	// What goes to stderr (`docker logs`, which people paste into bug reports)
 	// is scrubbed the same way.
-	log.SetOutput(io.MultiWriter(logbuf.ScrubWriter{W: os.Stderr}, logbuf.Default))
+	logOut := io.MultiWriter(logbuf.ScrubWriter{W: os.Stderr}, logbuf.Default)
+	log.SetOutput(logOut)
+	// The torrent engine logs on its own; send it through the same scrubber.
+	torrentclient.SetLogOutput(logOut)
 
 	cfg := config.Load()
 	for _, problem := range config.Problems() {

@@ -139,6 +139,9 @@ func (c *Client) GetSeason(ctx context.Context, tmdbID, season int) ([]EpisodeIn
 // simultaneous connections to TMDB.
 const maxSeasonFetchConcurrency = 5
 
+// maxShowSeasons bounds the seasons read for one show.
+const maxShowSeasons = 200
+
 // GetShowEpisodes fetches a show's details plus every episode of every
 // season, season 0 ("Specials") included. Specials are stored unmonitored
 // (see library.upsertEpisodes), so they never show up as missing until
@@ -149,9 +152,13 @@ func (c *Client) GetShowEpisodes(ctx context.Context, tmdbID int) (*ShowDetail, 
 		return nil, nil, err
 	}
 
+	// Each season once (TMDB has listed one twice), and no more than any
+	// real show has.
 	var seasons []int
+	seen := map[int]bool{}
 	for _, s := range detail.Seasons {
-		if s.SeasonNumber >= 0 {
+		if s.SeasonNumber >= 0 && !seen[s.SeasonNumber] && len(seasons) < maxShowSeasons {
+			seen[s.SeasonNumber] = true
 			seasons = append(seasons, s.SeasonNumber)
 		}
 	}

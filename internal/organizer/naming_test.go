@@ -139,7 +139,7 @@ func TestSanitizeNeverProducesAParentFolderOrSeparator(t *testing.T) {
 		t.Errorf("separator survived through the replacement: %q", got)
 	}
 	// Ordinary names are untouched.
-	if got := organizer.Sanitize("...And Justice for All (1979)", organizer.SanitizeStrip, ""); got != "...And Justice for All (1979)" {
+	if got := organizer.Sanitize("And Justice for All (1979)", organizer.SanitizeStrip, ""); got != "And Justice for All (1979)" {
 		t.Errorf("ordinary name changed: %q", got)
 	}
 }

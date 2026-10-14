@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
 import Icon from './Icon'
 import { useToast } from './Toast'
 
@@ -17,7 +17,7 @@ export default function SubtitleTiming({ kind, id, file, others, onDone }: { kin
     setBusy(true)
     try {
       const r = await api.subtitleTiming({ kind, id, file, ...body })
-      toast.success(r.message)
+      toast.success(st(r.message))
       onDone()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

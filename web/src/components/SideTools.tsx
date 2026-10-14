@@ -1,12 +1,12 @@
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { WatchLink } from '../api'
+import type { AppLink, WatchLink } from '../api'
 import { openBookApp } from '../bookshelf/open'
 import { REPO_URL } from '../docs'
 import { t } from '../i18n'
 import { openReport } from '../report'
-import Icon from './Icon'
+import Icon, { type IconName, ICON_NAMES } from './Icon'
 import { useMusicPlayer } from './MusicPlayer'
 import { MEDIA_SERVER_BRAND, MediaServerMark } from './mediaServerBrand'
 import { withBase } from '../base'
@@ -14,10 +14,13 @@ import './InfoTip.css'
 
 type Tip = { text: string; x: number; y: number; below?: boolean }
 
+// The icon a person picked for an add-on, or a plain tile when it is not one Mediarium has.
+const appIcon = (name: string): IconName => (name in ICON_NAMES ? (name as IconName) : 'grid')
+
 // Everything that plays, in one small menu that opens next to the play button:
 // the book reader and the audiobook player, the music player, and the media
 // servers.
-function PlayMenu({ homes, ebooksOn, audiobooksOn, musicOn, at, onClose, below }: { homes: WatchLink[]; ebooksOn: boolean; audiobooksOn: boolean; musicOn: boolean; at: { x: number; y: number }; onClose: () => void; below?: boolean }) {
+function PlayMenu({ homes, apps, ebooksOn, audiobooksOn, musicOn, at, onClose, below }: { homes: WatchLink[]; apps: AppLink[]; ebooksOn: boolean; audiobooksOn: boolean; musicOn: boolean; at: { x: number; y: number }; onClose: () => void; below?: boolean }) {
   const box = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const player = useMusicPlayer()
@@ -86,6 +89,30 @@ function PlayMenu({ homes, ebooksOn, audiobooksOn, musicOn, at, onClose, below }
             </span>
           </a>
         </>
+      )}
+      {apps.length > 0 && <div className="side-menu-head">{t('Add-ons')}</div>}
+      {apps.map((a) =>
+        a.mode === 'frame' ? (
+          <a key={a.id} role="menuitem" href={withBase(`/apps/${a.id}`)} onClick={(e) => open(e, () => navigate(`/apps/${a.id}`))}>
+            <span className="app-mark" aria-hidden="true">
+              <Icon name={appIcon(a.icon)} size={14} />
+            </span>
+            <span>
+              <strong>{a.name}</strong>
+              <small>{t('Opens inside Mediarium')}</small>
+            </span>
+          </a>
+        ) : (
+          <a key={a.id} role="menuitem" href={a.url} target="_blank" rel="noopener noreferrer" onClick={onClose}>
+            <span className="app-mark" aria-hidden="true">
+              <Icon name={appIcon(a.icon)} size={14} />
+            </span>
+            <span>
+              <strong>{a.name}</strong>
+            </span>
+            <Icon name="external" size={13} />
+          </a>
+        ),
       )}
       {homes.length > 0 && <div className="side-menu-head">{t('Open your media server')}</div>}
       {homes.map((h) => (
@@ -161,12 +188,12 @@ function Tool({ label, className = '', href, onClick, children, expanded, showTi
 
 // The row of small buttons at the bottom of the sidebar: the players menu
 // (books, music, media servers), reporting a problem, GitHub and support.
-export default function SideTools({ ebooksOn, audiobooksOn, musicOn, homes, showSupport, variant = 'side', children }: { ebooksOn: boolean; audiobooksOn: boolean; musicOn: boolean; homes: WatchLink[]; showSupport: boolean; variant?: 'side' | 'top'; children?: ReactNode }) {
+export default function SideTools({ ebooksOn, audiobooksOn, musicOn, homes, apps = [], showSupport, variant = 'side', children }: { ebooksOn: boolean; audiobooksOn: boolean; musicOn: boolean; homes: WatchLink[]; apps?: AppLink[]; showSupport: boolean; variant?: 'side' | 'top'; children?: ReactNode }) {
   const navigate = useNavigate()
   const [tip, setTip] = useState<Tip | null>(null)
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   const top = variant === 'top'
-  const anyPlayer = ebooksOn || audiobooksOn || musicOn || homes.length > 0
+  const anyPlayer = ebooksOn || audiobooksOn || musicOn || homes.length > 0 || apps.length > 0
   const showTip = (text: string, el: HTMLElement) => {
     const r = el.getBoundingClientRect()
     // Kept clear of the window's edges (the tip is at most 260px wide).
@@ -192,7 +219,7 @@ export default function SideTools({ ebooksOn, audiobooksOn, musicOn, homes, show
           <Icon name="play" size={16} />
         </Tool>
       )}
-      {menuAt && <PlayMenu homes={homes} ebooksOn={ebooksOn} audiobooksOn={audiobooksOn} musicOn={musicOn} at={menuAt} onClose={() => setMenuAt(null)} below={top} />}
+      {menuAt && <PlayMenu homes={homes} apps={apps} ebooksOn={ebooksOn} audiobooksOn={audiobooksOn} musicOn={musicOn} at={menuAt} onClose={() => setMenuAt(null)} below={top} />}
       <Tool label={t('User guide')} onClick={() => navigate('/help')} className="help-tool" {...props}>
         <span className="side-q" aria-hidden="true">
           ?

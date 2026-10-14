@@ -253,7 +253,7 @@ func (s *Server) addFourKCopy(req requests.Request) (note string, err error) {
 		if !ok {
 			return "", errors.New("The show isn't in the library, so it has no 4K copy yet.")
 		}
-		if profiles.resolve(sr.ProfileID).ID == want {
+		if profiles.resolveTV(sr.ProfileID).ID == want {
 			return "The show already uses the 4K quality, so no second copy was needed.", nil
 		}
 		c, err := s.MovieRepo.AddSeriesCopy(sr.ID, want)

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/rdborg/mediarium/internal/blocklist"
 	"github.com/rdborg/mediarium/internal/books"
@@ -22,6 +24,40 @@ import (
 // so the chapters stay in order.
 
 func bookLink(id int64) string { return fmt.Sprintf("/book/%d", id) }
+
+// bookRetryBudget counts the automatic retries after a bad release, per book
+// and format, over the last retryWindow. Book blocklist entries carry no book,
+// so the count is kept here (a restart starts it again).
+type bookRetryBudget struct {
+	mu sync.Mutex
+	at map[string][]time.Time
+}
+
+// bookRetries holds each server's budget (tests run several servers in one
+// process).
+var bookRetries sync.Map // *Server -> *bookRetryBudget
+
+func bookRetriesOf(s *Server) *bookRetryBudget {
+	b, _ := bookRetries.LoadOrStore(s, &bookRetryBudget{at: map[string][]time.Time{}})
+	return b.(*bookRetryBudget)
+}
+
+// allow records one more retry for a book's format and reports whether it may
+// go ahead; n is how many bad releases it had in the window.
+func (b *bookRetryBudget) allow(bookID int64, f books.Format, now time.Time) (n int, ok bool) {
+	key := fmt.Sprintf("%d|%s", bookID, f)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	recent := b.at[key][:0]
+	for _, t := range b.at[key] {
+		if now.Sub(t) < retryWindow {
+			recent = append(recent, t)
+		}
+	}
+	recent = append(recent, now)
+	b.at[key] = recent
+	return len(recent), len(recent) <= maxAutoRetries
+}
 
 // bookRoot is the library folder for a format.
 func (s *Server) bookRoot(f books.Format) string {
@@ -86,7 +122,13 @@ func (s *Server) runBookPipeline(queueID int64, b books.Book, f books.Format, re
 		s.notifyItem("failed", notify.Item{Media: string(f), Title: b.Title, Year: b.Year, Reason: plain, Release: releaseTitle, LinkPath: bookLink(b.ID)})
 		if isBadRelease(stepErr) {
 			if err := s.Blocklist.Add(blocklist.Entry{ReleaseTitle: releaseTitle, Protocol: string(protocol), Reason: stepErr.Error()}); err == nil {
-				s.background(func() { s.searchBook(b.ID, f, true) })
+				// The same daily budget as movies and shows: an indexer that
+				// keeps handing out bad releases can't empty a book's list.
+				if n, ok := bookRetriesOf(s).allow(b.ID, f, time.Now()); ok {
+					s.background(func() { s.searchBook(b.ID, f, true) })
+				} else {
+					_ = s.QueueRepo.LogActivity(0, "failed", fmt.Sprintf("%s (%s): %s", label, f, retryPausedMessage(n)))
+				}
 			}
 		}
 		return stepErr

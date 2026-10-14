@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type UpdateNotice, type UpdateState } from '../api'
 import { DOCS_URL } from '../docs'
 import { timeAgo } from '../format'
-import { t, tx } from '../i18n'
+import { t, tx, st } from '../i18n'
 import { reloadWhenBack } from '../reloadWhenBack'
 import { checkedText, installSteps, programSummary } from '../updateSteps'
 import '../update.css'
@@ -113,7 +113,7 @@ function UpdateBody({ notice, onNotice }: { notice: UpdateNotice; onNotice: (n: 
       {job?.state === 'failed' && (
         <div className="update-box warn" role="alert">
           <p>
-            <strong>{job.message}</strong> {job.error} {t('Nothing was changed. Try again, or update the way you installed Mediarium (steps below).')}
+            <strong>{st(job.message)}</strong> {st(job.error)} {t('Nothing was changed. Try again, or update the way you installed Mediarium (steps below).')}
           </p>
         </div>
       )}
@@ -539,7 +539,7 @@ export function RestartCard() {
         <Loading height={70} />
       ) : (
         <>
-          <p style={{ marginTop: 0 }}>{c.note}</p>
+          <p style={{ marginTop: 0 }}>{st(c.note)}</p>
           <div className="control-actions">
             <button className="primary btn-with-icon" onClick={() => void restart(false)} disabled={!c.canRestart || waiting}>
               <Icon name="refresh" size={15} /> {waiting ? t('Restarting…') : t('Restart Mediarium')}

@@ -135,6 +135,9 @@ func assertReleaseEqual(t *testing.T, want, got parser.Release) {
 	if want.Season != got.Season {
 		t.Errorf("Season: want %d, got %d", want.Season, got.Season)
 	}
+	if want.SeasonTo != got.SeasonTo {
+		t.Errorf("SeasonTo: want %d, got %d", want.SeasonTo, got.SeasonTo)
+	}
 	if want.Episode != got.Episode {
 		t.Errorf("Episode: want %d, got %d", want.Episode, got.Episode)
 	}

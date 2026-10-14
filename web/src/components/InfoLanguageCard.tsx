@@ -6,7 +6,7 @@ import { useToast } from './Toast'
 
 // The TMDB language that goes with each screen language, for the "use the same
 // as the screen" shortcut.
-const FOR_SCREEN: Record<Lang, string> = { en: 'en-US', es: 'es-ES', de: 'de-DE', fr: 'fr-FR', pt: 'pt-BR', 'pt-PT': 'pt-PT' }
+const FOR_SCREEN: Record<Lang, string> = { en: 'en-US', es: 'es-ES', de: 'de-DE', fr: 'fr-FR', it: 'it-IT', nl: 'nl-NL', pl: 'pl-PL', pt: 'pt-BR', 'pt-PT': 'pt-PT', ru: 'ru-RU', uk: 'uk-UA' }
 
 // The language titles, descriptions, genres and posters are read in. It is its
 // own choice, apart from the screen language: someone can read Mediarium in

@@ -91,3 +91,10 @@ export function chapterAt(chapters: Chapter[], track: number, seconds: number): 
   })
   return Math.max(0, found)
 }
+
+// The comic page to open at: the saved "page:N" when it is a page of this
+// comic, otherwise the first page.
+export function openingPage(position: string | undefined, pages: number): number {
+  const at = position?.startsWith('page:') ? Number(position.slice(5)) : 0
+  return Number.isInteger(at) && at >= 1 && at <= pages ? at : 1
+}

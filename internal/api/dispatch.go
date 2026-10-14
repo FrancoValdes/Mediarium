@@ -76,6 +76,12 @@ func (k grabKind) priority() queue.Priority {
 }
 
 // downloadsAtOnce is how many downloads may run at the same time.
+// newestFirstOn is the "start newer releases first" rule of the download line.
+func (s *Server) newestFirstOn() bool {
+	v, _ := s.Settings.Get(settings.KeyNewestFirst)
+	return v == "1"
+}
+
 func (s *Server) downloadsAtOnce() int {
 	v, _ := s.Settings.Get(settings.KeyDownloadsConcurrent)
 	n, err := strconv.Atoi(strings.TrimSpace(v))

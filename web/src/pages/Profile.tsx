@@ -292,13 +292,13 @@ function lastSignIn(iso: string | null): string {
   if (Number.isNaN(then)) return t('Never signed in')
   const minutes = Math.max(0, Math.round((Date.now() - then) / 60000))
   if (minutes < 2) return t('Signed in just now')
-  if (minutes < 60) return t('Signed in {n} minutes ago', { n: minutes })
+  if (minutes < 60) return plural(minutes, 'Signed in {n} minute ago', 'Signed in {n} minutes ago')
   const hours = Math.round(minutes / 60)
   if (hours < 24) return plural(hours, 'Signed in {n} hour ago', 'Signed in {n} hours ago')
   const days = Math.round(hours / 24)
   if (days === 1) return t('Signed in yesterday')
-  if (days < 14) return t('Signed in {n} days ago', { n: days })
-  if (days < 60) return t('Signed in {n} weeks ago', { n: Math.round(days / 7) })
+  if (days < 14) return plural(days, 'Signed in {n} day ago', 'Signed in {n} days ago')
+  if (days < 60) return plural(Math.round(days / 7), 'Signed in {n} week ago', 'Signed in {n} weeks ago')
   return t('Last signed in on {date}', { date: new Date(then).toLocaleDateString(locale(), { day: 'numeric', month: 'long', year: 'numeric' }) })
 }
 

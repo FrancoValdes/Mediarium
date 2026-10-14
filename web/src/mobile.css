@@ -200,3 +200,23 @@
   .season-bar .chip { min-height: 38px; }
   .title-links .pill-toggle { min-width: 40px; min-height: 40px; justify-content: center; }
 }
+
+/* ==== Tablets and foldables ============================================
+   Between a phone and a laptop: a narrower menu so the page keeps its room,
+   a wider drawer when the menu is a drawer, touch-sized controls on a screen
+   you press, and clear of the hinge when a foldable is open flat. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .app-shell { grid-template-columns: 196px minmax(0, 1fr); }
+  .content { padding-left: 20px; padding-right: 20px; }
+}
+@media (min-width: 640px) and (max-width: 900px) {
+  .sidebar { width: min(340px, 62vw); }
+}
+@media (min-width: 640px) and (max-width: 1180px) and (hover: none) and (pointer: coarse) {
+  .btn-sm, .seg > button, .prog-views button, .prog-today { min-height: 40px; }
+  .content select, .content input:not([type='checkbox']):not([type='radio']):not([type='range']) { min-height: 42px; }
+  .sidebar a { padding-top: 10px; padding-bottom: 10px; }
+}
+@media (horizontal-viewport-segments: 2) {
+  .content { padding-inline: 20px; }
+}

@@ -132,8 +132,14 @@ func (s *Server) handleSubtitleTiming(w http.ResponseWriter, r *http.Request) {
 		if !s.openedOK(w, err) {
 			return
 		}
-		m, err := subtitles.Align(data, ref)
-		if err != nil {
+		m, err := subtitles.AlignContext(r.Context(), data, ref)
+		switch {
+		case errors.Is(err, subtitles.ErrTooManyCues):
+			writeError(w, http.StatusBadRequest, "These subtitles have too many lines to line up automatically. Move the timing by hand instead.")
+			return
+		case r.Context().Err() != nil:
+			return // the request was cancelled
+		case err != nil:
 			writeError(w, http.StatusBadRequest, "One of the two subtitles has no timed lines, so they can't be lined up.")
 			return
 		}

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,18 +14,40 @@ import (
 // were added, except for a resumed item, which goes back to the front of its
 // priority.
 
-// lineOrder is the order the line is served in.
-const lineOrder = `ORDER BY priority DESC, line_seq ASC, id ASC`
+// newestFirst is the "start newer releases first" rule. Among the downloads
+// the automatic searches added, the movie that came out (or the episode that
+// aired) most recently starts first. What a person asked for by hand, and
+// what was moved to the front, still goes first.
+var newestFirst atomic.Bool
+
+// SetNewestFirst switches the rule on or off.
+func SetNewestFirst(on bool) { newestFirst.Store(on) }
+
+const releasedExpr = `COALESCE((SELECT release_date FROM movies WHERE id = q.movie_id), (SELECT air_date FROM episodes WHERE series_id = q.series_id AND season = q.season AND episode = q.episode), '')`
+
+// lineDateExpr is the date an item is ranked by under the rule: its release
+// date, or for what has none (a season pack, an album, a book) the day it was
+// added, as if it came out then. Undated items then take their fair turn
+// instead of waiting behind every dated one that keeps arriving.
+const lineDateExpr = `COALESCE(NULLIF(` + releasedExpr + `, ''), substr(q.added_at, 1, 10))`
+
+// A resumed item (line_seq <= 0, see Requeue) goes first in its priority
+// whatever the rule says: it was started once and has files on disk.
+const newestFirstOrder = `ORDER BY q.priority DESC, CASE WHEN q.line_seq <= 0 THEN 0 ELSE 1 END ASC, CASE WHEN q.priority = 0 THEN ` + lineDateExpr + ` ELSE '' END DESC, q.line_seq ASC, q.id ASC`
 
 // NextWaiting returns the item that should start next, or false when nothing
 // is waiting. With manualOnly it only looks at what a person asked for.
 func (r *Repo) NextWaiting(manualOnly bool) (Item, bool, error) {
-	query := `SELECT id FROM download_queue WHERE status = 'queued' `
+	query := `SELECT q.id FROM download_queue q WHERE q.status = 'queued' `
 	if manualOnly {
-		query += `AND priority >= 1 `
+		query += `AND q.priority >= 1 `
+	}
+	order := newestFirstOrder
+	if !newestFirst.Load() {
+		order = `ORDER BY q.priority DESC, q.line_seq ASC, q.id ASC`
 	}
 	var id int64
-	err := r.db.QueryRow(query + lineOrder + ` LIMIT 1`).Scan(&id)
+	err := r.db.QueryRow(query + order + ` LIMIT 1`).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Item{}, false, nil
 	}
@@ -53,11 +76,13 @@ func (r *Repo) Claim(id int64) (bool, error) {
 
 // Requeue puts a paused item back in the line, at the front of its priority
 // (it was already started once, so it goes before the ones that never were).
+// Its place is 0 or below, which marks it as resumed: new items always get a
+// place above 0 (Enqueue), and "newest first" never puts one ahead of it.
 // It reports false when the item is not paused.
 func (r *Repo) Requeue(id int64) (bool, error) {
 	res, err := r.db.Exec(
 		`UPDATE download_queue SET status = ?, interrupted = 0, error = NULL,
-		   line_seq = (SELECT COALESCE(MIN(line_seq), 1) - 1 FROM download_queue WHERE status = ? AND priority = (SELECT priority FROM download_queue WHERE id = ?))
+		   line_seq = (SELECT MIN(COALESCE(MIN(line_seq), 1), 1) - 1 FROM download_queue WHERE status = ? AND priority = (SELECT priority FROM download_queue WHERE id = ?))
 		 WHERE id = ? AND status = ?`,
 		string(StatusQueued), string(StatusQueued), id, id, string(StatusPaused))
 	if err != nil {
@@ -87,15 +112,33 @@ func (r *Repo) CountAutomaticAddedSince(since time.Time) (int, error) {
 	return n, nil
 }
 
-// LineOrder sorts waiting items into the order they will start in.
+// LineOrder sorts waiting items into the order they will start in, the same
+// way NextWaiting picks them. The items need AddedAt (List fills it in).
 func LineOrder(a, b Item) bool {
 	if a.Priority != b.Priority {
 		return a.Priority > b.Priority
+	}
+	if ra, rb := a.LineSeq <= 0, b.LineSeq <= 0; ra != rb {
+		return ra // a resumed item goes first
+	}
+	if da, db := lineDate(a), lineDate(b); newestFirst.Load() && a.Priority == 0 && da != db {
+		return da > db
 	}
 	if a.LineSeq != b.LineSeq {
 		return a.LineSeq < b.LineSeq
 	}
 	return a.ID < b.ID
+}
+
+// lineDate is lineDateExpr for an item read by List.
+func lineDate(it Item) string {
+	if it.Released != "" {
+		return it.Released
+	}
+	if len(it.AddedAt) >= 10 {
+		return it.AddedAt[:10]
+	}
+	return it.AddedAt
 }
 
 // PauseWaiting parks every download waiting in line as paused and marked

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,7 +19,10 @@ import (
 
 const (
 	defaultMinFreeGB = 5
-	speedCheck       = 5 * time.Minute
+	// speedCheck is how often the speed schedule is looked at. The rules
+	// change on the hour, so a check every minute applies them within a
+	// minute; the check itself is cheap.
+	speedCheck = time.Minute
 )
 
 // speedLimitMB is the limit in MB/s, 0 for none.
@@ -74,13 +78,92 @@ func (s *Server) outsideDownloadHours() bool {
 	return ok && !inHours(time.Now().Hour(), from, to)
 }
 
+// speedRule is one line of the speed schedule: on these days (0 is Sunday;
+// none listed means every day), from this hour to that one (the same hour twice
+// is the whole day), downloads are limited to LimitMB MB/s (0 = no limit).
+type speedRule struct {
+	Days    []int `json:"days"`
+	From    int   `json:"from"`
+	To      int   `json:"to"`
+	LimitMB int   `json:"limitMB"`
+}
+
+const maxSpeedRules = 14
+
+// active says whether the rule covers the moment wd (weekday) and h (hour). A
+// rule that runs past midnight (22 to 6) belongs to the day it starts on, so
+// "Friday 22-6" still covers early Saturday.
+func (r speedRule) active(wd, h int) bool {
+	onDay := func(d int) bool {
+		if len(r.Days) == 0 {
+			return true
+		}
+		for _, x := range r.Days {
+			if x == d {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case r.From == r.To:
+		return onDay(wd)
+	case r.From < r.To:
+		return onDay(wd) && h >= r.From && h < r.To
+	default:
+		return (onDay(wd) && h >= r.From) || (onDay((wd+6)%7) && h < r.To)
+	}
+}
+
+func (r speedRule) valid() bool {
+	if r.From < 0 || r.From > 23 || r.To < 0 || r.To > 23 || r.LimitMB < 0 || r.LimitMB > 10000 {
+		return false
+	}
+	for _, d := range r.Days {
+		if d < 0 || d > 6 {
+			return false
+		}
+	}
+	return true
+}
+
+// speedSchedule is the saved list of speed rules.
+func (s *Server) speedSchedule() []speedRule {
+	raw, _ := s.Settings.Get(settings.KeySpeedSchedule)
+	var rules []speedRule
+	if strings.TrimSpace(raw) != "" {
+		_ = json.Unmarshal([]byte(raw), &rules)
+	}
+	out := rules[:0]
+	for _, r := range rules {
+		if r.valid() {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// scheduledLimit returns the limit the first matching rule sets.
+func scheduledLimit(rules []speedRule, now time.Time) (mb int, ok bool) {
+	for _, r := range rules {
+		if r.active(int(now.Weekday()), now.Hour()) {
+			return r.LimitMB, true
+		}
+	}
+	return 0, false
+}
+
 // applySpeedLimit sets the download limit (Usenet and torrents) and the torrent
-// upload limit for this moment; both follow the same hours.
+// upload limit for this moment; both follow the same hours. A line of the speed
+// schedule that fits the moment sets the download limit instead.
 func (s *Server) applySpeedLimit(now time.Time) {
 	mb := s.speedLimitMB()
 	upKB := s.torrentUploadLimitKB()
 	if from, to, ok := s.speedLimitHours(); ok && !inHours(now.Hour(), from, to) {
 		mb, upKB = 0, 0
+	}
+	if scheduled, ok := scheduledLimit(s.speedSchedule(), now); ok {
+		mb = scheduled
 	}
 	speed.Set(int64(mb) << 20)
 	speed.SetUpload(int64(upKB) << 10)

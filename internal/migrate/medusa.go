@@ -45,7 +45,7 @@ func fetchMedusa(ctx context.Context, hc *http.Client, c Conn) ([]legacyShow, er
 	for page := 1; page <= medusaMaxPages; page++ {
 		var list []medusaSeries
 		q := url.Values{"page": {fmt.Sprint(page)}, "limit": {fmt.Sprint(medusaPageSize)}}
-		if err := read(ctx, hc, c, call{path: "/api/v2/series", query: q, keyHeader: "x-api-key"}, &list); err != nil {
+		if err := read(ctx, hc, c, call{path: "/api/v2/series", query: q, keyHeader: "x-api-key", list: true}, &list); err != nil {
 			return shows, err
 		}
 		added := 0

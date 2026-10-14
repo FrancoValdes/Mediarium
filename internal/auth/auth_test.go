@@ -155,6 +155,13 @@ func TestResetPassword(t *testing.T) {
 	if err := svc.ResetPassword("nobody", "whatever-password"); err == nil {
 		t.Fatal("expected an error resetting a nonexistent user")
 	}
+	// The name matches in any letter case, as it does when signing in.
+	if err := svc.ResetPassword(" Ryan ", "another-new-password"); err != nil {
+		t.Fatalf("reset with the name in another case: %v", err)
+	}
+	if _, err := svc.Authenticate("ryan", "another-new-password"); err != nil {
+		t.Fatalf("expected the password set with the name in another case to work, got %v", err)
+	}
 }
 
 func TestListAndRevokeAPIKeys(t *testing.T) {

@@ -48,7 +48,8 @@ func (s *Server) statsID() string {
 	return ""
 }
 
-// newStatsID makes and saves a fresh random install ID.
+// newStatsID makes and saves a fresh random install ID. The day of the last
+// message is kept: a new ID doesn't mean a second message that day.
 func (s *Server) newStatsID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -58,7 +59,6 @@ func (s *Server) newStatsID() (string, error) {
 	if err := s.Settings.Set(settings.KeyStatsInstallID, id, false); err != nil {
 		return "", err
 	}
-	_ = s.Settings.Set(settings.KeyStatsLastSent, "", false)
 	return id, nil
 }
 
@@ -187,8 +187,9 @@ func (s *Server) handlePutStats(w http.ResponseWriter, r *http.Request) {
 		go s.sendStats(context.Background(), true)
 	} else {
 		// No: the ID is forgotten, so nothing links later numbers to the earlier ones.
+		// The day of the last message stays, so No and then Yes again don't send a
+		// second message that day.
 		_ = s.Settings.Set(settings.KeyStatsInstallID, "", false)
-		_ = s.Settings.Set(settings.KeyStatsLastSent, "", false)
 	}
 	writeJSON(w, http.StatusOK, s.statsState())
 }

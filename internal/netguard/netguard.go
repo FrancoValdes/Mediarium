@@ -19,6 +19,7 @@
 package netguard
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -48,24 +49,28 @@ var (
 	// translates them (NAT64) or an old stack that accepts them would carry a
 	// connection to the IPv4 address inside, so it is judged as that address.
 	nat64      = netip.MustParsePrefix("64:ff9b::/96")
+	nat64Local = netip.MustParsePrefix("64:ff9b:1::/48") // local-use NAT64 (RFC 8215), usually with the IPv4 address last
 	sixToFour  = netip.MustParsePrefix("2002::/16")
+	teredo     = netip.MustParsePrefix("2001::/32") // the client's IPv4 address is the last 32 bits, inverted
 	ipv4Compat = netip.MustParsePrefix("::/96")
 	siit       = netip.MustParsePrefix("::ffff:0:0:0/96") // IPv4-translated (RFC 2765)
 )
 
 // embeddedIPv4 returns the IPv4 address hidden inside an IPv6 address written
-// as NAT64 (64:ff9b::a.b.c.d), 6to4 (2002:aabb:ccdd::) or IPv4-compatible
-// (::a.b.c.d).
+// as NAT64 (64:ff9b::a.b.c.d, or the local-use 64:ff9b:1::/48), 6to4
+// (2002:aabb:ccdd::), Teredo (2001::/32) or IPv4-compatible (::a.b.c.d).
 func embeddedIPv4(addr netip.Addr) (netip.Addr, bool) {
 	if !addr.Is6() {
 		return netip.Addr{}, false
 	}
 	b := addr.As16()
 	switch {
-	case nat64.Contains(addr), ipv4Compat.Contains(addr), siit.Contains(addr):
+	case nat64.Contains(addr), nat64Local.Contains(addr), ipv4Compat.Contains(addr), siit.Contains(addr):
 		return netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}), true
 	case sixToFour.Contains(addr):
 		return netip.AddrFrom4([4]byte{b[2], b[3], b[4], b[5]}), true
+	case teredo.Contains(addr):
+		return netip.AddrFrom4([4]byte{^b[12], ^b[13], ^b[14], ^b[15]}), true
 	}
 	return netip.Addr{}, false
 }
@@ -118,6 +123,43 @@ func Control(network, address string, _ syscall.RawConn) error {
 	return nil
 }
 
+// CheckHost is the Blocked check for a connection that Mediarium doesn't
+// make itself: one a proxy makes for it, where the dial-time check only sees
+// the proxy. hostport is "host:port" or a host. An IP address is checked as
+// it is. A name is looked up here and refused when any of its addresses is
+// blocked, unless resolve is false (a socks5h proxy, where names are only ever
+// resolved by the proxy so they don't leak); a name that can't be looked up
+// here is left to the proxy, which may know names this machine doesn't.
+func CheckHost(ctx context.Context, hostport string, resolve bool) error {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if host == "" {
+		return nil
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if Blocked(addr) {
+			return fmt.Errorf("%w: connecting to %s is blocked (link-local and cloud metadata addresses are never used)", ErrBlocked, addr.Unmap().WithZone(""))
+		}
+		return nil
+	}
+	if !resolve {
+		return nil
+	}
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil
+	}
+	for _, a := range addrs {
+		if Blocked(a) {
+			return fmt.Errorf("%w: %s points to %s, which is blocked (link-local and cloud metadata addresses are never used)", ErrBlocked, host, a.Unmap().WithZone(""))
+		}
+	}
+	return nil
+}
+
 // cgnat is the shared address space (100.64.0.0/10) providers use inside their networks.
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
@@ -144,10 +186,18 @@ func ControlPublic(network, address string, c syscall.RawConn) error {
 }
 
 // NotPublic reports whether addr is a private, loopback or shared-space
-// address: somewhere on the home network or the machine itself.
+// address: somewhere on the home network or the machine itself. An IPv4
+// address written inside an IPv6 one (see embeddedIPv4) is judged as itself,
+// and the local-use NAT64 range is never public.
 func NotPublic(addr netip.Addr) bool {
 	addr = addr.Unmap().WithZone("")
-	return addr.IsPrivate() || addr.IsLoopback() || cgnat.Contains(addr)
+	if addr.IsPrivate() || addr.IsLoopback() || cgnat.Contains(addr) || nat64Local.Contains(addr) {
+		return true
+	}
+	if inner, ok := embeddedIPv4(addr); ok && !addr.IsUnspecified() {
+		return NotPublic(inner)
+	}
+	return false
 }
 
 // PublicClient is Client for public-internet-only destinations.
@@ -182,10 +232,25 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return errors.New("stopped after 10 redirects")
 	}
-	if len(via) > 0 && !strings.EqualFold(req.URL.Host, via[0].URL.Host) {
+	if len(via) > 0 && (!strings.EqualFold(req.URL.Host, via[0].URL.Host) || downgraded(via, req)) {
 		stripCredentials(req.Header)
 	}
 	return nil
+}
+
+// downgraded reports whether a redirect chain that began (or passed) over
+// https goes on over plain http, where a token header would travel in clear
+// text even on the same host.
+func downgraded(via []*http.Request, req *http.Request) bool {
+	if !strings.EqualFold(req.URL.Scheme, "http") {
+		return false
+	}
+	for _, v := range via {
+		if strings.EqualFold(v.URL.Scheme, "https") {
+			return true
+		}
+	}
+	return false
 }
 
 // plainHeaders are the headers that are safe to send to any site.

@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/rdborg/mediarium/internal/indexers"
@@ -219,6 +220,11 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 
 	mapper := s.releaseMapper(series) // anime and daily file names
 	imported, skipped := 0, 0
+	// Files the library has down for other titles, and the places this run
+	// has already filled: two episodes of one pack never overwrite each other,
+	// and no file of another episode or movie is ever replaced.
+	owners := s.trackedFileOwners()
+	usedDest := map[string]bool{}
 	var importedFiles []string // for the media server refresh
 	var importedEps []library.Episode
 	var subtitleItems []subtitleItem
@@ -243,6 +249,21 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 		if err != nil {
 			return fail(err)
 		}
+		epIDs := make([]int64, len(eps))
+		for i, ep := range eps {
+			epIDs[i] = ep.ID
+		}
+		if usedDest[filepath.Clean(destPath)] {
+			slog.Warn("import: two files of one release would get the same name, the second is left out", "file", filepath.Base(file), "dest", destPath)
+			skipped++
+			continue
+		}
+		if owner := otherFileOwner(owners, destPath, 0, epIDs); owner != "" {
+			slog.Warn("import: the destination is another title's file, left out", "file", filepath.Base(file), "dest", destPath, "owner", owner)
+			_ = s.QueueRepo.LogSeriesActivity(series.ID, "skipped", errFileOfAnother(owner, destPath).Error())
+			skipped++
+			continue
+		}
 		policy, isBetter := s.conflictPolicy(tier, !series.NoUpgrade, func() (quality.Tier, bool) {
 			return quality.Tier(eps[0].Quality), true
 		})
@@ -262,6 +283,8 @@ func (s *Server) runTVPipeline(queueID int64, series library.Series, season int,
 			skipped++
 			continue
 		}
+		usedDest[filepath.Clean(result.DestPath)] = true
+		usedDest[filepath.Clean(destPath)] = true
 		for _, ep := range eps {
 			if err := s.MovieRepo.SetEpisodeStatus(ep.ID, library.StatusDownloaded, string(tier), result.DestPath); err == nil {
 				s.afterEpisodeImported(ep.ID, releaseTitle)

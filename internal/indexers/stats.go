@@ -82,20 +82,37 @@ func (t *Tracker) remember(id int64, results []Result) {
 	now := t.now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if len(t.sources) > maxSource {
-		for k, v := range t.sources {
-			if now.After(v.expiry) {
-				delete(t.sources, k)
-			}
-		}
-		if len(t.sources) > maxSource { // all of it fresh: start over
-			t.sources = map[string]sourceNote{}
-		}
-	}
 	for _, r := range results {
 		if r.DownloadURL != "" {
-			t.sources[r.DownloadURL] = sourceNote{id: id, expiry: now.Add(sourceTTL)}
+			exp := now.Add(sourceTTL)
+			t.sources[r.DownloadURL] = sourceNote{id: id, expiry: exp}
+			t.order = append(t.order, sourceKey{url: r.DownloadURL, expiry: exp})
 		}
+	}
+	t.dropOldSources(now)
+}
+
+// dropOldSources forgets the oldest notes while they have expired or there
+// are too many. Notes are kept in the order they were made, which is also the
+// order they expire in, so each one is looked at once: no scan of the map.
+func (t *Tracker) dropOldSources(now time.Time) {
+	for t.orderHead < len(t.order) {
+		k := t.order[t.orderHead]
+		live := len(t.order) - t.orderHead
+		if !now.After(k.expiry) && len(t.sources) <= maxSource && live <= 2*maxSource {
+			break
+		}
+		// a URL noted again later has a newer note: only drop the one this is
+		if n, ok := t.sources[k.url]; ok && n.expiry.Equal(k.expiry) {
+			delete(t.sources, k.url)
+		}
+		t.order[t.orderHead] = sourceKey{}
+		t.orderHead++
+	}
+	// reuse the space of the dropped notes once they are half of it
+	if t.orderHead > 0 && t.orderHead*2 >= len(t.order) {
+		t.order = append(t.order[:0], t.order[t.orderHead:]...)
+		t.orderHead = 0
 	}
 }
 

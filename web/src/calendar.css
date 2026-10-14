@@ -371,3 +371,12 @@ a.prog-card:hover { text-decoration: none; border-color: color-mix(in srgb, var(
 .pt-pop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 .pt-pop-grid .pt { flex: none; aspect-ratio: 2 / 3; min-height: 0; }
 @media (prefers-reduced-motion: reduce) { .pt, .pt-pop { transition: none; animation: none; } }
+
+/* ==== Backdrops view ====================================================
+   The same days as Posters, but each release is a wide still with the title's
+   logo over it (the poster, and the name in the bubble, until both are known). */
+.prog-grid.backdrops .prog-cell { min-height: 150px; }
+.pt.wide { min-height: 104px; }
+.pt img.pt-logo, .pt.s-missing img.pt-logo { inset: auto; left: 50%; top: 42%; transform: translate(-50%, -50%); width: auto; height: auto; max-width: 78%; max-height: 38%; object-fit: contain; opacity: 1; filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.7)); }
+.pt-bubble.has-logo { left: auto; right: 6px; bottom: 6px; padding: 3px 8px; }
+.pt-pop-grid .pt.wide { aspect-ratio: 16 / 9; }

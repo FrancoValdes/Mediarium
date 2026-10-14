@@ -130,5 +130,29 @@ func TestSavedSecretsAreNotSentToAChangedAddress(t *testing.T) {
 		if status, _ = doJSONStatus(t, admin, http.MethodPut, url, map[string]any{"type": "gotify", "config": map[string]string{"url": "https://gotify2.example.com", "token": "new-secret"}}); status != http.StatusOK {
 			t.Errorf("new address with a new token: %d", status)
 		}
+		// The same host over plain http would send the token in clear text.
+		status, body = doJSONStatus(t, admin, http.MethodPut, url, map[string]any{"type": "gotify", "config": map[string]string{"url": "http://gotify2.example.com"}})
+		if status != http.StatusBadRequest || !mentions(body, "type the app token again") {
+			t.Errorf("https to http on the same host: %d %v; want 400 asking for the token", status, body)
+		}
+	})
+
+	t.Run("an ntfy server left empty", func(t *testing.T) {
+		created := postJSON[map[string]any](t, admin, base+"/api/notifications", map[string]any{
+			"name": "ntfy", "type": "ntfy", "config": map[string]string{"server": "https://ntfy.home.example", "topic": "my-topic", "token": "ntfy-secret"},
+		}, http.StatusCreated)
+		id := int(created["id"].(float64))
+		// An empty server becomes the public ntfy.sh, so the saved token and
+		// topic must not go along.
+		status, body := doJSONStatus(t, admin, http.MethodPost, base+"/api/notifications/test", map[string]any{
+			"id": id, "type": "ntfy", "config": map[string]string{"server": ""},
+		})
+		if status != http.StatusBadRequest || !mentions(body, "again") {
+			t.Errorf("test with the server left empty: %d %v; want 400 asking for the secret", status, body)
+		}
+		status, body = doJSONStatus(t, admin, http.MethodPut, fmt.Sprintf("%s/api/notifications/%d", base, id), map[string]any{"type": "ntfy", "config": map[string]string{"server": ""}})
+		if status != http.StatusBadRequest || !mentions(body, "again") {
+			t.Errorf("save with the server left empty: %d %v; want 400 asking for the secret", status, body)
+		}
 	})
 }

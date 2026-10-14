@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
 
 // A "Test" button that runs a connectivity check and shows the result
 // inline: green for ok, red with the reason otherwise.
@@ -34,7 +34,7 @@ export default function TestButton({
       </button>
       {result && (
         <span className={result.ok ? 'badge downloaded' : 'error-text'} style={{ fontSize: '0.85rem' }}>
-          {result.message}
+          {st(result.message)}
         </span>
       )}
     </span>

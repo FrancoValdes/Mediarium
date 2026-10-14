@@ -97,7 +97,7 @@ func (s *Server) handleListSeriesCopies(w http.ResponseWriter, r *http.Request) 
 	}
 	out := copiesAnswer{Folder: s.tvCopiesRoot(), Items: []copyPayload{}}
 	if sr, err := s.MovieRepo.GetSeries(id); err == nil {
-		out.MainProfileID = profiles.resolve(sr.ProfileID).ID
+		out.MainProfileID = profiles.resolveTV(sr.ProfileID).ID
 	}
 	for _, c := range copies {
 		out.Items = append(out.Items, copyPayload{
@@ -110,7 +110,7 @@ func (s *Server) handleListSeriesCopies(w http.ResponseWriter, r *http.Request) 
 
 // checkCopyProfile checks the profile asked for a copy: it has to exist and
 // differ from the one the main title uses (its own or the default).
-func (s *Server) checkCopyProfile(w http.ResponseWriter, want, mainProfile int64) bool {
+func (s *Server) checkCopyProfile(w http.ResponseWriter, want, mainProfile int64, tv bool) bool {
 	if want <= 0 {
 		writeError(w, http.StatusBadRequest, "Pick the quality profile for the second copy.")
 		return false
@@ -124,7 +124,11 @@ func (s *Server) checkCopyProfile(w http.ResponseWriter, want, mainProfile int64
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return false
 	}
-	if profiles.resolve(mainProfile).ID == want {
+	main := profiles.resolve(mainProfile)
+	if tv {
+		main = profiles.resolveTV(mainProfile)
+	}
+	if main.ID == want {
 		writeError(w, http.StatusBadRequest, "The main copy already uses that quality profile. Pick another one, such as 4K & over.")
 		return false
 	}
@@ -172,7 +176,7 @@ func (s *Server) handleAddMovieCopy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "Choose a folder for second copies first, in Settings > Library > Folders.")
 		return
 	}
-	if !s.checkCopyProfile(w, req.ProfileID, m.ProfileID) {
+	if !s.checkCopyProfile(w, req.ProfileID, m.ProfileID, false) {
 		return
 	}
 	c, err := s.MovieRepo.AddCopy(id, req.ProfileID)
@@ -230,7 +234,7 @@ func (s *Server) handleAddSeriesCopy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "Choose a folder for second copies first, in Settings > Library > Folders.")
 		return
 	}
-	if !s.checkCopyProfile(w, req.ProfileID, sr.ProfileID) {
+	if !s.checkCopyProfile(w, req.ProfileID, sr.ProfileID, true) {
 		return
 	}
 	c, err := s.MovieRepo.AddSeriesCopy(id, req.ProfileID)

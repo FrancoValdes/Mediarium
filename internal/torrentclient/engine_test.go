@@ -2,6 +2,7 @@ package torrentclient_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -194,5 +195,33 @@ func TestSeedUntilGoalStopsWhenCancelled(t *testing.T) {
 	// A time goal that has already passed is met straight away.
 	if !mediarium.SeedUntilGoal(context.Background(), tr, time.Now().Add(-time.Hour), mediarium.SeedGoal{Time: time.Minute}, time.Hour) {
 		t.Fatal("a passed time goal should be met")
+	}
+}
+
+// TestMagnetWithoutPeersGivesUp proves a magnet whose details never arrive
+// fails with ErrNoMetadata once MetadataTimeout passes, instead of waiting
+// for ever.
+func TestMagnetWithoutPeersGivesUp(t *testing.T) {
+	old := mediarium.MetadataTimeout
+	mediarium.MetadataTimeout = 200 * time.Millisecond
+	defer func() { mediarium.MetadataTimeout = old }()
+
+	// Through a dead tunnel: no DHT, no peers, nothing leaves the machine.
+	engine, err := mediarium.New(mediarium.Config{DataDir: t.TempDir(), Tunnel: deadDialer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	magnet := "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=dead"
+	start := time.Now()
+	_, err = engine.AddMagnetIn(context.Background(), magnet, t.TempDir())
+	if !errors.Is(err, mediarium.ErrNoMetadata) {
+		t.Fatalf("err = %v, want ErrNoMetadata", err)
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatal("the metadata wait took far longer than its limit")
+	}
+	if engine.Torrents() != 0 {
+		t.Fatal("the dead magnet must be removed from the engine")
 	}
 }

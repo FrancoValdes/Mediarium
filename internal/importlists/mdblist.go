@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/rdborg/mediarium/internal/netguard"
 )
 
 // MDBList (mdblist.com) keeps public lists of movies and shows. Reading one
@@ -161,10 +163,22 @@ func appendMDB(out []Item, e mdbEntry, kind string) []Item {
 }
 
 // cleanKey removes the API key from a network error: net/http repeats the
-// request address, and this key travels in it.
+// request address, and this key travels in it, URL-encoded when it has
+// characters that need it.
 func cleanKey(err error, key string) error {
-	if err == nil || key == "" {
+	if err == nil {
+		return nil
+	}
+	err = netguard.CleanError(err)
+	if key == "" {
 		return err
 	}
-	return errors.New(strings.ReplaceAll(err.Error(), key, "***"))
+	msg := err.Error()
+	for _, k := range []string{key, url.QueryEscape(key), url.PathEscape(key)} {
+		msg = strings.ReplaceAll(msg, k, "***")
+	}
+	if msg == err.Error() {
+		return err
+	}
+	return errors.New(msg)
 }

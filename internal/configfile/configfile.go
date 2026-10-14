@@ -11,6 +11,16 @@
 //	proxy:           # Settings > Downloading > Proxy
 //	systemOptions:   # Settings > System > Updates
 //
+// Things you add several of are lists, matched by their name:
+//
+//	indexers:        # Settings > Indexers
+//	usenetServers:   # Settings > Downloading > Usenet servers
+//	mediaServers:    # Settings > Media servers
+//	qualityProfiles: # Settings > Profiles
+//
+// A list item that Mediarium doesn't have yet is added, one it has is changed
+// to match, and one that is not in the file is left alone.
+//
 // Anything not in the file is left as it is. Secrets are written as
 // ${NAME}, which is replaced with the environment variable NAME when the file
 // is applied, so they never have to be in the file.
@@ -50,9 +60,12 @@ var Sections = []Section{
 }
 
 func sectionNames() string {
-	names := make([]string, len(Sections))
-	for i, s := range Sections {
-		names[i] = s.Name
+	var names []string
+	for _, s := range Sections {
+		names = append(names, s.Name)
+	}
+	for _, l := range Lists {
+		names = append(names, l.Name)
 	}
 	return strings.Join(names, ", ")
 }
@@ -72,6 +85,20 @@ func (c *Client) http() *http.Client {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body any) (map[string]any, error) {
+	data, err := c.doRaw(ctx, method, path, body)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if len(bytes.TrimSpace(data)) > 0 {
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, fmt.Errorf("Mediarium's answer for %s wasn't what was expected", path)
+		}
+	}
+	return out, nil
+}
+
+func (c *Client) doRaw(ctx context.Context, method, path string, body any) ([]byte, error) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -115,13 +142,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (map[str
 		}
 		return nil, fmt.Errorf("Mediarium answered HTTP %d", resp.StatusCode)
 	}
-	var out map[string]any
-	if len(bytes.TrimSpace(data)) > 0 {
-		if err := json.Unmarshal(data, &out); err != nil {
-			return nil, fmt.Errorf("Mediarium's answer for %s wasn't what was expected", path)
-		}
-	}
-	return out, nil
+	return data, nil
 }
 
 // derived are values a page shows but that are worked out, not chosen: they
@@ -153,6 +174,45 @@ func Export(ctx context.Context, c *Client) ([]byte, error) {
 			return nil, err
 		}
 		buf.Write(out)
+		buf.WriteString("\n")
+	}
+	for _, ls := range Lists {
+		items, err := currentList(ctx, c, ls)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", ls.Name, err)
+		}
+		if len(items) == 0 {
+			continue
+		}
+		if ls.Name == "qualityProfiles" {
+			// Other profiles and custom formats by name: their numbers mean
+			// nothing on another install.
+			refs, err := loadProfileRefs(ctx, c, items)
+			if err != nil {
+				return nil, fmt.Errorf("read %s: %w", ls.Name, err)
+			}
+			for i := range items {
+				items[i] = refs.toNames(items[i])
+			}
+		}
+		out := make([]map[string]any, 0, len(items))
+		for _, it := range items {
+			for k := range it {
+				if listDerived.MatchString(k) {
+					delete(it, k)
+				}
+			}
+			out = append(out, it)
+		}
+		var node yaml.Node
+		if err := node.Encode(map[string]any{ls.Name: out}); err != nil {
+			return nil, err
+		}
+		b, err := yaml.Marshal(&node)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(b)
 		buf.WriteString("\n")
 	}
 	return buf.Bytes(), nil
@@ -202,36 +262,48 @@ func expand(v any, env func(string) (string, bool), where string) (any, error) {
 	return v, nil
 }
 
-// File is a parsed settings file: block name -> its values.
-type File map[string]map[string]any
+// File is a parsed settings file: the blocks (name -> its values) and the
+// lists (name -> its items).
+type File struct {
+	Blocks map[string]map[string]any
+	Lists  map[string][]map[string]any
+}
 
 // Parse reads a file. env looks up ${NAME}; pass os.LookupEnv.
 func Parse(data []byte, env func(string) (string, bool)) (File, error) {
 	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("the file isn't valid YAML: %w", err)
+		return File{}, fmt.Errorf("the file isn't valid YAML: %w", err)
 	}
 	known := map[string]bool{}
 	for _, s := range Sections {
 		known[s.Name] = true
 	}
-	out := File{}
+	out := File{Blocks: map[string]map[string]any{}, Lists: map[string][]map[string]any{}}
 	for name, v := range raw {
+		if ls, ok := listByName(name); ok {
+			items, err := parseList(ls, v, env)
+			if err != nil {
+				return File{}, err
+			}
+			out.Lists[name] = items
+			continue
+		}
 		if !known[name] {
-			return nil, fmt.Errorf("%q isn't a block Mediarium knows. The blocks are: %s", name, sectionNames())
+			return File{}, fmt.Errorf("%q isn't a block Mediarium knows. The blocks are: %s", name, sectionNames())
 		}
 		if v == nil {
 			continue
 		}
 		m, ok := v.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("%q must be a list of name: value lines", name)
+			return File{}, fmt.Errorf("%q must be a list of name: value lines", name)
 		}
 		ex, err := expand(m, env, name)
 		if err != nil {
-			return nil, err
+			return File{}, err
 		}
-		out[name] = ex.(map[string]any)
+		out.Blocks[name] = ex.(map[string]any)
 	}
 	return out, nil
 }
@@ -240,7 +312,7 @@ func Parse(data []byte, env func(string) (string, bool)) (File, error) {
 func ReadFile(path string) (File, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return File{}, err
 	}
 	return Parse(data, os.LookupEnv)
 }
@@ -252,9 +324,13 @@ type Change struct {
 	Have    string // "" for a value Mediarium doesn't show back (a password, a key)
 	Want    string
 	Secret  bool // not shown back by Mediarium, so it is always sent
+	New     bool // a list item Mediarium doesn't have yet
 }
 
 func (c Change) String() string {
+	if c.New {
+		return fmt.Sprintf("%s: will be added", c.Section)
+	}
 	if c.Secret {
 		return fmt.Sprintf("%s.%s: (secret) will be set", c.Section, c.Key)
 	}
@@ -323,7 +399,7 @@ func run(ctx context.Context, c *Client, f File, apply bool) ([]Result, error) {
 	var bodies = map[string]map[string]any{}
 	var unknown []string
 	for _, s := range Sections {
-		want, ok := f[s.Name]
+		want, ok := f.Blocks[s.Name]
 		if !ok || len(want) == 0 {
 			continue
 		}
@@ -362,6 +438,11 @@ func run(ctx context.Context, c *Client, f File, apply bool) ([]Result, error) {
 		bodies[s.Name] = body
 		results = append(results, res)
 	}
+	listResults, listUnknown, err := planLists(ctx, c, f)
+	if err != nil {
+		return nil, err
+	}
+	unknown = append(unknown, listUnknown...)
 	if len(unknown) > 0 {
 		return nil, fmt.Errorf("these aren't settings Mediarium has (check the spelling; nothing was changed): %s", strings.Join(unknown, ", "))
 	}
@@ -383,6 +464,19 @@ func run(ctx context.Context, c *Client, f File, apply bool) ([]Result, error) {
 				r.Applied = true
 			}
 		}
+	}
+	for _, lr := range listResults {
+		res := lr.Result
+		if apply {
+			for _, act := range lr.actions {
+				if err := act(ctx, c); err != nil {
+					res.Err = fmt.Errorf("%s: %w", res.Section, err)
+					break
+				}
+			}
+			res.Applied = res.Err == nil && len(res.Changes) > 0
+		}
+		results = append(results, res)
 	}
 	return results, nil
 }

@@ -30,6 +30,7 @@ func TestIsHomeHost(t *testing.T) {
 		{"nas.lan:8264", true}, {"box.home.arpa", true}, {"thing.internal", true}, {"Server.LOCAL.", true},
 		{"media.example.com", false}, {"media.example.com:443", false}, {"evil.com", false},
 		{"192.168.1.10.evil.com", false}, {"local.evil.com", false}, {"", false},
+		{"203.0.113.9", false}, {"203.0.113.9:8264", false}, {"[2001:db8::1]:8264", false}, {"[::ffff:8.8.8.8]", false},
 	}
 	for _, tt := range tests {
 		if got := IsHomeHost(tt.host); got != tt.want {
@@ -58,6 +59,7 @@ func TestFromHome(t *testing.T) {
 		{"a proxy that hides the visitor with a real host", "private", "172.18.0.2:4000", localHost, map[string]string{"X-Forwarded-Host": "media.example.com"}, false},
 		{"forged private XFF, real X-Real-IP", "private", "172.18.0.2:4000", localHost, map[string]string{"X-Forwarded-For": "192.168.1.5", "X-Real-IP": "198.51.100.7"}, false},
 		{"a public name pointing home (DNS rebinding)", "private", "192.168.1.50:4000", "evil.example.com:8264", nil, false},
+		{"the public address through docker-proxy", "private", "172.17.0.1:4000", "203.0.113.9:8264", nil, false},
 		{"no trusted proxy: headers are noise", "none", "192.168.1.50:4000", localHost, map[string]string{"X-Forwarded-For": "198.51.100.7"}, true},
 	}
 	for _, tt := range tests {

@@ -170,6 +170,9 @@ func (s *Server) coverSource(ctx context.Context, b books.Book) ([]byte, error) 
 		return os.ReadFile(path)
 	}
 	fromFile := func(allowConvert bool) ([]byte, error) {
+		if books.ComicFormat(ebookExt(b)) {
+			return s.comicCoverSource(b) // the first page
+		}
 		if !allowConvert && kindleFormat(ebookExt(b)) {
 			return nil, books.ErrNoCover
 		}

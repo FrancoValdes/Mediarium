@@ -40,11 +40,6 @@ var (
 	badNameChar = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
 )
 
-// checkNamingFormat checks a custom movie file name format; the rules live
-// with the naming engine (organizer.CheckFormat), which the Settings page's
-// preview uses too.
-func checkNamingFormat(v string) string { return organizer.CheckFormat(v, organizer.TokenMovie) }
-
 // changed reports whether v differs from what is saved under key. A value
 // that is already saved is never re-checked, so an old install whose saved
 // value would fail today's rules can still save other settings.
@@ -109,36 +104,40 @@ func (s *Server) validateSettings(req *settingsPayload) string {
 	if m := checkChoice(req.NamingPreset, "Pick one of the naming styles from the list: Plex, Jellyfin, Kodi, Minimal or Custom.", namingPresets...); m != "" {
 		return m
 	}
-	req.MovieNameFormat = strings.TrimSpace(req.MovieNameFormat)
-	if req.MovieNameFormat != "" && s.changed(settings.KeyMovieNameFormat, req.MovieNameFormat) {
-		preset := req.NamingPreset
-		if preset == "" {
-			preset, _ = s.Settings.Get(settings.KeyNamingPreset)
-		}
-		if m := firstProblem(checkMaxLen(req.MovieNameFormat, "The file name format", maxNameFormatLen), checkNoControl(req.MovieNameFormat, "The file name format")); m != "" {
-			return m
-		}
-		// The full token check only matters once the format is the one in use;
-		// while another style is picked the box is just a saved draft.
-		if preset == "custom" {
-			if m := checkNamingFormat(req.MovieNameFormat); m != "" {
-				return m
-			}
-		}
+	// The full token check only matters once a format is the one in use; while
+	// another style is picked the box is just a saved draft. Switching to
+	// Custom puts the saved draft in use, so it is checked then too, even when
+	// it isn't edited in the same save.
+	preset := req.NamingPreset
+	if preset == "" {
+		preset, _ = s.Settings.Get(settings.KeyNamingPreset)
 	}
-	req.EpisodeNameFormat = strings.TrimSpace(req.EpisodeNameFormat)
-	if req.EpisodeNameFormat != "" && s.changed(settings.KeyEpisodeNameFormat, req.EpisodeNameFormat) {
-		if m := firstProblem(checkMaxLen(req.EpisodeNameFormat, "The episode file name format", maxNameFormatLen), checkNoControl(req.EpisodeNameFormat, "The episode file name format")); m != "" {
-			return m
-		}
-		preset := req.NamingPreset
-		if preset == "" {
-			preset, _ = s.Settings.Get(settings.KeyNamingPreset)
-		}
-		if preset == "custom" {
-			if m := organizer.CheckFormat(req.EpisodeNameFormat, organizer.TokenTV); m != "" {
+	toCustom := preset == "custom" && s.changed(settings.KeyNamingPreset, preset)
+	for _, f := range []struct {
+		value *string
+		key   string
+		label string
+		kind  organizer.TokenKind
+	}{
+		{&req.MovieNameFormat, settings.KeyMovieNameFormat, "The file name format", organizer.TokenMovie},
+		{&req.EpisodeNameFormat, settings.KeyEpisodeNameFormat, "The episode file name format", organizer.TokenTV},
+	} {
+		*f.value = strings.TrimSpace(*f.value)
+		format := *f.value
+		edited := format != "" && s.changed(f.key, format)
+		if edited {
+			if m := firstProblem(checkMaxLen(format, f.label, maxNameFormatLen), checkNoControl(format, f.label)); m != "" {
 				return m
 			}
+		}
+		if preset != "custom" || (!edited && !toCustom) {
+			continue
+		}
+		if format == "" {
+			format, _ = s.Settings.Get(f.key)
+		}
+		if m := organizer.CheckFormat(format, f.kind); m != "" {
+			return m
 		}
 	}
 	if m := checkChoice(req.IllegalCharMode, `Choose "strip" to remove characters that aren't allowed in file names, or "replace" to swap them for another character.`, illegalCharModes...); m != "" {
@@ -214,7 +213,7 @@ func (s *Server) validateSettings(req *settingsPayload) string {
 	if d := req.DownloadsAtOnce; d != nil && (*d < minDownloadsAtOnce || *d > maxDownloadsAtOnce) {
 		return fmt.Sprintf("Downloads at the same time must be a number from %d to %d.", minDownloadsAtOnce, maxDownloadsAtOnce)
 	}
-	if req.DefaultProfileID < 0 || req.MusicDefaultProfileID < 0 {
+	if req.DefaultProfileID < 0 || req.MusicDefaultProfileID < 0 || (req.DefaultTVProfileID != nil && *req.DefaultTVProfileID < 0) {
 		return "That profile doesn't exist. Pick one from the list."
 	}
 

@@ -135,6 +135,16 @@ func TestPushSenderDeliversAnEncryptedSignedMessage(t *testing.T) {
 		t.Fatalf("headers: %q %q", encoding, urgency)
 	}
 
+	// No link: no address is sent, so the worker opens Mediarium's start page
+	// under its own base, not the root of the domain.
+	got = pushPayload{}
+	if err := s.Send(context.Background(), Event{Type: "test", Title: "t", Message: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "t" || got.URL != "" {
+		t.Fatalf("payload without a link: %+v", got)
+	}
+
 	// The VAPID token: signed by the server's key, for the push service's origin.
 	parts := strings.SplitN(strings.TrimPrefix(auth, "vapid t="), ", k=", 2)
 	if len(parts) != 2 || parts[1] != vapid.PublicKey() {

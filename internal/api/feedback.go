@@ -38,7 +38,7 @@ const (
 	feedbackPowBits        = 20
 	feedbackMaxScreenshot  = 5 << 20
 	feedbackMaxImageSide   = 8000
-	feedbackPerHour        = 5
+	feedbackPerHour        = 5 // per person
 	feedbackMaxReportBytes = 200_000
 )
 
@@ -52,27 +52,53 @@ type feedbackRequest struct {
 	Screenshot string `json:"screenshot"` // a data: URL of a PNG or JPEG, optional
 }
 
+// feedbackPerHourInstall is how many reports the people who aren't
+// administrators may send together in an hour.
+const feedbackPerHourInstall = 15
+
 var feedbackLimit struct {
 	sync.Mutex
-	sent []time.Time
+	sent     []time.Time           // every report from this install
+	byPerson map[int64][]time.Time // each person's own
 }
 
-// feedbackAllowed keeps one install from sending more than a few reports an
-// hour, whoever is signed in.
-func feedbackAllowed(now time.Time) bool {
-	feedbackLimit.Lock()
-	defer feedbackLimit.Unlock()
-	kept := feedbackLimit.sent[:0]
-	for _, t := range feedbackLimit.sent {
+// lastHour keeps the times in ts that are less than an hour before now.
+func lastHour(ts []time.Time, now time.Time) []time.Time {
+	kept := ts[:0]
+	for _, t := range ts {
 		if now.Sub(t) < time.Hour {
 			kept = append(kept, t)
 		}
 	}
-	feedbackLimit.sent = kept
-	if len(kept) >= feedbackPerHour {
+	return kept
+}
+
+// feedbackAllowed keeps one person from sending more than a few reports an
+// hour, and the install as a whole from sending more than feedbackPerHourInstall.
+// An administrator only has their own limit, so other accounts using up the
+// install's share never stop them.
+func feedbackAllowed(now time.Time, person int64, admin bool) bool {
+	feedbackLimit.Lock()
+	defer feedbackLimit.Unlock()
+	if feedbackLimit.byPerson == nil {
+		feedbackLimit.byPerson = map[int64][]time.Time{}
+	}
+	feedbackLimit.sent = lastHour(feedbackLimit.sent, now)
+	for id, ts := range feedbackLimit.byPerson {
+		if ts = lastHour(ts, now); len(ts) == 0 {
+			delete(feedbackLimit.byPerson, id)
+		} else {
+			feedbackLimit.byPerson[id] = ts
+		}
+	}
+	if len(feedbackLimit.byPerson[person]) >= feedbackPerHour {
+		return false
+	}
+	if !admin && len(feedbackLimit.sent) >= feedbackPerHourInstall {
 		return false
 	}
 	feedbackLimit.sent = append(feedbackLimit.sent, now)
+	feedbackLimit.byPerson[person] = append(feedbackLimit.byPerson[person], now)
 	return true
 }
 
@@ -207,7 +233,8 @@ func (s *Server) handleSendFeedback(w http.ResponseWriter, r *http.Request) {
 	if isAdminRequest(r) {
 		report = cleanText(req.Report, feedbackMaxReportBytes)
 	}
-	if !feedbackAllowed(time.Now()) {
+	by, _ := requester(r)
+	if !feedbackAllowed(time.Now(), by, isAdminRequest(r)) {
 		writeError(w, http.StatusTooManyRequests, "A few reports were sent from this server in the last hour. Please wait a while, or open it on GitHub instead.")
 		return
 	}

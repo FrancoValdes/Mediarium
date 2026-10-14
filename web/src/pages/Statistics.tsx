@@ -127,7 +127,7 @@ export default function Statistics() {
               </div>
             ))}
           </div>
-          {s.historyKeptDays > 0 && <p className="field-hint">{t('The history is kept for {n} days, so older months are not counted.', { n: s.historyKeptDays })}</p>}
+          {s.historyKeptDays > 0 && <p className="field-hint">{plural(s.historyKeptDays, 'The history is kept for {n} day, so older months are not counted.', 'The history is kept for {n} days, so older months are not counted.')}</p>}
         </section>
       </div>
       <IndexerStats />
@@ -149,7 +149,7 @@ function IndexerStats() {
   const busiest = Math.max(1, ...data.indexers.map((i) => i.queries))
   return (
     <section className="card" style={{ marginTop: 16 }}>
-      <h2><TipLabel help="indexers#how-each-indexer-is-doing">{t('Indexers, last {n} days', { n: data.days })}</TipLabel></h2>
+      <h2><TipLabel help="indexers#how-each-indexer-is-doing">{plural(data.days, 'Indexers, last {n} day', 'Indexers, last {n} days')}</TipLabel></h2>
       <div style={{ overflowX: 'auto' }}>
         <table className="indexer-stats" style={{ width: '100%' }}>
           <thead>

@@ -503,7 +503,7 @@ func (s *Server) removeSeries(id int64, deleteFiles bool) (string, error) {
 		return series.Title, &removeProblem{http.StatusInternalServerError, err.Error()}
 	}
 	if deleteFiles {
-		if err := checkRemovable(s.seriesRootFor(series), files); err != nil {
+		if err := s.checkFilesRemovable(s.seriesRootFor(series), files); err != nil {
 			return series.Title, &removeProblem{http.StatusConflict, err.Error()}
 		}
 	}
@@ -517,7 +517,7 @@ func (s *Server) removeSeries(id int64, deleteFiles bool) (string, error) {
 	if now, err := s.seriesFiles(id); err == nil && !slices.Equal(now, files) {
 		files = now
 		if deleteFiles {
-			if err := checkRemovable(s.seriesRootFor(series), files); err != nil {
+			if err := s.checkFilesRemovable(s.seriesRootFor(series), files); err != nil {
 				return series.Title, &removeProblem{http.StatusConflict, err.Error()}
 			}
 		}

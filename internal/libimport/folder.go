@@ -14,7 +14,7 @@ import (
 // file counts, with its quality read from the file name and, failing that,
 // from the folder name.
 func ScanMovieFolder(dir string) ([]File, error) {
-	files, err := walkVideos(dir)
+	files, err := walkVideos(dir, maxTitleFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func ScanMovieFolder(dir string) ([]File, error) {
 // from each file name; a file without them ("Pilot.mkv") is reported as
 // skipped. Two files for the same episode keep the bigger one, as in ScanTV.
 func ScanSeriesFolder(dir string) ([]File, []string, error) {
-	files, err := walkVideos(dir)
+	files, err := walkVideos(dir, maxTitleFiles)
 	if err != nil {
 		return nil, nil, err
 	}

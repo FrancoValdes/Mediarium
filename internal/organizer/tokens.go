@@ -191,8 +191,20 @@ var (
 // Render expands a naming format against ctx, e.g.
 // "{Movie CleanTitle} ({Release Year}){ - Edition Tags} [{Quality Full}]".
 // An unknown token renders as nothing rather than failing: CheckFormat keeps
-// unknown tokens out of saved formats.
+// unknown tokens out of saved formats. A format that comes out empty (a title
+// with no name and no year) gives "tmdb-<id>", or "Unknown" without an id, so
+// a folder or file is never left without a name (or hidden as ".mkv").
 func Render(format string, ctx NamingContext) string {
+	if out := render(format, ctx); out != "" {
+		return out
+	}
+	if ctx.TMDBID > 0 {
+		return fmt.Sprintf("tmdb-%d", ctx.TMDBID)
+	}
+	return "Unknown"
+}
+
+func render(format string, ctx NamingContext) string {
 	for _, m := range tokenRe.FindAllStringSubmatch(format, -1) {
 		if p := parseToken(m[1]); p.known && p.def.name == "Edition Tags" {
 			ctx.editionTagged = true
@@ -270,7 +282,9 @@ func CheckFormat(format string, kind TokenKind) string {
 	if kind == TokenMovie && !has("movie title", "movie cleantitle", "movie titlethe", "movie cleantitlethe") {
 		return "Include the movie's title, for example {Movie Title} or {Movie CleanTitle}, so every file says which movie it is."
 	}
-	if kind == TokenTV && (!has("season") || !has("episode")) && !has("air-date") {
+	// The air date alone is not enough: two episodes can air on one day, and
+	// an episode with no date would leave nothing to tell it apart.
+	if kind == TokenTV && (!has("season") || !has("episode")) {
 		return "Include {Season} and {Episode} (for example S{Season:00}E{Episode:00}) so two episodes never get the same name."
 	}
 	return ""

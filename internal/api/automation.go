@@ -30,29 +30,39 @@ func (s *Server) StartAutomation() *automation.Scheduler {
 	_, _ = s.QueueRepo.ClearSettledFailures()
 	if s.cfg.PauseAutomation {
 		log.Print("Safe mode: MEDIARIUM_PAUSE_AUTOMATION is set, so automatic searching, downloading and refreshing are switched off until you remove it.")
-		return automation.NewScheduler()
+		// Two checks still run, as they start nothing by themselves: the
+		// download line (only what a person started goes ahead in safe mode,
+		// for example once the download hours begin) and the speed schedule.
+		sched := automation.NewScheduler(
+			automation.Job{Name: "download-line", Interval: downloadLineCheck, Run: func(context.Context) { s.kickDownloads() }},
+			automation.Job{Name: "speed-limit", Interval: speedCheck, Run: s.speedJob},
+		)
+		sched.Start()
+		return sched
 	}
 	sched := automation.NewScheduler(
-		automation.Job{Name: "hunt", Interval: s.huntInterval(), IntervalFunc: s.huntInterval, Run: s.hunt},
-		automation.Job{Name: "rss-sync", Interval: s.releaseCheckInterval(), IntervalFunc: s.releaseCheckInterval, Run: s.rssSync},
+		automation.Job{Name: "hunt", Interval: s.huntInterval(), IntervalFunc: s.huntInterval, Run: s.heavy(s.hunt)},
+		automation.Job{Name: "rss-sync", Interval: s.releaseCheckInterval(), IntervalFunc: s.releaseCheckInterval, Run: s.heavy(s.rssSync)},
 		automation.Job{Name: "delayed-grabs", Interval: time.Minute, Run: s.delayedGrabsJob}, // searches again when a held release has waited long enough
 		automation.Job{Name: "download-line", Interval: downloadLineCheck, Run: func(context.Context) { s.kickDownloads() }},
-		automation.Job{Name: "series-refresh", Interval: seriesRefreshInterval, Run: s.refreshAllSeries},
-		automation.Job{Name: "music-refresh", Interval: musicRefreshInterval, Run: s.refreshMusicArtists},
-		automation.Job{Name: "subtitle-sweep", Interval: subtitleSweepInterval, Run: s.subtitleSweepJob},
-		automation.Job{Name: "genre-backfill", Interval: genreBackfillInterval, Run: s.backfillGenres},
-		automation.Job{Name: "collections", Interval: collectionsInterval, Run: s.collectionsJob}, // finds the collection of each movie; adds new films of followed collections
+		automation.Job{Name: "series-refresh", Interval: seriesRefreshInterval, Run: s.heavy(s.refreshAllSeries)},
+		automation.Job{Name: "music-refresh", Interval: musicRefreshInterval, Run: s.heavy(s.refreshMusicArtists)},
+		automation.Job{Name: "subtitle-sweep", Interval: subtitleSweepInterval, Run: s.heavy(s.subtitleSweepJob)},
+		automation.Job{Name: "genre-backfill", Interval: genreBackfillInterval, Run: s.heavy(s.backfillGenres)},
+		automation.Job{Name: "collections", Interval: collectionsInterval, Run: s.heavy(s.collectionsJob)}, // finds the collection of each movie; adds new films of followed collections
 		automation.Job{Name: "cleanup", Interval: cleanupCheckInterval, Run: s.cleanupJob},
 		automation.Job{Name: "stats-snapshot", Interval: statsSnapshotEvery, Run: s.statsSnapshotJob},
 		automation.Job{Name: "backup", Interval: backupCheck, Run: s.backupJob},
 		automation.Job{Name: "speed-limit", Interval: speedCheck, Run: s.speedJob},
 		automation.Job{Name: "quiet-hours", Interval: speedCheck, Run: s.quietHoursJob},
-		automation.Job{Name: "import-details", Interval: importDetailsInterval, Run: s.importDetailsJob},
-		automation.Job{Name: "episode-quality", Interval: 24 * time.Hour, Run: func(context.Context) { s.backfillEpisodeQuality() }},
-		automation.Job{Name: "import-added-dates", Interval: 24 * time.Hour, Run: func(context.Context) { s.backfillImportedAddedDates() }},
-		automation.Job{Name: "watched", Interval: watchedJobTick, Run: s.watchedJob},                              // does nothing until switched on
-		automation.Job{Name: "plex-watchlist", Interval: watchlistInterval, Run: s.watchlistJob},                  // does nothing until an account connects one
-		automation.Job{Name: "import-lists", Interval: listsCheckInterval, Run: s.importListsJob},                 // does nothing until a list is added
+		automation.Job{Name: "calendar-art", Interval: artworkEvery, Run: s.heavy(s.artworkJob)}, // fetches the backdrops and logos of what is on the calendar
+		automation.Job{Name: "weekly-summary", Interval: digestCheck, Run: s.digestJob},          // does nothing until a day is chosen
+		automation.Job{Name: "import-details", Interval: importDetailsInterval, Run: s.heavy(s.importDetailsJob)},
+		automation.Job{Name: "episode-quality", Interval: 24 * time.Hour, Run: s.heavy(func(context.Context) { s.backfillEpisodeQuality() })},
+		automation.Job{Name: "import-added-dates", Interval: 24 * time.Hour, Run: s.heavy(func(context.Context) { s.backfillImportedAddedDates() })},
+		automation.Job{Name: "watched", Interval: watchedJobTick, Run: s.heavy(s.watchedJob)},                     // does nothing until switched on
+		automation.Job{Name: "plex-watchlist", Interval: watchlistInterval, Run: s.heavy(s.watchlistJob)},         // does nothing until an account connects one
+		automation.Job{Name: "import-lists", Interval: listsCheckInterval, Run: s.heavy(s.importListsJob)},        // does nothing until a list is added
 		automation.Job{Name: "request-available", Interval: requestAvailableInterval, Run: s.requestAvailableJob}, // does nothing until request messages are switched on
 	)
 	// The first minute belongs to the pages: the loops start once the app has

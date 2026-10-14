@@ -46,6 +46,13 @@ func FuzzParse(f *testing.F) {
 		"E01",
 		"Show.S01E1-E9999",
 		"Show.S99E999-E999",
+		"Show S01 E01 1080p",
+		"Show.S01E01.E02",
+		"Show.S01-S03.1080p",
+		"Show.1x01-1x03",
+		"Show.S2024E01",
+		"Season.2.Show.1080p",
+		"Movie.2019.x264-GRP-postbot[rarbg]",
 		strings.Repeat("a", 10000),
 		strings.Repeat("S01E01", 2000),
 		strings.Repeat(".-_ ", 2500),
@@ -78,8 +85,12 @@ func FuzzParse(f *testing.F) {
 		if r.Year != 0 && (r.Year < 1900 || r.Year > 2099) {
 			t.Fatalf("Parse(%q).Year = %d", in, r.Year)
 		}
-		if r.Season < 0 || r.Season > 99 {
+		// A season is 0-99, or a year for shows numbered that way (S2024E01).
+		if r.Season < 0 || (r.Season > 99 && (r.Season < 1900 || r.Season > 2099)) {
 			t.Fatalf("Parse(%q).Season = %d", in, r.Season)
+		}
+		if r.SeasonTo != 0 && (r.SeasonTo <= r.Season || r.SeasonTo > 99 || len(r.Episodes) > 0) {
+			t.Fatalf("Parse(%q): Season %d SeasonTo %d Episodes %v", in, r.Season, r.SeasonTo, r.Episodes)
 		}
 		if len(r.Episodes) > 1000 {
 			t.Fatalf("Parse(%q) returned %d episodes", in, len(r.Episodes))

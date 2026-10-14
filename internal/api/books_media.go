@@ -28,6 +28,9 @@ var ebookTypes = map[string]string{
 	"pdf":  "application/pdf",
 	"mobi": "application/x-mobipocket-ebook",
 	"azw3": "application/vnd.amazon.ebook",
+	"cbz":  "application/vnd.comicbook+zip",
+	"cbr":  "application/vnd.comicbook-rar",
+	"cb7":  "application/x-cb7",
 }
 
 // GET /api/books/{id}/read: the ebook file. ?download=1 saves it instead.

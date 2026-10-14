@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Settings } from './api'
 import { useToast } from './components/Toast'
 import { t } from './i18n.ts'
+import { saveOrder } from './autosaveOrder.ts'
 
 // Shared behaviour for settings that apply the moment you change them (a
 // switch, a checkbox): show the change immediately, save it, then trust what
@@ -21,16 +22,23 @@ export function useAutosaveSetting<T>(
   const toast = useToast()
   const readRef = useRef(read)
   readRef.current = read
+  const order = useRef(saveOrder()).current
+  // What the server last said it stored: a failed save goes back to it.
+  const stored = useRef<T>(initial)
 
   const refresh = useCallback(() => {
+    const stamp = order.readStarted()
     api
       .getSettings()
       .then((s) => {
-        setValue(readRef.current(s))
+        // A save happened meanwhile: its answer is newer than this one.
+        if (!order.readCounts(stamp)) return
+        stored.current = readRef.current(s)
+        setValue(stored.current)
         setLoaded(true)
       })
       .catch(() => undefined)
-  }, [])
+  }, [order])
 
   useEffect(() => {
     refresh()
@@ -47,22 +55,24 @@ export function useAutosaveSetting<T>(
 
   const change = useCallback(
     async (next: T) => {
-      const previous = value
+      const mine = order.saveStarted()
       setValue(next)
       setSaving(true)
       try {
-        const stored = await api.putSettings(write(next))
-        const confirmed = readRef.current(stored)
-        setValue(confirmed)
+        const confirmed = readRef.current(await api.putSettings(write(next)))
+        stored.current = confirmed
+        if (order.isNewest(mine)) setValue(confirmed)
         toast.success(describe(confirmed))
       } catch (e) {
-        setValue(previous)
+        // Back to what is really saved, unless a newer change is on its way.
+        if (order.isNewest(mine)) setValue(stored.current)
         toast.error(t('Not saved: {error}', { error: e instanceof Error ? e.message : String(e) }))
       } finally {
-        setSaving(false)
+        order.saveEnded()
+        if (order.isNewest(mine)) setSaving(false)
       }
     },
-    [value, write, describe, toast],
+    [order, write, describe, toast],
   )
 
   return { value, change, loaded, saving, refresh }

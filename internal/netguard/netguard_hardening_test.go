@@ -86,8 +86,10 @@ func TestBlockedMoreWaysToWriteTheSameAddress(t *testing.T) {
 		"::ffff:169.255.0.0":                 false,
 		"2002:a9fe::":                        true,
 		"2002:a9ff::":                        false,
-		"2001:0:a9fe:a9fe::":                 false, // Teredo: the client address is obfuscated, not judged
-		"64:ff9b:1::a9fe:a9fe":               false, // local-use NAT64 prefix is not translated by default
+		"2001:0:a9fe:a9fe::":                 true,  // Teredo: the client address (last 32 bits, inverted) is 255.255.255.255
+		"2001:0:a9fe:a9fe::5601:5601":        true,  // Teredo with the client 169.254.169.254
+		"2001:0:a9fe:a9fe::f7f7:f7f7":        false, // Teredo with the client 8.8.8.8
+		"64:ff9b:1::a9fe:a9fe":               true,  // local-use NAT64 is judged by the IPv4 address in it too
 		"::ffff:0:0":                         true,  // maps to 0.0.0.0
 		"::ffff:0.0.0.1":                     true,
 		"::0.0.0.1":                          false, // that is ::1, loopback

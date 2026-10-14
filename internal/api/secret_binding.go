@@ -31,8 +31,29 @@ func addrKey(raw string) string {
 	return strings.ToLower(strings.TrimSuffix(strings.Trim(raw, "[]"), "."))
 }
 
-// addrMoved reports whether two addresses lead to different places.
-func addrMoved(before, after string) bool { return addrKey(before) != addrKey(after) }
+// addrMoved reports whether two addresses lead to different places, or the
+// same place without encryption: a secret saved for https:// must not go out
+// in clear text because the address was changed to http://.
+func addrMoved(before, after string) bool {
+	return addrKey(before) != addrKey(after) || (secureScheme(before) && insecureScheme(after))
+}
+
+func addrScheme(raw string) string {
+	if i := strings.Index(strings.TrimSpace(raw), "://"); i > 0 {
+		return strings.ToLower(strings.TrimSpace(raw)[:i])
+	}
+	return ""
+}
+
+func secureScheme(raw string) bool {
+	s := addrScheme(raw)
+	return s == "https" || s == "wss"
+}
+
+func insecureScheme(raw string) bool {
+	s := addrScheme(raw)
+	return s == "http" || s == "ws"
+}
 
 // retypeSecretMessage is the answer when an address changed but the secret
 // that was saved for the old one was left blank.

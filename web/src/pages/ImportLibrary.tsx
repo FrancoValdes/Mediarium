@@ -13,8 +13,9 @@ import Switch from '../components/Switch'
 import { useToast } from '../components/Toast'
 import { formatBytes } from '../format'
 import { afterText, etaText, progressText, setText, totalLine } from '../importText'
-import { plural, t } from '../i18n'
+import { plural, t, st } from '../i18n'
 import KindGlyph from '../components/KindGlyph'
+import TypeTag from '../components/TypeTag'
 import '../import.css'
 import { useLive } from '../useLive'
 import { firstError, folderPath, required } from '../validate'
@@ -309,7 +310,7 @@ export default function ImportLibrary() {
 
       {error && <p className="error-text">{error}</p>}
 
-      {batchId === null && job?.phase === 'failed' && <p className="error-text">{job.error}</p>}
+      {batchId === null && job?.phase === 'failed' && <p className="error-text">{st(job.error)}</p>}
 
       {batchId === null && job && (job.phase === 'scanning' || job.phase === 'matching') && (
         <div className="imp-working">
@@ -538,7 +539,10 @@ function ReportRow({ item }: { item: ImportBatchItem }) {
   const problem = item.state === 'problem' || item.outcome === 'failed'
   return (
     <tr>
-      <td>{item.title}</td>
+      <td>
+        <TypeTag kind={item.kind} />
+        {item.title}
+      </td>
       <td>{added}</td>
       <td>{already}</td>
       <td className={problem ? 'error-text' : undefined} style={problem ? undefined : { color: 'var(--text-dim)' }}>
@@ -565,7 +569,7 @@ function ReviewRow(props: {
   const summary =
     kind === 'tv'
       ? `${plural(item.fileCount, '{n} episode file', '{n} episode files')}${item.seasons && item.seasons.length ? ` · ${seasonRange(item.seasons)}` : ''}`
-      : `${item.fileCount > 1 ? `${t('{n} files', { n: item.fileCount })} · ` : ''}${item.quality && item.quality !== 'Unknown' ? item.quality + ' · ' : ''}${formatBytes(item.sizeBytes)}`
+      : `${item.fileCount > 1 ? `${plural(item.fileCount, '{n} file', '{n} files')} · ` : ''}${item.quality && item.quality !== 'Unknown' ? item.quality + ' · ' : ''}${formatBytes(item.sizeBytes)}`
 
   return (
     <tr>
@@ -580,6 +584,7 @@ function ReviewRow(props: {
       </td>
       <td>
         <strong>
+          <TypeTag kind={kind} />
           {item.title} {item.year ? `(${item.year})` : ''}
         </strong>
         <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>{summary}</div>
@@ -613,7 +618,7 @@ function ReviewRow(props: {
             <button className="primary">{t('Go')}</button>
           </form>
         )}
-        {item.error && <div className="error-text">{item.error}</div>}
+        {item.error && <div className="error-text">{st(item.error)}</div>}
       </td>
       <td>
         {item.inLibrary ? (

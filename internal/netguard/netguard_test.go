@@ -177,3 +177,73 @@ func TestRedirectOnTheSameHostKeepsHeaders(t *testing.T) {
 		t.Errorf("the token was lost on a redirect within the same host: %v", got)
 	}
 }
+
+// A redirect from https to http on the same host would send the token in
+// clear text: it is dropped like on a redirect to another host.
+func TestRedirectFromHTTPSToHTTPDropsCredentialHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		chain []string
+		keep  bool
+	}{
+		{[]string{"https://media.example/a", "https://media.example/b"}, true},
+		{[]string{"http://media.example/a", "http://media.example/b"}, true},
+		{[]string{"http://media.example/a", "https://media.example/b"}, true},
+		{[]string{"https://media.example/a", "http://media.example/b"}, false},
+		{[]string{"https://media.example/a", "https://media.example/b", "http://media.example/c"}, false},
+	} {
+		var via []*http.Request
+		for _, u := range tc.chain[:len(tc.chain)-1] {
+			r, _ := http.NewRequest(http.MethodGet, u, nil)
+			via = append(via, r)
+		}
+		req, _ := http.NewRequest(http.MethodGet, tc.chain[len(tc.chain)-1], nil)
+		req.Header.Set("X-Plex-Token", "SECRETTOKEN")
+		if err := checkRedirect(req, via); err != nil {
+			t.Fatal(err)
+		}
+		if kept := req.Header.Get("X-Plex-Token") != ""; kept != tc.keep {
+			t.Errorf("%v: token kept %v, want %v", tc.chain, kept, tc.keep)
+		}
+	}
+}
+
+func TestNotPublic(t *testing.T) {
+	tests := map[string]bool{
+		"192.168.1.1":                          true,
+		"10.0.0.1":                             true,
+		"127.0.0.1":                            true,
+		"100.64.0.1":                           true,
+		"::1":                                  true,
+		"fd12::1":                              true,
+		"::ffff:192.168.1.1":                   true,
+		"64:ff9b::c0a8:101":                    true, // NAT64 for 192.168.1.1
+		"64:ff9b::7f00:1":                      true, // NAT64 for 127.0.0.1
+		"2002:c0a8:101::1":                     true, // 6to4 for 192.168.1.1
+		"64:ff9b:1::c0a8:101":                  true, // local-use NAT64
+		"64:ff9b:1::808:808":                   true, // local-use NAT64 is never public
+		"2001:0:4136:e378:8000:63bf:3f57:fefe": true, // Teredo for 192.168.1.1 (inverted)
+		"8.8.8.8":                              false,
+		"64:ff9b::808:808":                     false, // NAT64 for 8.8.8.8
+		"2606:4700:4700::1111":                 false,
+		"2002:808:808::1":                      false,
+	}
+	for in, want := range tests {
+		if got := NotPublic(netip.MustParseAddr(in)); got != want {
+			t.Errorf("NotPublic(%s) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestBlockedNAT64LocalAndTeredo(t *testing.T) {
+	tests := map[string]bool{
+		"64:ff9b:1::a9fe:a9fe":                 true,  // local-use NAT64 for 169.254.169.254
+		"2001:0:4136:e378:8000:63bf:5601:5601": true,  // Teredo for 169.254.169.254 (inverted)
+		"64:ff9b:1::808:808":                   false, // 8.8.8.8
+		"2001:0:4136:e378:8000:63bf:f7f7:f7f7": false, // Teredo for 8.8.8.8
+	}
+	for in, want := range tests {
+		if got := Blocked(netip.MustParseAddr(in)); got != want {
+			t.Errorf("Blocked(%s) = %v, want %v", in, got, want)
+		}
+	}
+}

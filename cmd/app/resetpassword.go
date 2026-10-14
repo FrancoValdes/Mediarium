@@ -29,11 +29,14 @@ func resetPassword(args []string) error {
 	}
 	defer db.Close()
 
-	password, err := promptPassword("New password for " + username + ": ")
+	// One reader for both prompts: a second reader would lose whatever the
+	// first one had already buffered, such as a piped-in confirmation.
+	in := bufio.NewReader(os.Stdin)
+	password, err := promptPassword(in, "New password for "+username+": ")
 	if err != nil {
 		return err
 	}
-	confirm, err := promptPassword("Confirm new password: ")
+	confirm, err := promptPassword(in, "Confirm new password: ")
 	if err != nil {
 		return err
 	}
@@ -70,25 +73,33 @@ func resetTwoStep(args []string) error {
 	return nil
 }
 
-// promptPassword reads a line from stdin, hiding what's typed when stdin is
-// a terminal. Echo is toggled with stty rather than pulling in
+// promptPassword reads a line from in (stdin), hiding what's typed when stdin
+// is a terminal. Echo is toggled with stty rather than pulling in
 // golang.org/x/term for a single recovery command — if stty isn't
 // available the password is simply read without hiding, which still works.
-func promptPassword(prompt string) (string, error) {
+func promptPassword(in *bufio.Reader, prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
 	interactive := false
 	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
-		interactive = exec.Command("stty", "-echo").Run() == nil
+		interactive = stty("-echo") == nil
 	}
 	if interactive {
 		defer func() {
-			_ = exec.Command("stty", "echo").Run()
+			_ = stty("echo")
 			fmt.Fprintln(os.Stderr)
 		}()
 	}
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, err := in.ReadString('\n')
 	if err != nil && line == "" {
 		return "", fmt.Errorf("read password: %w", err)
 	}
 	return strings.TrimRight(line, "\r\n"), nil
+}
+
+// stty changes the terminal settings of stdin; stty works on its own stdin,
+// so it is handed ours.
+func stty(arg string) error {
+	cmd := exec.Command("stty", arg)
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
 }

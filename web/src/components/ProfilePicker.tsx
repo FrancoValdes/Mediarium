@@ -1,5 +1,6 @@
 import { sortProfiles } from './qualityBlurb'
 import { useEffect, useState } from 'react'
+import { defaultProfileFor } from '../profileDefaults'
 import { api, isAdmin, type QualityProfile, type SourcePref } from '../api'
 import { useAuth } from '../AuthContext'
 import { t } from '../i18n'
@@ -33,7 +34,7 @@ function Picker({ kind, itemId, children }: { kind: 'movie' | 'series'; itemId: 
   useEffect(() => {
     api.listProfiles().then((r) => {
       setProfiles(sortProfiles(r.profiles))
-      setDefaultId(r.defaultId)
+      setDefaultId(defaultProfileFor(kind, r))
     }).catch(() => undefined)
     api.getSettings().then((s) => setDefaultSources(s.defaultSources ?? 'both')).catch(() => undefined)
     const load = kind === 'movie' ? api.getMovie(itemId) : api.getSeries(itemId)

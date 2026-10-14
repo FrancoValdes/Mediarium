@@ -11,8 +11,10 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -64,10 +66,47 @@ func LoadOrCreateKey(path string) (*Box, error) {
 		return nil, fmt.Errorf("generate secret key: %w", err)
 	}
 	encoded := base64.StdEncoding.EncodeToString(key)
-	if err := os.WriteFile(path, []byte(encoded), 0o600); err != nil {
+	if err := writeKeyFile(path, []byte(encoded)); err != nil {
 		return nil, fmt.Errorf("write secret key: %w", err)
 	}
 	return &Box{key: key}, nil
+}
+
+// writeKeyFile puts data at path all at once: it is written to a temporary
+// file in the same folder, flushed to disk and renamed into place, so a crash
+// or a full disk never leaves a half-written key behind (the database would
+// then be encrypted with a key nobody has).
+func writeKeyFile(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".secret.key-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once renamed
+	if err := tmp.Chmod(0o600); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	// Make the rename itself last. Not every system can sync a folder.
+	if dir, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = dir.Sync()
+		dir.Close()
+	}
+	return nil
 }
 
 // Encrypt returns a base64-encoded nonce||ciphertext string.

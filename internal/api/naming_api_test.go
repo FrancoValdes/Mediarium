@@ -36,6 +36,20 @@ func TestNamingFormatsFromRadarrAndSonarr(t *testing.T) {
 		t.Fatalf("problem = %v", p)
 	}
 
+	// A draft saved while another style was picked is checked once Custom is
+	// picked, even when the draft itself isn't sent again.
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"namingPreset": "plex", "movieNameFormat": "{Release Year} {Quality}"}, http.StatusOK)
+	bad = putJSONStatus(t, client, base+"/api/settings", map[string]any{"namingPreset": "custom"}, http.StatusBadRequest)
+	if msg, _ := bad["error"].(string); !strings.Contains(msg, "movie's title") {
+		t.Fatalf("switching to a bad movie draft = %v", bad)
+	}
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"namingPreset": "plex", "movieNameFormat": radarr, "episodeNameFormat": "{Series Title} {Air-Date}"}, http.StatusOK)
+	bad = putJSONStatus(t, client, base+"/api/settings", map[string]any{"namingPreset": "custom"}, http.StatusBadRequest)
+	if msg, _ := bad["error"].(string); !strings.Contains(msg, "{Season} and {Episode}") {
+		t.Fatalf("switching to a bad episode draft = %v", bad)
+	}
+	putJSONStatus(t, client, base+"/api/settings", map[string]any{"namingPreset": "custom", "episodeNameFormat": sonarr}, http.StatusOK)
+
 	list := getJSON[map[string]any](t, client, base+"/api/settings/naming-tokens")
 	tokens, _ := list["tokens"].([]any)
 	schemes, _ := list["schemes"].([]any)

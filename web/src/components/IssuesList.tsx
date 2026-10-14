@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, isAdmin, type Issue } from '../api'
 import { useAuth } from '../AuthContext'
 import { timeAgo } from '../format'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
 import { useLive } from '../useLive'
 import { useConfirm } from './ConfirmProvider'
 import Icon from './Icon'
@@ -77,7 +77,7 @@ export default function IssuesList({ onCount }: { onCount?: (open: number) => vo
             <small>
               {[ISSUE_CATEGORY[i.category], i.episode, admin && i.reporter ? t('reported by {name}', { name: i.reporter }) : '', timeAgo(i.createdAt)].filter(Boolean).join(' · ')}
             </small>
-            {i.message && <p className="issue-text">{i.message}</p>}
+            {i.message && <p className="issue-text">{st(i.message)}</p>}
             {i.comment && (
               <p className="issue-answer">
                 <strong>{t('Answer')}:</strong> {i.comment}

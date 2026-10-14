@@ -6,6 +6,7 @@ import { useToast } from './Toast'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
 import { required } from '../validate'
 import { t, tx } from '../i18n'
+import { pollPin } from '../pinPoll'
 
 // The networks to search, typed as 192.168.1 or 192.168.1.0/24, separated by spaces or commas.
 function subnetsProblem(value: string): string | null {
@@ -108,9 +109,9 @@ export function PlexSignIn({ onAdded }: { onAdded: () => void }) {
   const [servers, setServers] = useState<PlexAccountServer[] | null>(null)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState('')
-  const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const stopPoll = useRef<() => void>(() => undefined)
 
-  useEffect(() => () => clearInterval(timer.current), [])
+  useEffect(() => () => stopPoll.current(), [])
 
   const starting = useRef(false)
   async function start() {
@@ -122,24 +123,29 @@ export function PlexSignIn({ onAdded }: { onAdded: () => void }) {
       const p = await api.plexPin()
       setPin(p)
       window.open(p.authUrl, 'plex-sign-in', 'width=620,height=760,noopener,noreferrer')
-      clearInterval(timer.current)
-      timer.current = setInterval(async () => {
-        try {
+      stopPoll.current()
+      stopPoll.current = pollPin({
+        check: async () => {
           const st = await api.plexPinStatus(p.pinId)
-          if (st.done) {
-            clearInterval(timer.current)
-            setServers(st.servers)
-          } else if (st.expired) {
-            clearInterval(timer.current)
+          return st.done || st.expired ? st : undefined
+        },
+        lifeSeconds: p.expiresIn,
+        onDone: (st) => {
+          if (st.done) setServers(st.servers)
+          else {
             setPin(null)
             setError(st.error ?? t('The sign-in expired. Try again.'))
           }
-        } catch (e) {
-          clearInterval(timer.current)
+        },
+        onExpired: () => {
+          setPin(null)
+          setError(t('The sign-in expired. Try again.'))
+        },
+        onError: (e) => {
           setPin(null)
           setError(errText(e))
-        }
-      }, 2000)
+        },
+      })
     } catch (e) {
       setError(errText(e))
     } finally {
@@ -228,13 +234,13 @@ export function JellyfinEmbySignIn({ kind, baseUrl, checkAddress, onAdded }: { k
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const stopPoll = useRef<() => void>(() => undefined)
   const label = MEDIA_SERVER_BRAND[kind].label
   const v = useValidation({ username: required(username, t('Add the username of a {server} administrator.', { server: label })) })
 
-  useEffect(() => () => clearInterval(timer.current), [])
+  useEffect(() => () => stopPoll.current(), [])
   useEffect(() => {
-    clearInterval(timer.current)
+    stopPoll.current()
     setQc(null)
     setError('')
   }, [baseUrl, kind])
@@ -245,26 +251,29 @@ export function JellyfinEmbySignIn({ kind, baseUrl, checkAddress, onAdded }: { k
     try {
       const r = await api.jellyfinQuickConnect(baseUrl.trim())
       setQc({ id: r.id, code: r.code })
-      clearInterval(timer.current)
-      timer.current = setInterval(async () => {
-        try {
+      stopPoll.current()
+      stopPoll.current = pollPin({
+        check: async () => {
           const st = await api.jellyfinQuickConnectStatus(r.id)
+          return st.done || st.expired ? st : undefined
+        },
+        lifeSeconds: r.expiresIn,
+        onDone: (st) => {
+          setQc(null)
           if (st.done) {
-            clearInterval(timer.current)
-            setQc(null)
             toast.success(t('{name} added. New downloads will show up in {server} on their own.', { name: st.server.name, server: 'Jellyfin' }))
             onAdded()
-          } else if (st.expired) {
-            clearInterval(timer.current)
-            setQc(null)
-            setError(st.error ?? t('The code expired. Try again.'))
-          }
-        } catch (e) {
-          clearInterval(timer.current)
+          } else setError(st.error ?? t('The code expired. Try again.'))
+        },
+        onExpired: () => {
+          setQc(null)
+          setError(t('The code expired. Try again.'))
+        },
+        onError: (e) => {
           setQc(null)
           setError(errText(e))
-        }
-      }, 2000)
+        },
+      })
     } catch (e) {
       setError(errText(e))
     }

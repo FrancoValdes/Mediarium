@@ -61,7 +61,9 @@ func sickchillCall(cmd string, extra url.Values) call {
 
 func fetchSickChill(ctx context.Context, hc *http.Client, c Conn) ([]legacyShow, error) {
 	var list sickchillShowsAnswer
-	if err := read(ctx, hc, c, sickchillCall("shows", nil), &list); err != nil {
+	listCall := sickchillCall("shows", nil)
+	listCall.list = true
+	if err := read(ctx, hc, c, listCall, &list); err != nil {
 		return nil, err
 	}
 	if err := list.check(); err != nil {
@@ -113,9 +115,13 @@ func fetchSickChill(ctx context.Context, hc *http.Client, c Conn) ([]legacyShow,
 		}()
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// One show that can't be read is skipped, not the whole import.
 	for i, err := range errs {
 		if err != nil {
-			return nil, fmt.Errorf("read show %q: %w", shows[i].Title, err)
+			shows[i].Err = err.Error()
 		}
 	}
 	return shows, nil

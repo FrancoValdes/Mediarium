@@ -6,6 +6,7 @@ import { demoEnabled, setDemo } from '../demo'
 import { DOCS_URL, FEEDBACK_URL, REPO_URL, WEBSITE_URL } from '../docs'
 import { LANGUAGES, chooseLanguage, currentLanguage, t } from '../i18n'
 import { openReport } from '../report'
+import { QUEUE_STORAGE_KEY } from '../musicQueue'
 import Icon from './Icon'
 import ShareDialog from './ShareDialog'
 import { useToast } from './Toast'
@@ -47,6 +48,12 @@ export default function ProfileMenu() {
     try {
       await api.logout()
       setUser(null)
+      // The next person on this browser shouldn't find this one's music queue.
+      try {
+        localStorage.removeItem(QUEUE_STORAGE_KEY)
+      } catch {
+        // storage blocked: nothing was kept anyway
+      }
     } catch (e) {
       // Still signed in on the server: say so instead of showing the sign-in page.
       toast.error(e instanceof Error ? e.message : String(e))

@@ -152,6 +152,8 @@ export default function QualityProfilesSection({ rev = 0, onChanged, advanced = 
   const [formats, setFormats] = useState<CustomFormat[]>([])
   const [tiers, setTiers] = useState<string[]>([])
   const [defaultId, setDefaultId] = useState(0)
+  // The default for shows; 0 = shows use the same default as movies.
+  const [defaultTvId, setDefaultTvId] = useState(0)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -184,6 +186,7 @@ export default function QualityProfilesSection({ rev = 0, onChanged, advanced = 
         setProfiles(sortProfiles(r.profiles))
         setTiers(r.tiers)
         setDefaultId(r.defaultId)
+        setDefaultTvId(r.defaultTvId || 0)
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
     api
@@ -244,6 +247,18 @@ export default function QualityProfilesSection({ rev = 0, onChanged, advanced = 
     setError('')
     try {
       await api.putSettings({ defaultProfileId: id })
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // Picking the movie default as the TV default clears it, so shows keep
+  // following the movie default if that changes later. id 0 clears it too.
+  async function makeDefaultTv(id: number) {
+    setError('')
+    try {
+      await api.putSettings({ defaultTvProfileId: id === defaultId ? 0 : id })
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -435,7 +450,9 @@ export default function QualityProfilesSection({ rev = 0, onChanged, advanced = 
             <Fragment key={p.id}>
             <tr className={[draft?.id === p.id ? 'editing' : '', p.id === defaultId ? 'is-default' : ''].filter(Boolean).join(' ') || undefined}>
               <td>
-                {p.name} {p.id === defaultId && <span className="badge downloaded">{t('default')}</span>}
+                {p.name}{' '}
+                {p.id === defaultId && <span className="badge downloaded">{defaultTvId === 0 ? t('default') : t('default for movies')}</span>}{' '}
+                {defaultTvId !== 0 && p.id === defaultTvId && <span className="badge downloaded">{t('default for TV')}</span>}
                 {p.inUse > 0 && <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem' }}>{t('used by {n}', { n: p.inUse })}</div>}
                 <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', maxWidth: 320 }}>{profileBlurb(p)}</div>
                 {(p.fallback ?? []).length > 0 && (
@@ -474,8 +491,10 @@ export default function QualityProfilesSection({ rev = 0, onChanged, advanced = 
               <td style={{ whiteSpace: 'nowrap' }}>
                 <button onClick={() => openDraft(draftFrom(p))}>{t('Edit')}</button>{' '}
                 <button onClick={() => openDraft({ ...draftFrom(p), id: undefined, name: copyName(p.name, profiles) })}>{t('Duplicate')}</button>{' '}
-                {p.id !== defaultId && <button onClick={() => makeDefault(p.id)}>{t('Make default')}</button>}{' '}
-                {p.id !== defaultId && <button onClick={() => remove(p)}>{t('Delete')}</button>}
+                {p.id !== defaultId && <button onClick={() => makeDefault(p.id)}>{t('Make default for movies')}</button>}{' '}
+                {p.id !== (defaultTvId || defaultId) && <button onClick={() => makeDefaultTv(p.id)}>{t('Make default for TV')}</button>}{' '}
+                {p.id === defaultTvId && <button onClick={() => makeDefaultTv(0)}>{t('Use the movie default for TV')}</button>}{' '}
+                {p.id !== defaultId && p.id !== defaultTvId && <button onClick={() => remove(p)}>{t('Delete')}</button>}
               </td>
             </tr>
             {draft?.id === p.id && (

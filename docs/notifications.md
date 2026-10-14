@@ -64,7 +64,7 @@ All three go through Mediarium's usual address check, like the other methods. Th
 
 1. Choose the method on the left.
 2. Fill in the fields. Each has a short explanation underneath, required ones are marked with a star, and mistakes (an address without `http://`, an email address without an `@`, a port that is not a number) are pointed out as you type.
-3. Choose **when** it should tell you: download started, downloaded, failed, needs a decision, subtitles, something is wrong, a new version of Mediarium. The default is downloaded, failed, something is wrong and a new version.
+3. Choose **when** it should tell you: download started, downloaded, failed, needs a decision, subtitles, something is wrong, a new version of Mediarium. There is also **Weekly summary**, which is described [below](#weekly-summary). The default is downloaded, failed, something is wrong and a new version.
 4. Press **Send a test** and check your device, then **Add**. Add works without a test, but a test finds a wrong address or password before you rely on it.
 
 ### The test log
@@ -125,6 +125,12 @@ Do this on each device you want notified: each one is its own entry in the list.
 The messages are encrypted for that device alone before they leave your server. The browser maker's push service (Google, Apple, Mozilla or Microsoft) passes them on but can't read them. Your server signs them with its own key (made the first time Mediarium starts, kept encrypted with the other settings), so no one else can send to your devices.
 
 If a device stops getting them, for example after you removed the Home Screen icon or switched notifications off in its settings, the next message fails with "this device isn't subscribed any more". Remove it from the list and allow notifications on the device again.
+
+## Weekly summary
+
+Once a week, Mediarium can send one short message with the week in it: how many downloads arrived (movies, shows, albums, books), how many failed, how many subtitles were added, how many movies and episodes are still missing and how many downloads are waiting in the line. Zero counts are left out, and a quiet week says so in one line.
+
+It is off until you choose a day. On the Notifications page, under **Weekly summary**, pick the day and the hour (server time). The summary goes to the targets that have **Weekly summary** ticked, so tick it on the ones you want it on (it is not ticked on the ones you already have). **Send one now** sends it straight away, so you can see what it looks like; that one doesn't count, so the scheduled one still comes on its day. It is sent once a week even if Mediarium was restarted. Stored as `notify.digest_day` (0 is Sunday) and `notify.digest_hour`; scripts use `digestDay` (-1 for none) and `digestHour` in `PUT /api/settings`, and `POST /api/notifications/digest` sends one now.
 
 ## Changing or removing one
 

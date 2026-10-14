@@ -22,6 +22,7 @@ type Release struct {
 	Title      string
 	Year       int
 	Season     int   // 0 = not a TV release
+	SeasonTo   int   // last season of a pack of several (S01-S03 gives 3), else 0
 	Episode    int   // 0 = season pack / not episode-specific
 	Episodes   []int // populated for multi-episode releases (e.g. E01E02)
 	Resolution string
@@ -113,15 +114,16 @@ var (
 
 		{regexp.MustCompile(`(?i)\b(TrueHD|Atmos|DTS-?HD|DTS|DDP?5\.1|DD5\.1|AC3|EAC3|AAC2?\.0|AAC|FLAC|MP3)\b`), func(r *Release, m []string) { r.AudioCodec = normalizeAudio(m[1]) }},
 
-		// Season+episode(s): S01E01, S01E01E02E03 (concatenated), S01E01-E03
-		// or S01E01-03 (range). A single regex handles all three shapes by
-		// capturing the whole episode-tag run as one group and expanding it
-		// in parseEpisodeRun — Go's RE2 engine (unlike PCRE) only keeps the
-		// *last* iteration of a repeated capture group, so matching each
-		// episode number as its own capture and reading m[3] (as an earlier
-		// version of this code did) silently dropped every episode but the
-		// last one in a multi-episode release.
-		{regexp.MustCompile(`(?i)[Ss](\d{1,2})((?:[Ee]\d{1,3})+(?:-[Ee]?\d{1,3}\b)?)`), func(r *Release, m []string) {
+		// Season+episode(s): S01E01, S01E01E02E03 or S01E01.E02 (concatenated),
+		// S01E01-E03 or S01E01-03 (range). A single regex handles all these
+		// shapes by capturing the whole episode-tag run as one group and
+		// expanding it in parseEpisodeRun — Go's RE2 engine (unlike PCRE) only
+		// keeps the *last* iteration of a repeated capture group, so matching
+		// each episode number as its own capture and reading m[3] (as an
+		// earlier version of this code did) silently dropped every episode but
+		// the last one in a multi-episode release. "S01 E01" and "S1.E1" may
+		// have a separator before the E, and a season can be a year (S2024E01).
+		{seasonEpisodeRe, func(r *Release, m []string) {
 			r.Season = atoi(m[1])
 			r.Special = r.Season == 0
 			r.Episodes = parseEpisodeRun(m[2])
@@ -129,16 +131,24 @@ var (
 				r.Episode = r.Episodes[0]
 			}
 		}},
-		// "1x05" style season/episode, common in older TV libraries.
-		{regexp.MustCompile(`(?i)\b(\d{1,2})x(\d{2,3})\b`), func(r *Release, m []string) {
+		// "1x05" style season/episode, common in older TV libraries, and the
+		// ranges "1x01-1x03" and "1x01-03".
+		{crossEpisodeRe, func(r *Release, m []string) {
 			r.Season = atoi(m[1])
 			r.Special = r.Season == 0
 			r.Episode = atoi(m[2])
 			r.Episodes = []int{r.Episode}
+			if m[4] != "" && (m[3] == "" || atoi(m[3]) == r.Season) {
+				for e := r.Episode + 1; e <= atoi(m[4]); e++ {
+					r.Episodes = append(r.Episodes, e)
+				}
+			}
 		}},
-		// Season pack: S01, Season 1 (spaces are already dots by now).
-		{regexp.MustCompile(`(?i)\bSeason[. ]?(\d{1,2})\b`), func(r *Release, m []string) { r.Season = atoi(m[1]); r.Special = r.Special || r.Season == 0 }},
-		{regexp.MustCompile(`(?i)\bS(\d{1,2})\b`), func(r *Release, m []string) { r.Season = atoi(m[1]); r.Special = r.Special || r.Season == 0 }},
+		// Season pack: S01, Season 1 (spaces are already dots by now), or
+		// several seasons: S01-S03, S01-03, Season 1-3. A name that already
+		// gave an episode keeps that episode's season.
+		{seasonWordRe, assignSeasonPack},
+		{seasonPackRe, assignSeasonPack},
 		// Airdate style: 2021.05.14 or 2021-05-14
 		{airDateRe, func(r *Release, m []string) {
 			if r.Season == 0 && !r.Special {
@@ -146,6 +156,19 @@ var (
 			}
 		}},
 	}
+
+	// The season and episode markers, described where tokens uses them. A
+	// title can come after one of these ("Season.2.Show.1080p").
+	seasonEpisodeRe = regexp.MustCompile(`(?i)[Ss]((?:19|20)\d{2}|\d{1,2})[._-]?([Ee]\d{1,3}(?:\.?[Ee]\d{1,3})*(?:-[Ee]?\d{1,3}\b)?)`)
+	crossEpisodeRe  = regexp.MustCompile(`(?i)\b(\d{1,2})x(\d{2,3})(?:-(?:(\d{1,2})x)?(\d{2,3}))?\b`)
+	seasonWordRe    = regexp.MustCompile(`(?i)\bSeason[. ]?(\d{1,2})(?:-(\d{1,2}))?\b`)
+	seasonPackRe    = regexp.MustCompile(`(?i)\bS(\d{1,2})(?:-S?(\d{1,2}))?\b`)
+
+	// junkSuffixRe is what posting tools add after the group ("-GRP-postbot",
+	// "-GRP-Obfuscated"); trailingTagRe a site's tag after it ("-GRP[rarbg]").
+	// Both are cut off before the group is read.
+	junkSuffixRe  = regexp.MustCompile(`(?i)(?:-(?:postbot|obfuscated|xpost|scrambled|buymore|whiterev|asrequested|chaos|rp|nzbgeek|sample))+$`)
+	trailingTagRe = regexp.MustCompile(`(?:\[[^\[\]]{1,40}\])+$`)
 
 	airDateRe   = regexp.MustCompile(`\b((?:19|20)\d{2})[.-](\d{2})[.-](\d{2})\b`)
 	dailyPartRe = regexp.MustCompile(`(?i)\b(?:part|pt)\.?(\d{1,2})\b`)
@@ -170,13 +193,32 @@ var (
 	leadingDigitRe = regexp.MustCompile(`^(\d{1,3})`)
 )
 
+// assignSeasonPack reads a season pack marker: m[1] is the season, m[2] the
+// last season of a range, if any.
+func assignSeasonPack(r *Release, m []string) {
+	if len(r.Episodes) > 0 {
+		return
+	}
+	r.Season = atoi(m[1])
+	r.Special = r.Special || r.Season == 0
+	if to := atoi(m[2]); to > r.Season {
+		r.SeasonTo = to
+	}
+}
+
+// isSeasonMarker reports whether a token regex is a season or episode marker.
+func isSeasonMarker(re *regexp.Regexp) bool {
+	return re == seasonEpisodeRe || re == crossEpisodeRe || re == seasonWordRe || re == seasonPackRe
+}
+
 // parseEpisodeRun expands a captured episode-tag run (e.g. "E01E02E03",
 // "E01-E03", or "E01-03") into the full list of episode numbers it
 // represents.
 func parseEpisodeRun(s string) []int {
 	if dashIdx := strings.IndexByte(s, '-'); dashIdx >= 0 {
 		before, after := s[:dashIdx], s[dashIdx+1:]
-		beforeTags := episodeTagRe.FindAllStringSubmatch(before, -1)
+		// Only the last tag counts, and a tag is at most four characters.
+		beforeTags := episodeTagRe.FindAllStringSubmatch(before[max(0, len(before)-4):], -1)
 		if len(beforeTags) == 0 {
 			return nil
 		}
@@ -230,6 +272,7 @@ func Parse(name string) Release {
 
 	titleEnd := len(working)
 	var tagStarts []int
+	var seasonSpans [][2]int
 
 	for _, t := range tokens {
 		loc := t.re.FindStringSubmatchIndex(working)
@@ -253,6 +296,9 @@ func Parse(name string) Release {
 		if loc[0] < titleEnd {
 			titleEnd = loc[0]
 		}
+		if isSeasonMarker(t.re) {
+			seasonSpans = append(seasonSpans, [2]int{loc[0], loc[1]})
+		}
 	}
 
 	if r.AirDate != "" && !r.Special {
@@ -268,6 +314,7 @@ func Parse(name string) Release {
 	if allYears := yearPattern.FindAllStringSubmatchIndex(working, -1); len(allYears) > 0 {
 		last := allYears[len(allYears)-1]
 		if last[0] > 0 {
+			tagStarts = append(tagStarts, last[0])
 			r.Year = atoi(working[last[2]:last[3]])
 			if last[0] < titleEnd {
 				titleEnd = last[0]
@@ -287,6 +334,7 @@ func Parse(name string) Release {
 			}
 			if len(r.Episodes) > 0 {
 				r.Episode = r.Episodes[0]
+				r.SeasonTo = 0
 			}
 		}
 	}
@@ -325,10 +373,22 @@ func Parse(name string) Release {
 	}
 
 	// The release group is the last thing in the name, and only counts after
-	// something else was read: "Spider-Man" has no group.
-	if loc := groupRe.FindStringSubmatchIndex(working); loc != nil && titleEnd < loc[0] {
+	// something else was read: "Spider-Man" has no group. A site's tag and
+	// what posting tools add after the group are not part of it.
+	groupEnd := len(working)
+	if loc := trailingTagRe.FindStringIndex(working); loc != nil && loc[0] > 0 {
+		groupEnd = loc[0]
+	}
+	if loc := junkSuffixRe.FindStringIndex(working[:groupEnd]); loc != nil && loc[0] > 0 {
+		groupEnd = loc[0]
+		if groupEnd < titleEnd {
+			titleEnd = groupEnd
+		}
+	}
+	if loc := groupRe.FindStringSubmatchIndex(working[:groupEnd]); loc != nil && titleEnd < loc[0] {
 		if g := working[loc[2]:loc[3]]; !notGroupRe.MatchString(g) {
 			r.Group = g
+			tagStarts = append(tagStarts, loc[0])
 		}
 	}
 	if r.Group == "" {
@@ -339,9 +399,30 @@ func Parse(name string) Release {
 		titleEnd = len(working)
 	}
 	r.Title = cleanTitle(working[:titleEnd])
+	afterTitle := titleEnd
+	// "Season.2.Show.1080p": nothing before the season marker, so the title
+	// is what comes after it, up to the next tag.
+	if r.Title == "" {
+		start := -1
+		for _, sp := range seasonSpans {
+			if sp[1] > start && cleanTitle(working[:sp[0]]) == "" {
+				start = sp[1]
+			}
+		}
+		if start >= 0 {
+			end := groupEnd
+			for _, st := range tagStarts {
+				if st >= start && st < end {
+					end = st
+				}
+			}
+			r.Title = cleanTitle(working[start:end])
+			afterTitle = end
+		}
+	}
 	// Language tags are only read after the title, so "The Italian Job" is
 	// not an Italian release.
-	r.Languages, r.Multi, r.Subbed = detectLanguages(working[titleEnd:])
+	r.Languages, r.Multi, r.Subbed = detectLanguages(working[afterTitle:])
 	if len(r.Episodes) == 0 && r.Episode != 0 {
 		r.Episodes = []int{r.Episode}
 	}

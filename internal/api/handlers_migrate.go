@@ -17,15 +17,16 @@ import (
 // library, indexers, Usenet servers and quality profiles.
 func (s *Server) newMigrator() *migrate.Importer {
 	return migrate.New(migrate.Deps{
-		Library:          s.MovieRepo,
-		Indexers:         s.IndexerRepo,
-		Servers:          s.ClientRepo,
-		Profiles:         s.QualityRepo,
-		TMDB:             s.TMDB,
-		MoviesRoot:       s.moviesRoot,
-		TVRoot:           s.tvRoot,
-		DefaultProfileID: s.defaultProfileID,
-		Definition:       s.Definitions.Summary,
+		Library:            s.MovieRepo,
+		Indexers:           s.IndexerRepo,
+		Servers:            s.ClientRepo,
+		Profiles:           s.QualityRepo,
+		TMDB:               s.TMDB,
+		MoviesRoot:         s.moviesRoot,
+		TVRoot:             s.tvRoot,
+		DefaultProfileID:   s.defaultProfileID,
+		DefaultTVProfileID: s.defaultTVProfileID,
+		Definition:         s.Definitions.Summary,
 		TestIndexer: func(ctx context.Context, inst indexers.Instance) error {
 			if res := s.testIndexerInstance(ctx, inst); !res.OK {
 				return errors.New(res.Message)

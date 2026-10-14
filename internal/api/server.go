@@ -45,6 +45,7 @@ import (
 
 type Server struct {
 	streamPause streamPauseState // pause while someone is watching (stream_pause.go)
+	appFrames   atomic.Value     // []string: the origins of add-ons shown in a frame, kept in memory so the security headers never wait for the database (app_links.go)
 	cfg         config.Config
 	db          *sql.DB // for backups (VACUUM INTO); repos hold their own handles
 
@@ -240,6 +241,7 @@ func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, vers
 	s.setupSearchExtras()
 	s.instrumentTMDB(s.tmdb)
 	s.applyProxy()
+	s.applyVPNRoutes()
 	s.setupPush()
 	s.instrumentTrakt(s.trakt)
 	s.Monitor = s.newMonitor()
@@ -281,6 +283,8 @@ func New(db *sql.DB, cfg config.Config, box *crypto.Box, defaultTMDBAPIKey, vers
 	s.Announce = announce.NewManager(s.AnnounceRepo, ircDecider{s}, slog.Default())
 	s.torrents.noPortMapping = !s.torrentPortMapping()
 	s.torrents.allowLocal = s.torrentAllowLocal()
+	queue.SetNewestFirst(s.newestFirstOn())
+	s.refreshAppFrames()
 	s.dispatch = s.newDispatcher()
 	s.applyFilePerms()   // the saved file and folder modes for new library files
 	s.recoverAtStartup() // downloads that were running come back paused; stuck titles are put right
@@ -500,6 +504,7 @@ func (s *Server) protectedRoutes() *routeTable {
 	releases.HandleFunc("GET /api/movies/{id}/search", s.handleMovieSearch)
 	manage.HandleFunc("POST /api/movies/{id}/search-now", s.handleMovieSearchNow)
 	releases.HandleFunc("POST /api/movies/{id}/grab", s.handleGrab)
+	manage.HandleFunc("POST /api/movies/{id}/replace-smaller", s.handleMovieReplaceSmaller)
 	member.HandleFunc("GET /api/tags", s.handleListTags)
 	manage.HandleFunc("PUT /api/movies/{id}/tags", s.handleSetMovieTags)
 	manage.HandleFunc("PUT /api/series/{id}/tags", s.handleSetSeriesTags)
@@ -545,10 +550,15 @@ func (s *Server) protectedRoutes() *routeTable {
 	member.HandleFunc("GET /api/books/{id}/progress", s.handleGetBookProgress)
 	member.HandleFunc("PUT /api/books/{id}/progress", s.handleSetBookProgress)
 	play.HandleFunc("GET /api/books/{id}/read", s.handleReadBook)
+	play.HandleFunc("GET /api/books/{id}/comic", s.handleComic)
+	play.HandleFunc("GET /api/books/{id}/comic/{n}", s.handleComicPage)
+	member.HandleFunc("GET /api/books/{id}/file-cover", s.handleBookFileCover)
 	play.HandleFunc("GET /api/books/{id}/tracks", s.handleBookTracks)
 	play.HandleFunc("GET /api/books/{id}/listen/{n}", s.handleListenBook)
 	admin.HandleFunc("GET /api/books/import", s.handleBookImportStatus)
 	admin.HandleFunc("POST /api/books/import", s.handleStartBookImport)
+	admin.HandleFunc("POST /api/books/import/retry", s.handleRetryBookImport)
+	admin.HandleFunc("POST /api/books/import/match", s.handleMatchBookImport)
 	member.HandleFunc("GET /api/books/{id}", s.handleGetBook)
 	manage.HandleFunc("PUT /api/books/{id}/want", s.handleSetBookWant)
 	manage.HandleFunc("POST /api/books/{id}/search", s.handleSearchBookNow)
@@ -591,6 +601,7 @@ func (s *Server) protectedRoutes() *routeTable {
 
 	// "Watch in Plex/Jellyfin/Emby" and "Open my media server" links.
 	member.HandleFunc("GET /api/media-servers/links", s.handleMediaServerLinks)
+	member.HandleFunc("GET /api/apps", s.handleListAppLinks)
 
 	// Downloads: watch and retry.
 	member.HandleFunc("GET /api/queue", revalidated(s.handleListQueue))
@@ -700,6 +711,7 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("PUT /api/library/bulk/tags", s.handleBulkTags)
 	admin.HandleFunc("PUT /api/library/bulk/sources", s.handleBulkSources)
 	admin.HandleFunc("POST /api/library/bulk/search-now", s.handleBulkSearchNow)
+	admin.HandleFunc("POST /api/library/bulk/replace-smaller", s.handleBulkReplaceSmaller)
 	admin.HandleFunc("POST /api/library/bulk/remove", s.handleBulkRemove)
 	admin.HandleFunc("POST /api/library/scan", s.handleScanLibrary)
 	admin.HandleFunc("GET /api/library/scan/{id}", s.handleGetImportJob)
@@ -810,6 +822,10 @@ func (s *Server) protectedRoutes() *routeTable {
 	admin.HandleFunc("GET /api/notifications/types", s.handleNotifyTypes)
 	admin.HandleFunc("GET /api/notifications/events", s.handleNotifyEvents)
 	admin.HandleFunc("POST /api/notifications/test", s.handleTestNotifyTarget)
+	admin.HandleFunc("POST /api/notifications/digest", s.handleSendDigest)
+	admin.HandleFunc("GET /api/automation/quiet", s.handleGetQuiet)
+	admin.HandleFunc("PUT /api/apps", s.handlePutAppLinks)
+	admin.HandleFunc("PUT /api/automation/quiet", s.handlePutQuiet)
 	admin.HandleFunc("GET /api/notifications/push-key", s.handlePushKey)
 
 	// Media servers (Plex, Jellyfin, Emby).

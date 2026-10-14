@@ -1,6 +1,6 @@
 import type { SubtitleQuota } from '../api'
 import Icon from './Icon'
-import { locale, t } from '../i18n'
+import { locale, t, st } from '../i18n'
 
 // Says how many subtitle downloads are left today and warns, in plain words,
 // when the subtitles waiting to be fetched will not fit in one day's allowance.
@@ -20,7 +20,7 @@ export default function QuotaNote({ quota }: { quota: SubtitleQuota | null }) {
       <div className="bar" style={{ ['--tc' as string]: warn ? 'var(--warning)' : 'var(--c-rose)' }}>
         <span style={{ width: `${Math.max(3, pct)}%` }} />
       </div>
-      {quota.message && <p>{quota.message}</p>}
+      {quota.message && <p>{st(quota.message)}</p>}
     </div>
   )
 }

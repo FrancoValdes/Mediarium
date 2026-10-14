@@ -107,7 +107,8 @@ func (im *Importer) planNZBHydra(p *plan, ip *IndexersPreview, d *hydraData, see
 			ipl.inst = indexers.Instance{Name: e.name, Kind: e.kind, BaseURL: e.addr, APIKey: d.Key, Protocol: e.protocol, Enabled: true}
 		}
 		ipl.item = item
-		ip.Summary.count(item.Action)
+		skipBadIndexer(&ipl)
+		ip.Summary.count(ipl.item.Action)
 		ip.Items = append(ip.Items, ipl.item)
 		p.indexers = append(p.indexers, ipl)
 	}

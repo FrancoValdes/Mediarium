@@ -142,8 +142,11 @@ func checkEpubZip(files []*zip.File, limits zipLimits) error {
 }
 
 // convertKepub runs kepubify. A book is written by strangers, so a file broken
-// in a way kepubify did not foresee fails the conversion; it never takes
-// Mediarium down.
+// in a way kepubify did not foresee fails the conversion instead of taking
+// Mediarium down. The recover only covers this goroutine: kepubify transforms
+// the book's files in worker goroutines of its own, and a panic there can't
+// be caught from here. No such panic is known; the limits checked before
+// (checkEpubZip) keep what reaches it small.
 func convertKepub(ctx context.Context, w *os.File, zr *zip.Reader) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

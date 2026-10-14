@@ -76,6 +76,17 @@ func checkRemovable(root string, files []string) error {
 	return nil
 }
 
+// checkFilesRemovable is checkRemovable with each file checked against the
+// library folder that holds it (see fileRoot), title the title's own folder.
+func (s *Server) checkFilesRemovable(title string, files []string) error {
+	for _, f := range files {
+		if err := checkRemovable(s.fileRoot(title, f), []string{f}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // removeMovieFiles deletes a removed movie's files: its whole folder when
 // that folder is the movie's own, otherwise just the video and the
 // subtitles, .nfo and artwork named after it.
@@ -83,7 +94,7 @@ func (s *Server) removeMovieFiles(m library.Movie) (removedFiles, error) {
 	if m.FilePath == "" {
 		return removedFiles{}, nil
 	}
-	root := s.movieRootFor(m)
+	root := s.fileRoot(s.movieRootFor(m), m.FilePath)
 	own := []string{m.FilePath}
 	folder := filepath.Dir(m.FilePath)
 	if s.isTitleFolder(root, folder, own, func(name string) bool { return matchesMovie(name, m) }) {
@@ -174,17 +185,21 @@ func (s *Server) removeSeriesFiles(series library.Series, files []string) (remov
 	if len(files) == 0 {
 		return removedFiles{}, nil
 	}
-	root := s.seriesRootFor(series)
+	title := s.seriesRootFor(series)
 	folder := commonDir(files)
 	if seasonFolderName.MatchString(filepath.Base(folder)) {
 		folder = filepath.Dir(folder)
 	}
+	// Files can sit in two library folders when the show's folder was changed
+	// after some arrived; the common folder is then above both and is never
+	// deleted as a whole.
+	root := s.fileRoot(title, folder)
 	if s.isTitleFolder(root, folder, files, func(name string) bool { return matchesShow(name, series) }) {
 		return s.removeTitleFolder(root, folder, seriesLabel(series))
 	}
 	var n removedFiles
 	for _, f := range files {
-		gone, trashed, err := s.discardFileWithSidecars(root, f, seriesLabel(series))
+		gone, trashed, err := s.discardFileWithSidecars(s.fileRoot(title, f), f, seriesLabel(series))
 		n.Files += gone
 		n.Trashed = n.Trashed || trashed
 		if err != nil {

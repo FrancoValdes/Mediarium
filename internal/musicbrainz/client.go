@@ -44,6 +44,8 @@ const (
 	defaultCacheTTL = 6 * time.Hour
 	defaultRetries  = 3
 	maxCacheEntries = 2000
+	maxCacheBytes   = 64 << 20  // all the answers kept, in bytes
+	maxCachedBody   = 512 << 10 // a bigger answer is used but not kept
 	maxBodyBytes    = 8 << 20
 	// maxRetryAfterSeconds is the longest pause the server can ask for before
 	// a retry; a request cannot wait for ever on what a reply says.
@@ -240,12 +242,16 @@ func (b *tokenBucket) wait(ctx context.Context) error {
 	return sleep(ctx, time.Until(at))
 }
 
-// cache keeps raw answers by URL for ttl, at most max of them.
+// cache keeps raw answers by URL for ttl, at most max of them and maxBytes
+// of answers in all. An answer bigger than maxBody isn't kept.
 type cache struct {
-	mu      sync.Mutex
-	ttl     time.Duration
-	max     int
-	entries map[string]cacheEntry
+	mu       sync.Mutex
+	ttl      time.Duration
+	max      int
+	maxBytes int
+	maxBody  int
+	size     int // bytes of all the answers kept
+	entries  map[string]cacheEntry
 }
 
 type cacheEntry struct {
@@ -254,7 +260,15 @@ type cacheEntry struct {
 }
 
 func newCache(ttl time.Duration, max int) *cache {
-	return &cache{ttl: ttl, max: max, entries: map[string]cacheEntry{}}
+	return &cache{ttl: ttl, max: max, maxBytes: maxCacheBytes, maxBody: maxCachedBody, entries: map[string]cacheEntry{}}
+}
+
+// drop removes one entry; c.mu is held.
+func (c *cache) drop(key string) {
+	if e, ok := c.entries[key]; ok {
+		c.size -= len(e.body)
+		delete(c.entries, key)
+	}
 }
 
 func (c *cache) get(key string) ([]byte, bool) {
@@ -265,31 +279,34 @@ func (c *cache) get(key string) ([]byte, bool) {
 	defer c.mu.Unlock()
 	e, ok := c.entries[key]
 	if !ok || time.Now().After(e.expires) {
-		delete(c.entries, key)
+		c.drop(key)
 		return nil, false
 	}
 	return e.body, true
 }
 
 func (c *cache) put(key string, body []byte) {
-	if c == nil || c.ttl <= 0 {
+	if c == nil || c.ttl <= 0 || len(body) > c.maxBody {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.drop(key)
+	full := func() bool { return len(c.entries) >= c.max || c.size+len(body) > c.maxBytes }
 	now := time.Now()
-	if len(c.entries) >= c.max {
+	if full() {
 		for k, e := range c.entries {
 			if now.After(e.expires) {
-				delete(c.entries, k)
+				c.drop(k)
 			}
 		}
-		for k := range c.entries { // still full: drop an arbitrary entry
-			if len(c.entries) < c.max {
+		for k := range c.entries { // still full: drop arbitrary entries
+			if !full() {
 				break
 			}
-			delete(c.entries, k)
+			c.drop(k)
 		}
 	}
 	c.entries[key] = cacheEntry{body: body, expires: now.Add(c.ttl)}
+	c.size += len(body)
 }

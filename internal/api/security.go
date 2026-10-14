@@ -27,9 +27,11 @@ type securityState struct {
 }
 
 // Failed sign-ins tolerated for one account name from all addresses together
-// per window. Far above the per-address limit, so a stranger typing wrong
-// guesses cannot easily keep the real owner out, yet a distributed guessing
-// run stops.
+// per window. Once they are used up the name is refused for everyone,
+// including its real owner, until the oldest failure is a window old: anyone
+// who knows a user name can keep that person out this way. It is far above
+// the per-address limit, so a stranger needs several addresses to do it, and
+// it is the price of stopping a guessing run spread over many addresses.
 const (
 	userLoginAttempts = 25
 	userLoginWindow   = 15 * time.Minute
@@ -71,5 +73,5 @@ func (s *Server) isHTTPS(r *http.Request) bool {
 // cross-site request check.
 func (s *Server) harden(next http.Handler) http.Handler {
 	st := s.sec()
-	return st.proxies.Headers(st.proxies.CSRF(st.origins, next))
+	return st.proxies.HeadersWithFrames(st.proxies.CSRF(st.origins, next), s.appFrameSources)
 }

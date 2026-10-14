@@ -337,8 +337,7 @@ func copyFileVerified(ctx context.Context, src, dst string, info fs.FileInfo, op
 	}
 	defer in.Close()
 
-	tmp := dst + stagingSuffix
-	_ = os.Remove(tmp) // ours by name
+	tmp := stagingPath(dst) // a name of its own, so two copies to one place never share it
 	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	if err != nil {
 		return fmt.Errorf("create the copy: %w", err)

@@ -252,7 +252,10 @@ func (s *Server) handleUpdateNotifyTarget(w http.ResponseWriter, r *http.Request
 
 // savedSecretMoved answers with a message when cfg would send a saved secret
 // to a different address: the address field (url, server or host) differs from
-// the saved target's while a secret field was left blank to keep its value.
+// the saved target's, or an email server's encryption is switched off, while a
+// secret field was left blank to keep its value. Both sides are compared with
+// their defaults filled in, since an address left empty becomes the default
+// one (ntfy's public server).
 func savedSecretMoved(typ string, cfg map[string]string, saved notify.Target) string {
 	if string(saved.Type) != typ {
 		return ""
@@ -261,12 +264,16 @@ func savedSecretMoved(typ string, cfg map[string]string, saved notify.Target) st
 	if !ok {
 		return ""
 	}
+	now, before := notify.ApplyDefaults(typ, cfg), notify.ApplyDefaults(typ, saved.Config)
 	moved := false
 	for _, f := range info.Fields {
+		if f.Name == "security" && before[f.Name] != "" && before[f.Name] != "none" && now[f.Name] == "none" {
+			moved = true
+		}
 		if f.Secret() || (f.Name != "url" && f.Name != "server" && f.Name != "host") {
 			continue
 		}
-		if v := cfg[f.Name]; v != "" && saved.Config[f.Name] != "" && addrMoved(saved.Config[f.Name], v) {
+		if v := now[f.Name]; v != "" && before[f.Name] != "" && addrMoved(before[f.Name], v) {
 			moved = true
 		}
 	}
@@ -274,7 +281,7 @@ func savedSecretMoved(typ string, cfg map[string]string, saved notify.Target) st
 		return ""
 	}
 	for _, f := range info.Fields {
-		if f.Secret() && cfg[f.Name] == "" && saved.Config[f.Name] != "" {
+		if f.Secret() && strings.TrimSpace(cfg[f.Name]) == "" && saved.Config[f.Name] != "" {
 			return retypeSecretMessage(strings.ToLower(f.Label))
 		}
 	}

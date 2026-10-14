@@ -2,11 +2,14 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -142,8 +145,56 @@ func (s *Server) runBookImport(job *bookImportJob, formats []books.Format) {
 			found = append(found, bookImportResult{LocalBook: lb, Kind: f})
 		}
 	}
+	s.processBookImport(job, found, nil)
+}
+
+// handleRetryBookImport looks again only at the books the last import did not
+// find (or could not save), without reading the folders again: for the ones
+// Open Library or Audnexus did not answer, or that were added there since.
+func (s *Server) handleRetryBookImport(w http.ResponseWriter, r *http.Request) {
+	var req bookImportRequest
+	_ = decodeJSON(r, &req)
+	s.bookImport.mu.Lock()
+	prev := s.bookImport.job
+	if prev == nil {
+		s.bookImport.mu.Unlock()
+		writeError(w, http.StatusConflict, "There is no import to run again. Start one first.")
+		return
+	}
+	snap := prev.snapshot()
+	if snap.Phase == bookImportRunning {
+		s.bookImport.mu.Unlock()
+		writeError(w, http.StatusConflict, "An import is already running.")
+		return
+	}
+	var again, kept []bookImportResult
+	for _, res := range snap.Results {
+		if (res.Status == bookUnmatched || res.Status == bookFailed) && (req.Format == "" || req.Format == string(res.Kind)) {
+			res.Status, res.Message, res.Matched = "", "", ""
+			again = append(again, res)
+		} else {
+			kept = append(kept, res)
+		}
+	}
+	if len(again) == 0 {
+		s.bookImport.mu.Unlock()
+		writeError(w, http.StatusConflict, "Nothing to run again: every book was found.")
+		return
+	}
+	job := &bookImportJob{phase: bookImportRunning, started: time.Now()}
+	s.bookImport.job = job
+	s.bookImport.mu.Unlock()
+	s.background(func() { s.processBookImport(job, again, kept) })
+	writeJSON(w, http.StatusAccepted, job.snapshot())
+}
+
+// processBookImport looks up every book in found and adds it to the library.
+// kept are results from an earlier run that stay as they are.
+func (s *Server) processBookImport(job *bookImportJob, found, kept []bookImportResult) {
 	job.mu.Lock()
-	job.total = len(found)
+	job.total = len(found) + len(kept)
+	job.done = len(kept)
+	job.results = append(job.results, kept...)
 	job.mu.Unlock()
 
 	known := map[string]bool{} // paths already in the library
@@ -181,6 +232,9 @@ func (s *Server) runBookImport(job *bookImportJob, formats []books.Format) {
 
 // importOneBook finds a book on Open Library and records its file.
 func (s *Server) importOneBook(res bookImportResult) bookImportResult {
+	if res.Kind == books.Ebook && books.ComicFormat(res.Format) {
+		return s.importOneComic(res) // a comic isn't on Open Library: it goes in as it is
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	match, err := s.matchLocalBook(ctx, res.LocalBook)
@@ -202,6 +256,15 @@ func (s *Server) importOneBook(res bookImportResult) bookImportResult {
 		res.Status, res.Message = bookUnmatched, "Not found on Open Library. Check the folder is named Author/Title."
 		return res
 	}
+	return s.attachOpenLibraryBook(ctx, res, *match, false)
+}
+
+// attachOpenLibraryBook adds the Open Library book match to the library (when
+// it is not there yet) and records the file in res as its file. With rename
+// set, the file (or the audiobook's folder) is first moved to where a download
+// of that book would go. It is the end of an automatic match and the whole of
+// one picked by hand.
+func (s *Server) attachOpenLibraryBook(ctx context.Context, res bookImportResult, match books.Found, rename bool) bookImportResult {
 	res.Matched = match.Title
 	b, ok, err := s.BookRepo.GetByKey(match.Key)
 	if err != nil {
@@ -232,10 +295,18 @@ func (s *Server) importOneBook(res bookImportResult) bookImportResult {
 	if !b.Wants(res.Kind) {
 		_ = s.BookRepo.SetWant(b.ID, res.Kind, true)
 	}
+	finish := func(bool) {}
+	if rename {
+		var note string
+		res.Path, finish, note = s.renameLocalBook(b, res)
+		res.Message = note
+	}
 	if err := s.BookRepo.SetState(b.ID, res.Kind, books.StatusDownloaded, res.Format, res.Path); err != nil {
+		finish(false)
 		res.Status, res.Message = bookFailed, err.Error()
 		return res
 	}
+	finish(true)
 	res.Status, res.BookID = bookImported, b.ID
 	if updated, err := s.BookRepo.Get(b.ID); err == nil {
 		s.lookUpAudioDetailsLater(updated) // narrator and length, for an audiobook
@@ -312,4 +383,45 @@ func (s *Server) matchLocalBook(ctx context.Context, lb books.LocalBook) (*books
 		}
 	}
 	return nil, nil
+}
+
+// importOneComic adds a comic file as it is: no lookup, a library entry keyed
+// by its series, number and name, straight away as downloaded. Its series and
+// number come from the ComicInfo.xml inside it when there is one.
+func (s *Server) importOneComic(res bookImportResult) bookImportResult {
+	id := res.Author + "|" + res.Title + "|" + res.Series + "|" + res.Position
+	if res.Year > 0 {
+		// Two runs of a series ("Batman (2011)", "Batman (2016)") both have an issue 1.
+		id += "|" + strconv.Itoa(res.Year)
+	}
+	sum := sha256.Sum256([]byte(strings.ToLower(id)))
+	key := "comic:" + hex.EncodeToString(sum[:10])
+	b, ok, err := s.BookRepo.GetByKey(key)
+	if err != nil {
+		res.Status, res.Message = bookFailed, err.Error()
+		return res
+	}
+	if !ok {
+		b, err = s.BookRepo.Add(books.Book{OLKey: key, Title: res.Title, Author: res.Author, Year: res.Year, WantEbook: true,
+			SeriesName: res.Series, SeriesPosition: res.Position})
+		if errors.Is(err, books.ErrExists) {
+			b, _, err = s.BookRepo.GetByKey(key)
+		}
+		if err != nil {
+			res.Status, res.Message = bookFailed, err.Error()
+			return res
+		}
+	} else if b.Path(res.Kind) != "" {
+		res.Status, res.BookID, res.Message = bookAlready, b.ID, "This book already has a file: "+b.Path(res.Kind)
+		return res
+	}
+	if !b.Wants(res.Kind) {
+		_ = s.BookRepo.SetWant(b.ID, res.Kind, true)
+	}
+	if err := s.BookRepo.SetState(b.ID, res.Kind, books.StatusDownloaded, res.Format, res.Path); err != nil {
+		res.Status, res.Message = bookFailed, err.Error()
+		return res
+	}
+	res.Status, res.BookID, res.Matched = bookImported, b.ID, res.Title+" (comic)"
+	return res
 }

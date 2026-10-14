@@ -12,10 +12,12 @@ import (
 	"log"
 	"net/http"
 	"net/http/cookiejar"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rdborg/mediarium/internal/netguard"
@@ -90,28 +92,35 @@ func (m *CardigannManager) Search(ctx context.Context, inst Instance, query stri
 	return sess.search(ctx, query, categories)
 }
 
+// TestResult is what a test found: how many releases came back, and whether
+// FlareSolverr had to pass a Cloudflare check on the way.
+type TestResult struct {
+	Releases        int
+	ViaFlareSolverr bool
+}
+
 // Test signs in if needed (running the definition's login test) and runs a
-// search without keywords, falling back to the keyword "test". It returns
-// how many releases came back.
-func (m *CardigannManager) Test(ctx context.Context, inst Instance) (int, error) {
+// search without keywords, falling back to the keyword "test".
+func (m *CardigannManager) Test(ctx context.Context, inst Instance) (TestResult, error) {
 	sess, err := m.session(ctx, inst)
 	if err != nil {
-		return 0, err
+		return TestResult{}, err
 	}
 	// A signed-in session is checked by the search itself (a lost session
 	// signs in again); changed settings always start a new session.
 	cats := []int{2000, 5000}
 	results, err := sess.search(ctx, "", cats)
 	if err != nil {
-		return 0, err
+		return TestResult{}, err
 	}
 	if len(results) == 0 {
 		results, err = sess.search(ctx, "test", cats)
 		if err != nil {
-			return 0, err
+			return TestResult{}, err
 		}
 	}
-	return len(results), nil
+	via := sess.viaFlareSolverr.Load()
+	return TestResult{Releases: len(results), ViaFlareSolverr: via}, nil
 }
 
 // Download resolves a result link (from EncodeLinkRef) into a magnet link
@@ -196,10 +205,14 @@ type cgSession struct {
 	decode func([]byte) ([]byte, error)
 	encode func(string) string
 
-	mu          sync.Mutex // one flow (login/search/download) at a time
-	lastRequest time.Time
-	loggedIn    bool
-	userAgent   string // set by FlareSolverr
+	// flow lets one flow (login/search/download) run at a time. It is a
+	// channel rather than a mutex so a search waiting its turn gives up when
+	// its own time runs out, instead of queueing behind a stuck one for ever.
+	flow            chan struct{}
+	lastRequest     time.Time
+	loggedIn        bool
+	userAgent       string      // set by FlareSolverr
+	viaFlareSolverr atomic.Bool // a Cloudflare check was passed by FlareSolverr
 }
 
 func newSession(m *CardigannManager, def *Definition, inst Instance) (*cgSession, error) {
@@ -220,6 +233,7 @@ func newSession(m *CardigannManager, def *Definition, inst Instance) (*cgSession
 	}
 	s := &cgSession{
 		m: m, id: inst.ID, def: def, name: inst.Name, base: base, jar: jar,
+		flow:     make(chan struct{}, 1),
 		settings: map[string]string{},
 		decode:   func(b []byte) ([]byte, error) { return b, nil },
 		encode:   func(v string) string { return v },
@@ -242,6 +256,18 @@ func newSession(m *CardigannManager, def *Definition, inst Instance) (*cgSession
 	s.client = &http.Client{Transport: transport, Jar: jar, Timeout: 30 * time.Second}
 	return s, nil
 }
+
+// lock waits for the session's turn, giving up when ctx ends.
+func (s *cgSession) lock(ctx context.Context) error {
+	select {
+	case s.flow <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("%s: waited too long for the site's previous search to finish: %w", s.name, ctx.Err())
+	}
+}
+
+func (s *cgSession) unlock() { <-s.flow }
 
 // lookupEncoding returns converters for a definition's page encoding, or
 // nils for UTF-8.
@@ -465,6 +491,9 @@ func (s *cgSession) doOnce(ctx context.Context, r cgRequest) (*cgResponse, error
 		if len(via) >= 10 {
 			return fmt.Errorf("too many redirects")
 		}
+		if err := s.checkPageAddress(next.URL.String()); err != nil {
+			return err
+		}
 		// keep the definition's headers on the same site only
 		if !strings.EqualFold(next.URL.Hostname(), s.base.Hostname()) {
 			for k := range r.headers {
@@ -487,9 +516,13 @@ func (s *cgSession) doOnce(ctx context.Context, r cgRequest) (*cgResponse, error
 		return nil, fmt.Errorf("%s: request failed: %w", s.name, err)
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("%s: read response: %w", s.name, err)
+	}
+	if len(raw) > maxResponseBytes {
+		// a page cut short reads as fewer results, or a file that is broken
+		return nil, fmt.Errorf("%s: the site sent more than %d MB, so Mediarium stopped reading", s.name, maxResponseBytes>>20)
 	}
 	out := &cgResponse{status: resp.StatusCode, url: resp.Request.URL, header: resp.Header, raw: raw, body: raw}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
@@ -563,6 +596,11 @@ func (s *cgSession) solveChallenge(ctx context.Context, fsURL string, r cgReques
 	if err != nil {
 		return nil, fmt.Errorf("bad url: %w", netguard.CleanError(err))
 	}
+	// FlareSolverr's browser loads the page itself, out of reach of the
+	// dial-time check, so the page is checked here first.
+	if err := netguard.CheckHost(ctx, u.Host, true); err != nil {
+		return nil, err
+	}
 	payload := map[string]any{
 		"cmd":        "request.get",
 		"url":        r.url,
@@ -611,6 +649,13 @@ func (s *cgSession) solveChallenge(ctx context.Context, fsURL string, r cgReques
 		return nil, errors.New(msg)
 	}
 	sol := out.Solution
+	// The browser follows redirects on its own: a page that ended on a
+	// blocked address is thrown away.
+	if end, err := url.Parse(sol.URL); err == nil && end.Host != "" {
+		if err := netguard.CheckHost(ctx, end.Host, true); err != nil {
+			return nil, fmt.Errorf("FlareSolverr was sent elsewhere: %w", err)
+		}
+	}
 	var jarCookies []*http.Cookie
 	for _, c := range sol.Cookies {
 		hc := &http.Cookie{Name: c.Name, Value: c.Value, Path: c.Path, Domain: strings.TrimPrefix(c.Domain, "."), HttpOnly: c.HTTPOnly, Secure: c.Secure}
@@ -627,6 +672,7 @@ func (s *cgSession) solveChallenge(ctx context.Context, fsURL string, r cgReques
 	}
 	if sol.UserAgent != "" {
 		s.userAgent = sol.UserAgent
+		s.viaFlareSolverr.Store(true)
 	}
 	log.Printf("cardigann: indexer=%q passed a Cloudflare check via FlareSolverr cookies=%d", s.name, len(jarCookies))
 	return sol, nil
@@ -690,32 +736,61 @@ func (s *cgSession) checkSiteAddress(raw string) error {
 	return nil
 }
 
-// siteRelated reports whether host is the site's address (the one configured
-// or one of the definition's own links) or shares its registered domain, such
-// as api.example.org for www.example.org.
+// siteRelated reports whether host is the site's address (the one the person
+// configured) or shares its registered domain, such as api.example.org for
+// www.example.org. The definition's other links don't count: a host added
+// to that list would otherwise be handed the login, cookie or API key.
 func (s *cgSession) siteRelated(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	if host == "" {
 		return false
 	}
-	known := []string{s.base.Hostname()}
-	if s.def != nil {
-		for _, l := range s.def.Links {
-			if u, err := url.Parse(l); err == nil && u.Hostname() != "" {
-				known = append(known, u.Hostname())
-			}
-		}
+	k := strings.ToLower(strings.TrimSuffix(s.base.Hostname(), "."))
+	if k == host {
+		return true
 	}
-	hostDomain, hostErr := publicsuffix.EffectiveTLDPlusOne(host)
-	for _, k := range known {
-		k = strings.ToLower(strings.TrimSuffix(k, "."))
-		if k == host {
-			return true
-		}
-		if hostErr != nil {
-			continue // an IP address or a name without a registered domain: only an exact match counts
-		}
-		if d, err := publicsuffix.EffectiveTLDPlusOne(k); err == nil && d == hostDomain {
+	hostDomain, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		return false // an IP address or a name without a registered domain: only an exact match counts
+	}
+	d, err := publicsuffix.EffectiveTLDPlusOne(k)
+	return err == nil && d == hostDomain
+}
+
+// checkPageAddress refuses an address a page handed out (a redirect, a
+// result's link, a download link) that is not a web address, or that points
+// at this machine or the home network when the site itself is on the
+// internet. Such a page is trying to make Mediarium call something it was
+// never meant to reach. Other hosts are fine: sites link to file mirrors.
+func (s *cgSession) checkPageAddress(raw string) error {
+	if strings.HasPrefix(raw, "magnet:") {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s: bad link from the site: %w", s.name, netguard.CleanError(err))
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%s: the site sent a link that is not a web address, so Mediarium refused it", s.name)
+	}
+	if s.siteRelated(u.Hostname()) || !localHost(u.Hostname()) || localHost(s.base.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf("%s: the site sent a link to %s, which is on your own network, so Mediarium refused it", s.name, u.Hostname())
+}
+
+// localHost reports whether host names this machine or the home network: a
+// private, loopback or shared address, or a name such as localhost.
+func localHost(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return netguard.NotPublic(addr) || netguard.Blocked(addr)
+	}
+	if host == "localhost" || !strings.Contains(host, ".") {
+		return true // a bare name only the local network can resolve
+	}
+	for _, suffix := range []string{".localhost", ".local", ".lan", ".home", ".internal", ".home.arpa", ".localdomain"} {
+		if strings.HasSuffix(host, suffix) {
 			return true
 		}
 	}

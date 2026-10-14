@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type DelayProfile } from '../api'
-import { t, tx } from '../i18n'
+import { plural, t, tx } from '../i18n'
 import { firstError, numberRange } from '../validate'
 import { useToast } from './Toast'
 import Switch from './Switch'
@@ -11,9 +11,9 @@ const MAX_MINUTES = 30 * 24 * 60
 // "90 minutes" or "2 hours", for the line under the boxes.
 function waitText(minutes: number): string {
   if (minutes <= 0) return t('no wait')
-  if (minutes % 1440 === 0) return minutes === 1440 ? t('1 day') : t('{n} days', { n: minutes / 1440 })
-  if (minutes % 60 === 0) return minutes === 60 ? t('1 hour') : t('{n} hours', { n: minutes / 60 })
-  return minutes === 1 ? t('1 minute') : t('{n} minutes', { n: minutes })
+  if (minutes % 1440 === 0) return plural(minutes / 1440, '1 day', '{n} days')
+  if (minutes % 60 === 0) return plural(minutes / 60, '1 hour', '{n} hours')
+  return plural(minutes, '1 minute', '{n} minutes')
 }
 
 // Settings > Library > Languages and automation: how long Mediarium's own

@@ -32,7 +32,7 @@ import {
 import { formatSupportReport } from '../../supportReport'
 import { problemsChanged } from '../../useProblems'
 import { useLive } from '../../useLive'
-import { plural, t, tx } from '../../i18n'
+import { plural, t, tx, st } from '../../i18n'
 import { withBase } from '../../base'
 
 // Settings > System > Logs and errors: the things that went wrong (a download
@@ -210,7 +210,7 @@ export default function LogsSettings() {
   return (
     <div className="pl-page">
       <p className="pl-intro">
-        {t('Things that went wrong, with what to try. The same problem, and the same problem for one title, count on one line, and problems are kept for {n} days.', { n: data?.keepDays ?? 30 })}
+        {plural(data?.keepDays ?? 30, 'Things that went wrong, with what to try. The same problem, and the same problem for one title, count on one line, and problems are kept for {n} day.', 'Things that went wrong, with what to try. The same problem, and the same problem for one title, count on one line, and problems are kept for {n} days.')}
       </p>
 
       <div className="pl-cards">
@@ -393,7 +393,7 @@ function ProblemItem({ p, open, onToggle, onRead }: { p: ProblemRow; open: boole
 
       {(other || p.forTitle || p.downloadId) && (
         <div className="pl-sub">
-          {other && <span>{p.message}</span>}
+          {other && <span>{st(p.message)}</span>}
           {p.forTitle &&
             (p.forLink ? (
               <span>{tx('For {title}', { title: <Link to={p.forLink}>{p.forTitle}</Link> })}</span>

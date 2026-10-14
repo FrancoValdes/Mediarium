@@ -1,6 +1,7 @@
 package indexers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -138,6 +139,20 @@ type Tracker struct {
 	sources map[string]sourceNote
 	// prunedOn is the day old counters were last cleared.
 	prunedOn string
+
+	// order lists sources by when they were noted (oldest first, from
+	// orderHead), so old ones are dropped without scanning the map.
+	order     []sourceKey
+	orderHead int
+
+	// paceMu guards lanes: each indexer's waiting searches (see Pace).
+	paceMu sync.Mutex
+	lanes  map[int64]*paceLane
+}
+
+type sourceKey struct {
+	url    string
+	expiry time.Time
 }
 
 type sourceNote struct {
@@ -157,6 +172,117 @@ func NewTracker(db *sql.DB, now func() time.Time) *Tracker {
 		now = time.Now
 	}
 	return &Tracker{db: db, now: now, health: map[int64]Health{}, sources: map[string]sourceNote{}}
+}
+
+// MinSearchGap is the least time between two searches on one indexer. A
+// search of the whole library (the automatic one asks for every missing
+// movie and episode in turn) would otherwise send hundreds of requests in a
+// minute, and indexers answer that with "too many requests". An indexer that
+// has already said so is asked more slowly.
+const (
+	MinSearchGap    = 1500 * time.Millisecond
+	RateLimitedGap  = 6 * time.Second
+	maxPacedWaiting = 10 * time.Minute // a wait longer than this is not queued: the search is skipped
+)
+
+// ErrSearchQueueFull is returned by Pace when so many searches are already
+// waiting for an indexer that this one would wait longer than
+// maxPacedWaiting: it is skipped instead of queued for hours.
+var ErrSearchQueueFull = errors.New("too many searches are already waiting for this indexer")
+
+// paceLane is one indexer's line of waiting searches.
+type paceLane struct {
+	turn    chan struct{} // held by the search whose start is being timed
+	last    time.Time     // when the last search started
+	waiting int           // searches in the line, the one being timed included
+}
+
+// Pace waits until this indexer may be asked again, one search after another
+// at least gap apart (more than one waiting at once line up behind each other).
+// It gives ctx's error when ctx ended first, and ErrSearchQueueFull without
+// waiting when the line is already longer than maxPacedWaiting. A search that
+// gives up never holds back the ones behind it: only searches that really
+// start count. A nil tracker never waits.
+func (t *Tracker) Pace(ctx context.Context, id int64, gap time.Duration) error {
+	if t == nil || gap <= 0 {
+		return ctx.Err()
+	}
+	t.paceMu.Lock()
+	if t.lanes == nil {
+		t.lanes = map[int64]*paceLane{}
+	}
+	lane := t.lanes[id]
+	if lane == nil {
+		lane = &paceLane{turn: make(chan struct{}, 1)}
+		t.lanes[id] = lane
+	}
+	ahead := time.Duration(lane.waiting) * gap
+	if !lane.last.IsZero() {
+		ahead += max(0, lane.last.Add(gap).Sub(t.now()))
+	}
+	if ahead > maxPacedWaiting {
+		t.paceMu.Unlock()
+		return ErrSearchQueueFull
+	}
+	lane.waiting++
+	t.paceMu.Unlock()
+	defer func() {
+		t.paceMu.Lock()
+		lane.waiting--
+		t.paceMu.Unlock()
+	}()
+
+	select {
+	case lane.turn <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-lane.turn }()
+
+	t.paceMu.Lock()
+	var wait time.Duration
+	if !lane.last.IsZero() {
+		wait = lane.last.Add(gap).Sub(t.now())
+	}
+	t.paceMu.Unlock()
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t.paceMu.Lock()
+	lane.last = t.now()
+	t.paceMu.Unlock()
+	return nil
+}
+
+// SearchGap is how far apart searches on this indexer are kept: longer for
+// one that recently said it was being asked too often.
+func (t *Tracker) SearchGap(id int64) time.Duration {
+	if h, ok := t.Health(id); ok && h.Failures > 0 && strings.Contains(h.Reason, "too many requests") {
+		return gapLimited
+	}
+	return gapNormal
+}
+
+var (
+	gapNormal  = MinSearchGap
+	gapLimited = RateLimitedGap
+)
+
+// SetSearchGaps changes the gaps. It is for tests, which would otherwise wait
+// a second and a half between every search.
+func SetSearchGaps(normal, limited time.Duration) (restore func()) {
+	oldN, oldL := gapNormal, gapLimited
+	gapNormal, gapLimited = normal, limited
+	return func() { gapNormal, gapLimited = oldN, oldL }
 }
 
 const timeFmt = time.RFC3339

@@ -19,9 +19,24 @@ type fakeNNTPServer struct {
 	addr     string
 	port     int
 	conns    atomic.Int32 // connections accepted so far
+	// dropBodies is how many more BODY requests are answered by hanging up,
+	// as a connection reset would.
+	dropBodies atomic.Int32
 
 	hitsMu sync.Mutex
 	hits   map[string]int // BODY requests answered, by message-id
+	drops  map[string]int // how many more requests for a message-id are hung up on
+}
+
+// dropRequests makes the next n requests for message-id end with the server
+// hanging up, as a connection reset would.
+func (s *fakeNNTPServer) dropRequests(id string, n int) {
+	s.hitsMu.Lock()
+	defer s.hitsMu.Unlock()
+	if s.drops == nil {
+		s.drops = map[string]int{}
+	}
+	s.drops[id] = n
 }
 
 // hitCount is how many times message-id was requested.
@@ -91,7 +106,15 @@ func (s *fakeNNTPServer) handle(conn net.Conn) {
 			rw.WriteString("211 0 0 0 group selected\r\n")
 		case strings.HasPrefix(upper, "BODY"):
 			msgID := strings.Trim(strings.TrimSpace(line[len("BODY"):]), "<>")
+			if s.dropBodies.Add(-1) >= 0 {
+				return // hang up without an answer
+			}
 			s.hitsMu.Lock()
+			if s.drops[msgID] > 0 {
+				s.drops[msgID]--
+				s.hitsMu.Unlock()
+				return
+			}
 			if s.hits == nil {
 				s.hits = map[string]int{}
 			}

@@ -20,7 +20,15 @@ type YencPart struct {
 	Data       []byte
 	CRC32      uint32
 	CRC32Valid bool
+	// HasCRC says the article carried a checksum of its own data (pcrc32, or
+	// crc32 for a single-part post), so CRC32Valid means something.
+	HasCRC bool
 }
+
+// Damaged reports whether the article came with a checksum and its data
+// doesn't match it: it was corrupted on the way, and another server may have
+// a good copy.
+func (p *YencPart) Damaged() bool { return p.HasCRC && !p.CRC32Valid }
 
 // DecodeYenc decodes a single yEnc-encoded article body (the content of one
 // NNTP ARTICLE/BODY response), per the yEnc 1.3 draft spec.
@@ -33,6 +41,7 @@ func DecodeYenc(r io.Reader) (*YencPart, error) {
 	sawBegin := false
 	sawEnd := false
 	sawCRC := false
+	sawPart := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -44,6 +53,7 @@ func DecodeYenc(r io.Reader) (*YencPart, error) {
 				part.Size = size
 			}
 		case strings.HasPrefix(line, "=ypart"):
+			sawPart = true
 			if begin, err := strconv.ParseInt(yencField(line, "begin"), 10, 64); err == nil {
 				part.PartBegin = begin
 			}
@@ -52,8 +62,10 @@ func DecodeYenc(r io.Reader) (*YencPart, error) {
 			}
 		case strings.HasPrefix(line, "=yend"):
 			sawEnd = true
+			// pcrc32 is this part's checksum. crc32 is the whole file's, so it
+			// only describes this data in a post of one part.
 			crcHex := yencField(line, "pcrc32")
-			if crcHex == "" {
+			if crcHex == "" && !sawPart {
 				crcHex = yencField(line, "crc32")
 			}
 			if crcHex != "" {
@@ -78,6 +90,7 @@ func DecodeYenc(r io.Reader) (*YencPart, error) {
 
 	part.Data = buf.Bytes()
 	if sawCRC {
+		part.HasCRC = true
 		part.CRC32Valid = crc32.ChecksumIEEE(part.Data) == part.CRC32
 	}
 	return &part, nil

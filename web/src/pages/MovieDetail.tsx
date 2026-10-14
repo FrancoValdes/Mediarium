@@ -24,7 +24,7 @@ import { describeState } from '../components/state'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../AuthContext'
 import { useModules } from '../ModulesContext'
-import { qualityText } from '../format'
+import { formatBytes, qualityText } from '../format'
 import { rescanMessage } from '../rescanMessage'
 import { api, can, isAdmin, type DiscoverMovie, type MovieDetail as MovieDetailData, type SearchResult } from '../api'
 import { useLive } from '../useLive'
@@ -152,6 +152,34 @@ function MoviePage() {
     }
   }
 
+  const [shrinking, setShrinking] = useState(false)
+  async function replaceSmaller() {
+    if (!libraryId || !movie?.filePath) return
+    const size = (await api.getMovie(libraryId).catch(() => null))?.sizeBytes
+    const file = movie.filePath.split(/[\\/]/).pop()
+    const answer = await confirm({
+      title: t('Replace {title} with a smaller version?', { title: movie.title }),
+      body: (
+        <>
+          <p>{t('Mediarium looks for a release that this movie\'s quality profile accepts and that is smaller than the file you have now: {file}{size}.', { file: file ?? '', size: size ? ` (${formatBytes(size)})` : '' })}</p>
+          <p>{t('Your current file stays until the new one is downloaded and in your library. If nothing suitable is found, or the download fails, nothing changes.')}</p>
+        </>
+      ),
+      confirmLabel: t('Look for a smaller version'),
+    })
+    if (!answer) return
+    setShrinking(true)
+    try {
+      const res = await api.replaceMovieSmaller(libraryId)
+      toast.success(res.message)
+      if (res.grabbed > 0) setTimeout(reload, 500)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setShrinking(false)
+    }
+  }
+
   async function chooseRelease() {
     if (!libraryId) return
     setSearching(true)
@@ -252,6 +280,14 @@ function MoviePage() {
                       : t('Searches your indexers right now and starts the best release for the quality profile, even if the movie is not monitored.')
                   }
                 />
+              )}
+              {can(me, 'manage') && movie.status === 'downloaded' && movie.filePath && (
+                <button className="btn-with-icon" onClick={() => void replaceSmaller()} disabled={shrinking}>
+                  <Icon name="download" size={16} /> {shrinking ? t('Searching…') : t('Replace with a smaller version')}
+                </button>
+              )}
+              {can(me, 'manage') && movie.status === 'downloaded' && movie.filePath && (
+                <InfoTip text={t('For a movie you moved to a lower quality profile, 4K to 1080p say. Looks for a smaller release the profile accepts, downloads it, and only then removes the big file.')} />
               )}
               {can(me, 'releases') && (
                 <button className="btn-with-icon" onClick={chooseRelease} disabled={searching}>

@@ -15,6 +15,7 @@ const github = (name: string) => `https://github.com/${name}`
 
 export function helpers(): Helper[] {
   return [
+    { name: 'ShuanYu', where: 'Reddit', href: reddit('ShuanYu'), ideas: [t('Different quality profiles for movies and TV, and finding missing episodes one season at a time')] },
     { name: 'Embyverse', where: 'Reddit', href: reddit('Embyverse'), ideas: [t('Custom formats with TRaSH Guides import'), t('Keeping two qualities of one title')] },
     {
       name: '12_nick_12',
@@ -35,7 +36,7 @@ export function helpers(): Helper[] {
     { name: 'SarSha', where: 'Reddit', href: reddit('SarSha'), ideas: [t('More subtitle sources')] },
     { name: 'userkbmsr-png', where: 'GitHub', href: github('userkbmsr-png'), ideas: [t('Subtitles from subs.ro and other sites, through add-ons')] },
     { name: 'msholly', where: 'GitHub', href: github('msholly'), ideas: [t('Adding a media server by pasting the address from the browser')] },
-    { name: 'TryToTilt', where: 'GitHub', href: github('TryToTilt'), ideas: [t('Repairing Usenet releases that come with only PAR2 recovery volumes')] },
+    { name: 'TryToTilt', where: 'GitHub', href: github('TryToTilt'), ideas: [t('Repairing Usenet releases that come with only PAR2 recovery volumes'), t('A speed schedule, a weekly summary and a page-turn animation in the reader, ideas from their fork')] },
     { name: 'DerGlordon', where: 'Reddit', href: reddit('DerGlordon'), ideas: [t('A custom format condition for the original language of a film or show')] },
     { name: 'xrandallx1', where: 'GitHub', href: github('xrandallx1'), ideas: [t('Silo as a media server'), t('IPTorrents as a built-in site')] },
     { name: 'DFlexy', where: 'GitHub', href: github('DFlexy'), ideas: [t('Mediarium in Brazilian Portuguese'), t('Adding your own indexer definition files'), t('Waiting longer for slow Prowlarr feeds'), t('The import explanations in your language')] },
@@ -43,12 +44,16 @@ export function helpers(): Helper[] {
     { name: 'PauloJf', where: 'GitHub', href: github('PauloJf'), ideas: [t('The WireGuard preshared key and pasting a whole config'), t('qBittorrent-compatible download clients'), t('Sorting and filtering the release lists, trailers in a pop-up, subtitles in the player and more detail on downloads'), t('Kobo sync and an OPDS catalogue for books')] },
     { name: 'joshpennington', where: 'Reddit', href: reddit('joshpennington'), ideas: [t('More than one folder per kind of media')] },
     { name: 'blind0wl', where: 'GitHub', href: github('blind0wl'), ideas: [t('A Download clients tab with what the clients are doing'), t('Choosing when to give up on a stalled torrent')] },
-    { name: '12nick12', where: 'GitHub', href: github('12nick12'), ideas: [t('Password-protected downloads'), t('Sending a download to the front of the line and picking several downloads at once')] },
+    { name: '12nick12', where: 'GitHub', href: github('12nick12'), ideas: [t('Password-protected downloads'), t('Sending a download to the front of the line, picking several downloads at once and starting newer releases first')] },
     { name: 'jdamner', where: 'GitHub', href: github('jdamner'), ideas: [t('Keeping settings in one file for git or a script')] },
+    { name: 'anguyen1776', where: 'GitHub', href: github('anguyen1776'), ideas: [t('Different quality profiles for movies and TV, and finding missing episodes one season at a time')] },
+    { name: 'varnakube', where: 'GitHub', href: github('varnakube'), ideas: [t('Picking a book by hand when it is not found during an import')] },
+    { name: 'mirisbowring', where: 'GitHub', href: github('mirisbowring'), ideas: [t('Replacing a movie with a smaller version')] },
+    { name: 'spamoom', where: 'GitHub', href: github('spamoom'), ideas: [t('Sending indexer traffic through the VPN, with the code to do it')] },
     { name: 'acortespr06', where: 'GitHub', href: github('acortespr06'), ideas: [t('Transmission as a download client')] },
     { name: 'MrBanditt', where: 'GitHub', href: github('MrBanditt'), ideas: [t('Ended and continuing shows, file sizes for episodes and seasons, an age column in the release list, a TMDB link on title pages and sorting titles without “The”')] },
     { name: 'barnetfan', where: 'Reddit', href: reddit('barnetfan'), ideas: [t('Telling apart two artists with the same name when scanning your music folder')] },
-    { name: 'thegliffy', where: 'GitHub', href: github('thegliffy'), ideas: [t('Audiobooks that are on Audible but not on Open Library'), t('Books with accents in their names')] },
+    { name: 'thegliffy', where: 'GitHub', href: github('thegliffy'), ideas: [t('Audiobooks that are on Audible but not on Open Library'), t('Books with accents in their names'), t('Running the books that were not found again')] },
     {
       name: 'Apostol6',
       where: 'GitHub',

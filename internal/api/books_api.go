@@ -84,6 +84,10 @@ func toBookPayload(b books.Book, admin bool) bookPayload {
 	if admin {
 		p.Ebook.Path, p.Audiobook.Path = b.EbookPath, b.AudioPath
 	}
+	if p.CoverURL == "" && hasEbook(b) && books.ComicFormat(ebookExt(b)) {
+		// A comic has no Open Library cover: its first page is the cover.
+		p.CoverURL = fmt.Sprintf("/api/books/%d/file-cover", b.ID)
+	}
 	return p
 }
 

@@ -3,10 +3,13 @@ package download
 import (
 	"context"
 	"errors"
+	"fmt"
+	"hash/crc32"
 	"net"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // twoSegmentNZB describes one file split over two articles.
@@ -175,6 +178,92 @@ func TestMissingMoreThanPar2CouldRepairStopsAtOnce(t *testing.T) {
 	var re *ReleaseError
 	if !errors.As(err, &re) || !strings.Contains(err.Error(), "can't repair that much") {
 		t.Fatalf("want a ReleaseError about too little repair data, got %v", err)
+	}
+}
+
+// An article whose checksum doesn't match was damaged on the way: it is
+// fetched from the backup server instead of being written as it is.
+func TestDamagedArticleIsFetchedFromTheBackup(t *testing.T) {
+	seg1, seg2, mid := multiArticles()
+	// The second half with one byte changed, under the checksum of the real one.
+	orig := multiFixture[mid:]
+	changed := append([]byte(nil), orig...)
+	changed[0] ^= 0x20
+	damaged := []byte(fmt.Sprintf("=ybegin part=2 line=128 size=%d name=movie.mkv\r\n=ypart begin=%d end=%d\r\n", len(multiFixture), mid+1, len(multiFixture)) +
+		encodeBodyOnly(changed) + fmt.Sprintf("=yend size=%d part=2 pcrc32=%08x\r\n", len(orig), crc32.ChecksumIEEE(orig)))
+	primary := newFakeNNTPServer(t, map[string][]byte{"seg1@example": seg1, "seg2@example": damaged})
+	backup := newFakeNNTPServer(t, map[string][]byte{"seg2@example": seg2})
+
+	res, err := DownloadFromServers(context.Background(), []ClientConfig{
+		{Host: primary.addr, Port: primary.port, Connections: 1},
+		{Host: backup.addr, Port: backup.port, Connections: 1},
+	}, twoSegmentNZB(mid, len(multiFixture)), t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if backup.hitCount("seg2@example") != 1 {
+		t.Fatal("the damaged article should have been fetched from the backup")
+	}
+	if got, _ := os.ReadFile(res.Paths[0]); string(got) != string(multiFixture) {
+		t.Fatalf("assembled file mismatch: %q", got)
+	}
+}
+
+// With a single server, one connection that is reset twice in a row must not
+// fail the download while the other connections to that server work: it waits
+// and tries again.
+func TestOneFailingConnectionDoesNotFailTheDownload(t *testing.T) {
+	old := reconnectWait
+	reconnectWait = 10 * time.Millisecond
+	defer func() { reconnectWait = old }()
+
+	// Twelve small articles; the connection that gets the third one is hung
+	// up on twice in a row (its try and its one retry).
+	const parts = 12
+	bodies := map[string][]byte{}
+	nzb := &NZB{Files: []NZBFile{{Subject: `[1/1] "movie.mkv" yEnc (1/12)`, Groups: []string{"alt.binaries.test"}}}}
+	step := len(multiFixture) / parts
+	for p := 0; p < parts; p++ {
+		begin, end := p*step+1, (p+1)*step
+		if p == parts-1 {
+			end = len(multiFixture)
+		}
+		id := fmt.Sprintf("p%d@example", p)
+		bodies[id] = buildMultipartYenc("movie.mkv", multiFixture, begin, end)
+		nzb.Files[0].Segments = append(nzb.Files[0].Segments, NZBSegment{Number: p + 1, Bytes: int64(end - begin + 1), MessageID: id})
+	}
+	srv := newFakeNNTPServer(t, bodies)
+	srv.dropRequests("p2@example", 2)
+	res, err := DownloadFromServers(context.Background(), []ClientConfig{{Host: srv.addr, Port: srv.port, Connections: 2}}, nzb, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("one failing connection failed the download: %v", err)
+	}
+	if got, _ := os.ReadFile(res.Paths[0]); string(got) != string(multiFixture) {
+		t.Fatalf("assembled file mismatch: %q", got)
+	}
+}
+
+// When every connection fails, the download is given up (and quickly).
+func TestEveryConnectionFailingGivesUp(t *testing.T) {
+	old := reconnectWait
+	reconnectWait = 10 * time.Millisecond
+	defer func() { reconnectWait = old }()
+
+	seg1, seg2, mid := multiArticles()
+	srv := newFakeNNTPServer(t, map[string][]byte{"seg1@example": seg1, "seg2@example": seg2})
+	srv.dropBodies.Store(1 << 20) // every request
+	start := time.Now()
+	_, err := DownloadFromServers(context.Background(), []ClientConfig{{Host: srv.addr, Port: srv.port, Connections: 2}},
+		twoSegmentNZB(mid, len(multiFixture)), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("a server that drops every connection should fail the download")
+	}
+	var re *ReleaseError
+	if errors.As(err, &re) {
+		t.Fatalf("a connection problem is not the release's fault: %v", err)
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatalf("giving up took %v", time.Since(start))
 	}
 }
 

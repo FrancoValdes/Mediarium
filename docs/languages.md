@@ -1,6 +1,6 @@
 # Languages
 
-Mediarium's screens come in **English, Spanish (Español), German (Deutsch), French (Français), Brazilian Portuguese (Português do Brasil) and European Portuguese (Português de Portugal)**.
+Mediarium's screens come in **English, Spanish (Español), German (Deutsch), French (Français), Italian (Italiano), Dutch (Nederlands), Polish (Polski), Brazilian Portuguese (Português do Brasil), European Portuguese (Português de Portugal), Russian (Русский) and Ukrainian (Українська)**.
 
 ## Choosing a language
 
@@ -21,21 +21,23 @@ The language for movie and show information is its own choice, apart from the sc
 
 ## What stays in English
 
-- Messages that come from the server itself: error details, health checks, log lines and the Activity history.
+- Log lines, and the messages of the server that Mediarium has no translation for (a message that is made up of pieces, or a detail another program sent, such as a provider's own error). Emails and push messages are written in English too.
 - Names of other apps and services (Plex, Jellyfin, TMDB, OpenSubtitles…), release names, quality names such as 1080p, and file paths.
 - Button and menu names of other apps' own websites in setup steps (for example where to find a key on TMDB), so they match what you see there.
 - Music and book details: they come from MusicBrainz and Open Library as those services provide them. (Movie and show details can be read in your language: see below.)
 
 ## Helping with a translation
 
-The text lives in `web/src/locales/es.json`, `de.json`, `fr.json`, `pt.json` (Brazil) and `pt-PT.json` (Portugal). Each line pairs the English phrase with its translation:
+The text lives in `web/src/locales/`, one file per language: `es.json`, `de.json`, `fr.json`, `it.json`, `nl.json`, `pl.json`, `pt.json` (Brazil), `pt-PT.json` (Portugal), `ru.json` and `uk.json`. Each line pairs the English phrase with its translation:
 
 ```json
 "Add to library": "Añadir a la biblioteca",
 "{n} movies": "{n} películas"
 ```
 
-- Keep the words in braces (`{n}`, `{title}`) exactly as they are. They're filled in when the text is shown.
+- Keep the words in braces (`{n}`, `{title}`) exactly as they are. They're filled in when the text is shown. `node tools/i18n-check.mjs` also tells you when a translation has different braces than the English.
+- Polish, Russian and Ukrainian have three forms for a count: 1 (`"{n} movie"`), 2 to 4 and 5 or more. The first and the last are the two phrases the code gives (`"{n} movie"`, `"{n} movies"`); the form for 2 to 4 is an extra line with `|few` after the plural phrase, for example `"{n} movies|few": "{n} фильма"`.
+- The sentences the server sends (`"That quality is not allowed."`) are in the same files. Where the server puts a name or a number in, the phrase has `{0}`, `{1}`... Keep each number; you may move it to where your language wants it. `go run ./tools/msgextract` rewrites the list of these sentences (`web/src/serverText.json`) from the code.
 - A key like `"noun|Search"` is the same English word used in a different place (here the page title, not the button), so it can be translated differently.
 - A phrase that's missing shows in English, so nothing ever goes blank.
 - `npm run i18n` (in `web/`) lists phrases a language doesn't have yet; `node tools/i18n-check.mjs --strict` fails when any are missing.

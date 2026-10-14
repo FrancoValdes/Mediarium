@@ -122,8 +122,8 @@ The activity list says who added a title, for example "Night Harbour added to li
 An admin can do the following for any other account, using the buttons on its card:
 
 - **Edit**: change the name, email address or role. It applies straight away, including to that person's open sessions. Tick **Turn this account off** to stop the account without deleting it: its open sessions end at once, its API keys stop working, and it can't sign in (a right password is told "This account is turned off"). Untick it to bring it back. Nothing it added is touched. The card shows an **Off** badge.
-- **Edit**, again: set a new password, for example when a basic user has forgotten theirs. That signs the account out everywhere. Leave the field empty to keep the current password. (Changing your own password from your profile also signs out every other browser, but not this one.)
-- **Remove**: delete the account, after a confirmation. Its sessions and API keys stop working at once. Titles it added stay in the library.
+- **Edit**, again: set a new password, for example when a basic user has forgotten theirs, or when someone else may know it. That signs the account out everywhere: its sessions end, its API keys are revoked, and its e-reader password, Kobo address and calendar feed address stop working (the person makes new ones after signing in). Passkeys and a single sign-on link stay, since they need the person's own device or provider account. Leave the field empty to keep the current password. (Changing your own password from your profile also signs out every other browser, but not this one.)
+- **Remove**: delete the account, after a confirmation (from the web page only, not with an API key). Its sessions and API keys stop working at once. Titles it added stay in the library.
 
 If something can't be done (the username is taken, or it would leave no admin), Mediarium shows its message as it is.
 
@@ -147,7 +147,7 @@ Setting it up:
 
 Signing in then takes the password and the code. **Can't use your app?** on that screen takes a recovery code instead. A code works once, and the phone's clock should be set automatically: a code is good for about a minute and a half.
 
-If someone loses their phone and their recovery codes, an administrator can press **Two-step off** on their card in the account list. If you are the only administrator, run this on the machine that runs Mediarium (swap 1000:1000 for your PUID:PGID):
+If someone loses their phone and their recovery codes, an administrator can press **Two-step off** on their card in the account list (from the web page only, not with an API key). If you are the only administrator, run this on the machine that runs Mediarium (swap 1000:1000 for your PUID:PGID):
 
 ```bash
 docker exec -it -u 1000:1000 mediarium /app/app reset-two-step <username>
@@ -198,7 +198,7 @@ The issuer has to be written exactly as the provider reports it, including a clo
 **Linking an existing account.** Two ways:
 
 - A person with a password here can open **Settings > Account & Access > Security** and press **Link to <name>**. After that, **Sign in with <name>** lands on their account, and their password keeps working. **Unlink** takes it away again.
-- **Link a first sign-in to an existing account with the same email address** (off by default): when the provider says the email address is verified, and exactly one account here has it, that account is linked. A sign-in with an unverified address is refused. An admin account is never linked this way, because whoever controls an email address at the provider would otherwise control an admin: an admin links their account from their own profile. Only turn this on if your provider checks email addresses.
+- **Link a first sign-in to an existing account with the same email address** (off by default): when the provider says the email address is verified, and exactly one account here has it, that account is linked. Only an address an administrator set on the account (when making it, or with **Edit**) counts; one a person typed on their own profile never does, because anyone could type someone else's address. Addresses saved by an older version are not known to have been set by an administrator, so set them again with **Edit** if you rely on this. A sign-in with an unverified address is refused. An admin account is never linked this way, because whoever controls an email address at the provider would otherwise control an admin: an admin links their account from their own profile. Only turn this on if your provider checks email addresses.
 
 If something goes wrong the sign-in page tells you in a sentence, for example "That sign-in took too long, or was started in another browser" or "Your email address isn't verified". The Mediarium log has one line with the short reason (never a code, token or secret).
 
@@ -229,7 +229,7 @@ How it behaves:
 
 - A name that belongs to an account with a password here signs in with that password and never goes to the directory. A name nobody has here goes to the directory. A directory person can't take over a local account with the same name; they are told the name is taken.
 - The account is found by the directory's own id for the person (`entryUUID`, `objectGUID`...), so a rename in the directory is followed and an old name given to someone else doesn't reach the old person's account.
-- It has the same limits as a password sign-in: five wrong tries per address per 15 minutes, and 25 per user name from all addresses together. A wrong password and an unknown user look exactly the same. An empty password is refused before the directory is asked (some directories would otherwise treat it as a good anonymous sign-in).
+- It has the same limits as a password sign-in: five wrong tries per address per 15 minutes, and 25 per user name from all addresses together. While password sign-in is turned off, a name that has a password here gets the same "Wrong username or password" answer as an unknown one, and the try counts. A wrong password and an unknown user look exactly the same. An empty password is refused before the directory is asked (some directories would otherwise treat it as a good anonymous sign-in).
 - What is typed is escaped before it goes into the search, so characters like `*`, `(`, `)` and `\` can't change what is searched for.
 - If the directory can't be reached the person is told so ("The directory couldn't be reached") and it doesn't count as a wrong password.
 - Every step has a time limit (ten seconds by default).
@@ -285,7 +285,7 @@ Running natively, with the same environment variables Mediarium normally runs wi
 mediarium reset-password <username>
 ```
 
-It asks for the new password twice (at least 8 characters) and signs that account out of every open session. It works for any account, admin or basic user.
+It asks for the new password twice (at least 8 characters) and signs that account out of every open session. The user name can be typed in any letter case, and the password can be piped in, typed twice on two lines (use `-i` instead of `-it` then). It works for any account, admin or basic user.
 
 ## For developers
 

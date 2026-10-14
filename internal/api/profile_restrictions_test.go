@@ -14,7 +14,7 @@ func TestHuntHonoursProfileRestrictionsAndPreferredScores(t *testing.T) {
 		"Some.Movie.2001.1080p.BluRay.HDR.x265-A",
 		"Some.Movie.2001.1080p.BluRay.x264-B",
 		"Some.Movie.2001.1080p.BluRay.x265-C",
-	}, nil, http.StatusOK, "this is not an nzb")
+	}, nil, http.StatusOK, brokenNZB)
 
 	// Excludes HDR, prefers x265: of three equal-quality releases the only
 	// allowed x265 one (C) must win — A is excluded, B has no score.
@@ -32,7 +32,7 @@ func TestHuntHonoursProfileRestrictionsAndPreferredScores(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The fixture's NZB URLs serve something that is not an NZB, so each grab
+	// The fixture's NZB URLs serve a broken NZB (one with no files), so each grab
 	// fails as a bad release and the automatic retry moves on to the
 	// next-best allowed one: C first (highest score), then B, and never the
 	// excluded A.

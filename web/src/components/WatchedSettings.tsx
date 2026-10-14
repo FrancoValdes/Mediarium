@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type LibraryCleanupItem, type CleanupRules, type WatchedSettings as Settings } from '../api'
-import { locale, plural, t } from '../i18n'
+import { locale, plural, t, st as serverText } from '../i18n'
 import Icon from './Icon'
 import Switch from './Switch'
 import { useToast } from './Toast'
@@ -225,7 +225,7 @@ export default function WatchedSettings() {
                   <ul>
                     {preview.slice(0, 100).map((it) => (
                       <li key={`${it.kind}-${it.id}`}>
-                        <Icon name={it.kind === 'movie' ? 'film' : 'tv'} size={13} /> <strong>{it.title}</strong> <span className="hint">· {it.reason}</span>
+                        <Icon name={it.kind === 'movie' ? 'film' : 'tv'} size={13} /> <strong>{it.title}</strong> <span className="hint">· {serverText(it.reason)}</span>
                       </li>
                     ))}
                   </ul>

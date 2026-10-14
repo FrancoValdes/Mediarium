@@ -1,6 +1,7 @@
 package subtitles
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -16,12 +17,24 @@ import (
 // SRT ("00:01:02,345") and WebVTT ("00:01:02.345" or "01:02.345") are read.
 
 var (
-	// A cue's timing line: start --> end, the rest of the line kept.
-	timingLine = regexp.MustCompile(`(?m)^(\s*)((?:\d+:)?\d{1,2}:\d{2}[,.]\d{1,3})(\s*-->\s*)((?:\d+:)?\d{1,2}:\d{2}[,.]\d{1,3})`)
+	// A cue's timing line: start --> end, the rest of the line kept. Hours
+	// have at most three digits, so a stamp can't overflow.
+	timingLine = regexp.MustCompile(`(?m)^(\s*)((?:\d{1,3}:)?\d{1,2}:\d{2}[,.]\d{1,3})(\s*-->\s*)((?:\d{1,3}:)?\d{1,2}:\d{2}[,.]\d{1,3})`)
 )
 
 // ErrNoCues is returned for a file with no timed cues.
 var ErrNoCues = errors.New("no subtitle lines with times were found in that file")
+
+// ErrTooManyCues is returned by Align for subtitles too long or too dense to
+// line up in a reasonable time.
+var ErrTooManyCues = errors.New("these subtitles have too many lines to line up")
+
+const (
+	maxStampHours = 999
+	// Align limits: cues per file, and target/reference pairs that vote.
+	maxAlignCues  = 20_000
+	maxAlignPairs = 50_000_000
+)
 
 func parseStamp(s string) (int64, bool) {
 	s = strings.ReplaceAll(strings.TrimSpace(s), ",", ".")
@@ -31,7 +44,7 @@ func parseStamp(s string) (int64, bool) {
 	var err error
 	switch len(parts) {
 	case 3:
-		if h, err = strconv.Atoi(parts[0]); err != nil {
+		if h, err = strconv.Atoi(parts[0]); err != nil || h < 0 || h > maxStampHours {
 			return 0, false
 		}
 		parts = parts[1:]
@@ -147,25 +160,53 @@ func score(target, ref []int64, scale float64, offset int64) (int, int64) {
 // It answers ErrNoCues when either file has none, and a Match whose Matched
 // share is low when the two don't fit together at any offset.
 func Align(target, ref []byte) (Match, error) {
-	t, r := Starts(target), Starts(ref)
+	return AlignContext(context.Background(), target, ref)
+}
+
+// AlignContext is Align that stops when ctx is done. It answers
+// ErrTooManyCues for files too long or too dense to line up in good time.
+func AlignContext(ctx context.Context, target, ref []byte) (Match, error) {
+	t, r := uniqueSorted(Starts(target)), uniqueSorted(Starts(ref))
 	if len(t) == 0 || len(r) == 0 {
 		return Match{}, ErrNoCues
 	}
-	sort.Slice(t, func(i, j int) bool { return t[i] < t[j] })
-	sort.Slice(r, func(i, j int) bool { return r[i] < r[j] })
+	if len(t) > maxAlignCues || len(r) > maxAlignCues {
+		return Match{}, ErrTooManyCues
+	}
 	best := Match{Scale: 1}
 	bestScore := -1
 	var bestErr int64
 	const window = 300_000 // only pairs less than 5 minutes apart vote
 	const bucket = 100
+	// Count the voting pairs first (cheap), so a dense pair of files is
+	// refused before the slow part starts.
+	pairs := 0
+	for _, s := range syncScales {
+		for _, ti := range t {
+			x := int64(math.Round(float64(ti) * s))
+			lo := sort.Search(len(r), func(i int) bool { return r[i] >= x-window })
+			hi := sort.Search(len(r), func(i int) bool { return r[i] > x+window })
+			if pairs += hi - lo; pairs > maxAlignPairs {
+				return Match{}, ErrTooManyCues
+			}
+		}
+	}
 	for _, s := range syncScales {
 		votes := map[int64]int{}
-		for _, ti := range t {
+		for k, ti := range t {
+			if k%1024 == 0 {
+				if err := ctx.Err(); err != nil {
+					return Match{}, err
+				}
+			}
 			x := int64(math.Round(float64(ti) * s))
 			lo := sort.Search(len(r), func(i int) bool { return r[i] >= x-window })
 			for j := lo; j < len(r) && r[j] <= x+window; j++ {
 				votes[(r[j]-x)/bucket]++
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			return Match{}, err
 		}
 		// Refine the three most voted buckets in 10 ms steps.
 		type cand struct {
@@ -189,4 +230,17 @@ func Align(target, ref []byte) (Match, error) {
 	}
 	best.Matched = float64(bestScore) / float64(len(t))
 	return best, nil
+}
+
+// uniqueSorted sorts start times and drops repeats (several cues that start
+// together vote only once).
+func uniqueSorted(s []int64) []int64 {
+	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	out := s[:0]
+	for i, v := range s {
+		if i == 0 || v != s[i-1] {
+			out = append(out, v)
+		}
+	}
+	return out
 }

@@ -71,9 +71,16 @@ export default function Player() {
   const chStart = chapter?.start ?? 0
   const chEnd = chapter?.end ?? duration
 
+  // The player element, kept after React lets go of it, so leaving the player
+  // can still read where the listener was.
+  const lastAudio = useRef<HTMLAudioElement | null>(null)
+  useEffect(() => {
+    if (audio.current) lastAudio.current = audio.current
+  })
+
   const save = useCallback(
     (keepalive = false) => {
-      const a = audio.current
+      const a = audio.current ?? lastAudio.current
       if (!tracks || !a) return
       const secs = a.currentTime || resumeAt.current
       const pct = overallPercent(
@@ -100,6 +107,13 @@ export default function Player() {
       window.removeEventListener('pagehide', onHide)
     }
   }, [save])
+
+  // And when the player closes inside the app (the Back link), which removes
+  // the audio without a pause event. save changes with the track, so the
+  // newest one is kept in a ref and used only when the player really closes.
+  const saveRef = useRef(save)
+  saveRef.current = save
+  useEffect(() => () => saveRef.current(true), [])
 
   useEffect(() => {
     if (audio.current) audio.current.playbackRate = speed

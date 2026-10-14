@@ -185,6 +185,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		user, err = s.directorySignIn(r.Context(), dirCfg, strings.TrimSpace(req.Username), req.Password)
 	} else {
 		if !s.localSignInOn() {
+			if dirOn {
+				// The directory is on, so names unknown here are answered "wrong username or
+				// password". A name with a password here gets the same answer, and the try
+				// counts, so the sign-in form can't be used to find out which names exist.
+				s.LoginLimiter.RecordFailure(ipKey)
+				byUser.RecordFailure(userKey)
+				slog.Warn("auth: failed sign-in, password sign-in is off", "user", userKey, "ip", ip)
+				writeError(w, http.StatusUnauthorized, "Wrong username or password.")
+				return
+			}
 			writeError(w, http.StatusForbidden, localOffMessage)
 			return
 		}
@@ -277,7 +287,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	// Guessing the current password from a stolen session is slowed down like guessing it at sign-in.
 	byUser := s.sec().byUser
-	guessKey := "password:" + strconv.FormatInt(user.ID, 10)
+	guessKey := passwordGuessKey(user.ID)
 	if !byUser.Allow(guessKey) {
 		writeError(w, http.StatusTooManyRequests, "Too many wrong passwords. Wait a few minutes and try again.")
 		return

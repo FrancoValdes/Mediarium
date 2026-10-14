@@ -331,7 +331,7 @@ func (s *Server) handleWanted(w http.ResponseWriter, r *http.Request) {
 	seenSeries := map[int64]bool{}
 	var episodeAt []int
 	for _, ep := range episodes {
-		p := profiles.resolve(ep.ProfileID)
+		p := profiles.resolveTV(ep.ProfileID)
 		if kind == "missing" && fileExists(ep.FilePath) {
 			continue // marked missing, but the file is there
 		}

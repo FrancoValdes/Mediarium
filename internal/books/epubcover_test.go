@@ -3,13 +3,16 @@ package books
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -135,5 +138,75 @@ func TestResizeCover(t *testing.T) {
 	}
 	if _, err := ResizeCover([]byte("junk"), 100, 100); err == nil {
 		t.Error("junk should fail")
+	}
+}
+
+// pngHeader is the start of a PNG that says it is w by h, with the given bit
+// depth and colour type: enough for image.DecodeConfig.
+func pngHeader(w, h uint32, depth, colourType byte) []byte {
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:], w)
+	binary.BigEndian.PutUint32(ihdr[4:], h)
+	ihdr[8], ihdr[9] = depth, colourType
+	var b bytes.Buffer
+	b.WriteString("\x89PNG\r\n\x1a\n")
+	_ = binary.Write(&b, binary.BigEndian, uint32(len(ihdr)))
+	chunk := append([]byte("IHDR"), ihdr...)
+	b.Write(chunk)
+	_ = binary.Write(&b, binary.BigEndian, crc32.ChecksumIEEE(chunk))
+	return b.Bytes()
+}
+
+func TestResizeCoverRefusesHugePictures(t *testing.T) {
+	cases := []struct {
+		name              string
+		w, h              uint32
+		depth, colourType byte
+	}{
+		{"30 megapixels", 6000, 5000, 8, 6},
+		{"16-bit, 16 megapixels", 4000, 4000, 16, 6},
+		{"a very long strip", 1, 1 << 30, 8, 0},
+	}
+	for _, tc := range cases {
+		if _, err := ResizeCover(pngHeader(tc.w, tc.h, tc.depth, tc.colourType), 200, 300); err == nil || !strings.Contains(err.Error(), "cover is") {
+			t.Errorf("%s: %v", tc.name, err)
+		}
+	}
+	// Within the limits the size check passes, and the missing pixels are what fails.
+	if _, err := ResizeCover(pngHeader(4000, 4000, 8, 6), 200, 300); err == nil || strings.Contains(err.Error(), "cover is") {
+		t.Errorf("8-bit 16 megapixels: %v", err)
+	}
+}
+
+// plainImage hides an image's type, so shrink takes the slow, general way.
+type plainImage struct{ image.Image }
+
+func TestShrinkFastPathsMatch(t *testing.T) {
+	nrgba := image.NewNRGBA(image.Rect(0, 0, 37, 53))
+	rgba := image.NewRGBA(image.Rect(0, 0, 37, 53))
+	for y := 0; y < 53; y++ {
+		for x := 0; x < 37; x++ {
+			nrgba.SetNRGBA(x, y, color.NRGBA{uint8(x * 7), uint8(y * 5), uint8(x * y), uint8(255 - x*3)})
+			rgba.Set(x, y, nrgba.At(x, y))
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, rgba, nil); err != nil {
+		t.Fatal(err)
+	}
+	ycc, err := jpeg.Decode(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ycc.(*image.YCbCr); !ok {
+		t.Fatalf("jpeg decoded to %T", ycc)
+	}
+	for _, img := range []image.Image{nrgba, rgba, ycc} {
+		b := img.Bounds()
+		fast := shrink(img, b.Dx(), b.Dy(), 11, 17)
+		slow := shrink(plainImage{img}, b.Dx(), b.Dy(), 11, 17)
+		if !bytes.Equal(fast.Pix, slow.Pix) {
+			t.Errorf("%T: the fast way gives other pixels", img)
+		}
 	}
 }

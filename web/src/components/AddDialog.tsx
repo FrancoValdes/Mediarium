@@ -9,7 +9,8 @@ import { TagChips, TagInput } from './Tags'
 import { PosterFallback } from './PosterCard'
 import { useToast } from './Toast'
 import { useFocusTrap } from '../useFocusTrap'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
+import { defaultProfileFor } from '../profileDefaults'
 import InfoTip from './InfoTip'
 
 export interface AddTarget {
@@ -104,7 +105,7 @@ function AddForm({
   useEffect(() => {
     api.listProfiles().then((r) => {
       setProfiles(sortProfiles(r.profiles))
-      setDefaultProfileId(r.defaultId)
+      setDefaultProfileId(defaultProfileFor(target.kind, r))
     }).catch(() => undefined)
     api
       .getSettings()
@@ -138,7 +139,7 @@ function AddForm({
         ? await api.addMovie(target.tmdbId, { profileId: profileId || undefined, monitored, sources, searchNow: searchNow && !cannotSearch, noUpgrade: !keepBetter, rootPath: rootPath || undefined, fourK: fourKOffered && wantFourK ? true : undefined })
         : await api.addSeries(target.tmdbId, { profileId: profileId || undefined, monitor, sources, searchNow: searchNow && !cannotSearch, noUpgrade: !keepBetter, rootPath: rootPath || undefined, fourK: fourKOffered && wantFourK ? true : undefined })
       if (isRequested(res)) {
-        toast.success(res.message)
+        toast.success(st(res.message))
         onClose()
         return
       }

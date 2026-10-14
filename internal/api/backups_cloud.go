@@ -310,7 +310,10 @@ func (s *Server) cloudPayload() cloudPayload {
 }
 
 // cloudFromRequest reads the settings sent by the page. Secrets left empty
-// keep the saved ones, so the page never needs to hold them.
+// keep the saved ones, so the page never needs to hold them, but only while
+// the backups still go to the same place: with another kind, endpoint,
+// address or bucket they have to be typed again, so nobody can send the
+// saved key, password or passphrase-locked backups somewhere else.
 func (s *Server) cloudFromRequest(r *http.Request) (cloudConfig, error) {
 	var req cloudConfig
 	if err := decodeJSON(r, &req); err != nil {
@@ -319,6 +322,9 @@ func (s *Server) cloudFromRequest(r *http.Request) (cloudConfig, error) {
 	old := s.cloudConfig()
 	for _, p := range []*string{&req.Kind, &req.Endpoint, &req.Region, &req.Bucket, &req.Prefix, &req.AccessKey, &req.URL, &req.Username} {
 		*p = strings.TrimSpace(*p)
+	}
+	if req.Kind != old.Kind || req.Endpoint != old.Endpoint || req.URL != old.URL || req.Bucket != old.Bucket {
+		old.SecretKey, old.Password, old.Passphrase = "", "", ""
 	}
 	if req.SecretKey == "" {
 		req.SecretKey = old.SecretKey

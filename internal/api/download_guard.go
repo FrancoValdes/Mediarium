@@ -49,9 +49,11 @@ func downloadOpen(st queue.Status) bool {
 }
 
 // checkMovieNotDownloading refuses a grab for a movie that already has a
-// download in progress.
+// download in progress. Only the unfinished downloads are read: these checks
+// run under the grab lock, and the whole history (every row with its address
+// decrypted) grows without end.
 func (s *Server) checkMovieNotDownloading(movieID int64) error {
-	items, err := s.QueueRepo.List()
+	items, err := s.QueueRepo.ListUnfinished()
 	if err != nil {
 		return fmt.Errorf("check downloads in progress: %w", err)
 	}
@@ -71,7 +73,7 @@ func (s *Server) checkEpisodesNotDownloading(seriesID int64, hintSeason, hintEpi
 	if season == 0 && len(episodes) == 0 {
 		return nil // the grab itself reports this
 	}
-	items, err := s.QueueRepo.List()
+	items, err := s.QueueRepo.ListUnfinished()
 	if err != nil {
 		return fmt.Errorf("check downloads in progress: %w", err)
 	}
@@ -130,46 +132,31 @@ func (s *Server) keptDownload(item queue.Item) (string, bool) {
 	return "", false
 }
 
-// reprocessDirs maps a retried release (downloads folder + download URL) to
-// the working folder of the earlier attempt, from the retry until the new
-// pipeline picks it up in prepareDownload.
-var reprocessDirs sync.Map
-
-func (s *Server) reprocessKey(downloadURL string) string {
-	return filepath.Clean(s.downloadsIncompleteDir()) + "\x00" + downloadURL
-}
-
-// offerKeptDownload lets the next pipeline for downloadURL start from dir.
-func (s *Server) offerKeptDownload(downloadURL, dir string) {
-	reprocessDirs.Store(s.reprocessKey(downloadURL), dir)
-}
-
-// withdrawKeptDownload undoes offerKeptDownload when the retry did not start.
-func (s *Server) withdrawKeptDownload(downloadURL string) {
-	reprocessDirs.Delete(s.reprocessKey(downloadURL))
+// moveKeptDownload moves the working folder of an earlier attempt to the
+// retry's own folder, so the retry starts from those files (see
+// reuseDownloaded). Only queue folders directly inside the downloads folder
+// are ever moved. It reports whether the files are now in place.
+func (s *Server) moveKeptDownload(old, dir string) bool {
+	root := filepath.Clean(s.downloadsIncompleteDir())
+	if filepath.Dir(filepath.Clean(old)) != root || filepath.Dir(filepath.Clean(dir)) != root {
+		return false
+	}
+	if err := os.Rename(old, dir); err != nil {
+		slog.Warn("retry: move the earlier download's files", "from", old, "to", dir, "err", err)
+		return false
+	}
+	return true
 }
 
 // verifiedDirs are working folders reuseDownloaded has just checked with
 // PAR2, so verifyStep need not check them a second time.
 var verifiedDirs sync.Map
 
-// reuseDownloaded moves the files of an earlier attempt (offered by a retry)
-// into this queue item's working folder and checks them with PAR2. It
-// reports false, and leaves an empty folder for a fresh download, when
-// there is nothing to reuse or the files fail the check.
-func (s *Server) reuseDownloaded(queueID int64, downloadURL, incompleteDir string) bool {
-	if v, ok := reprocessDirs.LoadAndDelete(s.reprocessKey(downloadURL)); ok {
-		old := v.(string)
-		root := filepath.Clean(s.downloadsIncompleteDir())
-		if filepath.Dir(filepath.Clean(old)) != root || filepath.Dir(filepath.Clean(incompleteDir)) != root {
-			return false // only ever move queue folders inside the downloads folder
-		}
-		if err := os.Rename(old, incompleteDir); err != nil {
-			slog.Warn("pipeline: reuse earlier download", "from", old, "to", incompleteDir, "err", err)
-			s.queueEvent(queueID, "retried", queue.LevelWarn, "The files from the earlier attempt couldn't be reused. Downloading again.")
-			return false
-		}
-	}
+// reuseDownloaded checks a finished download already in this queue item's
+// working folder (moved there by a retry, see moveKeptDownload, or left by a
+// pause) with PAR2. It reports false, and leaves an empty folder for a fresh
+// download, when there is nothing to reuse or the files fail the check.
+func (s *Server) reuseDownloaded(queueID int64, incompleteDir string) bool {
 	// Whether the files came from an earlier attempt or this item was paused
 	// and resumed, only a finished download is reused as it is; a partial one
 	// carries on from what it has (download.ResumeFile).

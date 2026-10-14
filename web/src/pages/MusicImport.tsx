@@ -6,7 +6,7 @@ import KindGlyph from '../components/KindGlyph'
 import { useModules } from '../ModulesContext'
 import { required } from '../validate'
 import { FieldError, useValidation } from '../useValidation'
-import { plural, t, tx } from '../i18n'
+import { plural, t, tx, st } from '../i18n'
 import '../import.css'
 
 const REASON: Record<string, string> = {
@@ -29,7 +29,7 @@ function ResultRow({ r }: { r: MusicImportResult }) {
           {r.quality ? ` · ${r.quality === 'Unknown' ? t('quality unknown') : r.quality}` : ''}
           {r.status === 'already' ? ` · ${t('already in your library')}` : ''}
         </small>
-        {!found && r.message && <small className="mi-why">{r.message}</small>}
+        {!found && r.message && <small className="mi-why">{st(r.message)}</small>}
         {!found && <code className="mi-folder">{r.folder}</code>}
       </div>
       {!found && <span className={`badge ${r.status === 'failed' ? 'failed' : 'missing'}`}>{REASON[r.status] ?? r.status}</span>}

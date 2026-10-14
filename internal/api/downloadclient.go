@@ -144,6 +144,7 @@ func (s *Server) downloadViaClient(ctx context.Context, queueID int64, downloadU
 	lastProgress, lastMove := -1.0, time.Now()
 	var gone time.Time
 	var t qbit.Torrent
+	var fails pollFailures
 	for {
 		var found bool
 		var err error
@@ -159,8 +160,18 @@ func (s *Server) downloadViaClient(ctx context.Context, queueID int64, downloadU
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return s.downloadClientError(label, err)
+			if !fails.tolerate(err, qbit.ErrAuth) {
+				return s.downloadClientError(label, err)
+			}
+			slog.Warn("download client: status check failed, trying again", "queueId", queueID, "err", err)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(downloadClientPoll):
+			}
+			continue
 		}
+		fails.reset()
 		if found {
 			gone = time.Time{}
 			if hash == "" && t.Hash != "" {
@@ -198,6 +209,30 @@ func (s *Server) downloadViaClient(ctx context.Context, queueID int64, downloadU
 		}
 	}
 }
+
+// pollGrace is how long the status checks of a download client or debrid
+// service may keep failing (a network blip, the client restarting) before the
+// download fails. A refused password or key fails it at once. A variable so
+// tests can shorten it.
+var pollGrace = 3 * time.Minute
+
+// pollFailures follows the status checks that failed in a row.
+type pollFailures struct{ since time.Time }
+
+// tolerate reports whether a failed check may be passed over (ask again at the
+// next poll). auth is the error that means the login was refused.
+func (p *pollFailures) tolerate(err, auth error) bool {
+	if errors.Is(err, auth) {
+		return false
+	}
+	if p.since.IsZero() {
+		p.since = time.Now()
+	}
+	return time.Since(p.since) < pollGrace
+}
+
+// reset is called after a check that worked.
+func (p *pollFailures) reset() { p.since = time.Time{} }
 
 // addToClient hands the release to the client. It returns the torrent's
 // hash ("" when it can't be known up front) and whether the torrent was in

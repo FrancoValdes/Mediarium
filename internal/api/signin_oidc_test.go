@@ -282,6 +282,34 @@ func TestOIDCLinkByVerifiedEmail(t *testing.T) {
 	}
 }
 
+// An address a member typed on their own profile could be someone else's, so a
+// first single sign-on is never linked by it; one an administrator set is.
+func TestOIDCLinkByEmailIgnoresSelfTypedAddress(t *testing.T) {
+	e := newOIDCEnv(t)
+	e.saveConfig(map[string]any{"linkByEmail": true, "autoCreate": false})
+	e.addAccount("mallory", "member")
+	mallory, status, _ := e.login("mallory", "long-enough-password")
+	if status != http.StatusOK {
+		t.Fatalf("sign in: %d", status)
+	}
+	e.must(mallory, "PUT", "/api/auth/profile", map[string]string{"username": "mallory", "email": "sam@example.com"}, http.StatusOK)
+	b := e.client()
+	if loc := e.browse(b, ""); loc != "/?signin_error=no_account" {
+		t.Fatalf("linked by an address the member typed: sent to %q", loc)
+	}
+	if u, _ := e.signedInAs(b); u != "" {
+		t.Fatalf("signed in as %q", u)
+	}
+	// Set by an administrator, the same address links.
+	id := e.addAccount("samantha", "member")
+	e.must(e.admin, "PUT", "/api/users/"+itoa(id), map[string]string{"email": "sam@example.com"}, http.StatusOK)
+	b2 := e.client()
+	e.browse(b2, "")
+	if u, _ := e.signedInAs(b2); u != "samantha" {
+		t.Fatalf("signed in as %q, want samantha", u)
+	}
+}
+
 func TestOIDCCallbackAttacks(t *testing.T) {
 	t.Run("a callback with nothing", func(t *testing.T) {
 		e := newOIDCEnv(t)

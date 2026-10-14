@@ -41,6 +41,15 @@ From then on, an approved request adds the title to your library, with the seaso
 
 Tdarr and similar apps change a file after it was imported (a new codec, sometimes a new extension) and then tell Radarr or Sonarr to look again, so that the media server finds the new file. Add Mediarium to them like Radarr or Sonarr (the address and key above). When they send **RescanMovie**, **RefreshMovie**, **RescanSeries** or **RefreshSeries**, Mediarium checks each downloaded file of that title: a file that is still there stays as it is, a file that only changed its extension (`.mp4` became `.mkv`, same name) is found under its new name, and then your media servers are asked to scan the folder. A file that can't be found is left alone (it is never marked missing or deleted). Tdarr itself works on the files in your library folders, so mount the same folders into it.
 
+## Add-ons
+
+**Settings > Connections > Add-ons** keeps links to other programs you run next to Mediarium: a channel guide, a dashboard, a library tool of your own. Each has a name, an address and a way to open: **In a new tab**, or **Inside Mediarium**, which shows the program in a frame on its own page (`/apps/...`). Everyone who can sign in sees the ones that are switched on in the players menu (the play button at the bottom of the sidebar); only an administrator edits the list.
+
+- Mediarium doesn't run these programs or load their code. They are separate projects with their own licences and rules, and Mediarium is not responsible for what they do.
+- For **Inside Mediarium**, Mediarium allows exactly the addresses of the add-ons you set to open that way to be shown in a frame, and nothing else. A program that refuses to be framed (many send `X-Frame-Options`) has to open in a new tab. An add-on's address must be a plain `http://` or `https://` address with a host name or IP address and maybe a port: spaces, quotes and semicolons are refused.
+- An add-on that wants to read your library should get its own **read-only API key** from the Profile page (a read-only key can't change anything), so you can switch it off with one click by revoking the key.
+- Up to 20. Stored as `apps.links`; scripts use `GET /api/apps` and `PUT /api/apps` (administrators).
+
 ## What works and what doesn't
 
 | Works | Notes |
@@ -57,4 +66,4 @@ Not available: history (an empty list is answered), manual imports, renaming, th
 
 ## For scripts
 
-The endpoints are Radarr's and Sonarr's API v3 and Lidarr's API v1 under the prefixes above, for example `GET /radarr/api/v3/movie` or `POST /sonarr/api/v3/command` with `{"name": "SeriesSearch", "seriesId": 3}`. They follow the shapes of the real apps closely enough for the apps listed here. For anything else, Mediarium's own API ([reference/api.md](./reference/api.md)) covers more and is the one to build on.
+The endpoints are Radarr's and Sonarr's API v3 and Lidarr's API v1 under the prefixes above, for example `GET /radarr/api/v3/movie` or `POST /sonarr/api/v3/command` with `{"name": "SeriesSearch", "seriesId": 3}`. Commands run one after another in the background, so a long list never holds up a search you start yourself; one command may name at most 200 movies, episodes or albums, and when 20 commands are already waiting a new one is turned away until they have run. They follow the shapes of the real apps closely enough for the apps listed here. For anything else, Mediarium's own API ([reference/api.md](./reference/api.md)) covers more and is the one to build on.

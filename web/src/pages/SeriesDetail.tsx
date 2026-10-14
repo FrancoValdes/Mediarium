@@ -447,6 +447,12 @@ function SeriesPage() {
                 <>
                   {canReleases && <button onClick={() => runSearch({ season, label: t('Season {n} (packs)', { n: season }) })}>{t('Search season')}</button>}
                   {canReleases && <InfoTip text={t('Lists the releases found for this whole season, season packs included, so you can pick one yourself.')} />}
+                  {canManage && allEps.some(isMissing) && (
+                    <button onClick={() => searchNow({ season })} disabled={searchingNow}>
+                      {t('Find missing')}
+                    </button>
+                  )}
+                  {canManage && allEps.some(isMissing) && <InfoTip text={t("Searches your indexers right now for this season's missing episodes and downloads what it finds. The rest of the show is left alone.")} />}
                   {admin && allEps.some((e) => e.status === 'downloaded' && e.filePath) && (
                     <button className="danger-ghost" onClick={() => void deleteFiles({ season })} title={t('Delete the files of this season and keep the show')}>
                       {t('Delete files')}

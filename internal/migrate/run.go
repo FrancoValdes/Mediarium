@@ -348,6 +348,8 @@ func (im *Importer) importMovie(ctx context.Context, mp moviePlan) (outcome, rea
 			return outcome, "added as wanted (Radarr had no file); no search started", 0
 		}
 		return outcome, "already in your library", 0
+	case mp.folderBad != "":
+		return outcome, mp.folderBad, 0
 	case !isDir(mp.folder):
 		return outcome, "folder not found at " + mp.folder + ", so its file isn't linked", 0
 	}
@@ -457,6 +459,9 @@ func (im *Importer) importSeries(ctx context.Context, sp seriesPlan) (outcome, r
 			return outcome, "added (Sonarr had no episode files); no search started", 0
 		}
 		return outcome, "already in your library", 0
+	}
+	if sp.folderBad != "" {
+		return outcome, sp.folderBad, 0
 	}
 	if !isDir(sp.folder) {
 		return outcome, "folder not found at " + sp.folder + ", so its episodes aren't linked", 0

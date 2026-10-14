@@ -88,6 +88,10 @@ type ereaderPasswordPayload struct {
 // POST /api/auth/ereader/opds: makes a new e-reader password. It is sent in
 // this answer only.
 func (s *Server) handleNewOPDSPassword(w http.ResponseWriter, r *http.Request) {
+	// The password keeps working without the key, so a key can't make one.
+	if !requireSession(w, r) {
+		return
+	}
 	u, ok := s.ereaderUser(w, r)
 	if !ok {
 		return
@@ -123,6 +127,10 @@ func (s *Server) handleRemoveOPDSPassword(w http.ResponseWriter, r *http.Request
 // POST /api/auth/ereader/kobo: makes a new Kobo address; the old one stops
 // working and the next sync sends everything again.
 func (s *Server) handleNewKoboToken(w http.ResponseWriter, r *http.Request) {
+	// The address keeps working without the key, so a key can't make one.
+	if !requireSession(w, r) {
+		return
+	}
 	u, ok := s.ereaderUser(w, r)
 	if !ok {
 		return

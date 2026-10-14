@@ -83,3 +83,23 @@ func TestSendFeedbackForwardsToTheWebsite(t *testing.T) {
 	}
 	postJSON[map[string]any](t, client, httpSrv.URL+"/api/feedback", map[string]any{"kind": "idea", "title": "One too many", "message": "Something nice to add."}, http.StatusTooManyRequests)
 }
+
+// One member using up their reports doesn't stop anyone else, least of all an
+// administrator.
+func TestFeedbackLimitIsPerPerson(t *testing.T) {
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"id":"1"}`))
+	}))
+	defer relay.Close()
+	defer api.SetFeedbackEndpointForTest(relay.URL)()
+	e := newSignInEnv(t, nil)
+	e.addAccount("kim", "member")
+	kim, _, _ := e.login("kim", "long-enough-password")
+	idea := map[string]any{"kind": "idea", "title": "An idea", "message": "Something nice to add."}
+	for i := 0; i < api.FeedbackPerHour; i++ {
+		e.must(kim, "POST", "/api/feedback", idea, http.StatusOK)
+	}
+	e.must(kim, "POST", "/api/feedback", idea, http.StatusTooManyRequests)
+	e.must(e.admin, "POST", "/api/feedback", idea, http.StatusOK)
+}

@@ -92,5 +92,5 @@ func (s *Server) profileForMovie(ps profileSet, m library.Movie) quality.Profile
 
 // profileForSeries is the same for a show.
 func (s *Server) profileForSeries(ps profileSet, sr library.Series) quality.Profile {
-	return s.withOriginalLanguage(ps.resolve(sr.ProfileID), "tv", sr.TMDBID)
+	return s.withOriginalLanguage(ps.resolveTV(sr.ProfileID), "tv", sr.TMDBID)
 }

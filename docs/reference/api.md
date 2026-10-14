@@ -11,6 +11,13 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 |---|---|---|---|
 | GET | `/api/activity` | any account |  |
 
+## apps
+
+| Method | Path | Access | What it does |
+|---|---|---|---|
+| GET | `/api/apps` | any account | lists the add-ons: every one for an administrator (who edits them), the enabled ones for everybody else. |
+| PUT | `/api/apps` | admin | replaces the whole list (administrators). |
+
 ## auth
 
 | Method | Path | Access | What it does |
@@ -62,6 +69,13 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | POST | `/api/auth/two-step/recovery` | any account | POST /api/auth/two-step/recovery {"password"}: a new set of recovery codes (the old ones stop working). |
 | POST | `/api/auth/two-step/setup` | any account | POST /api/auth/two-step/setup: a new secret to add to an authenticator app, as a QR code and as text. |
 
+## automation
+
+| Method | Path | Access | What it does |
+|---|---|---|---|
+| GET | `/api/automation/quiet` | admin |  |
+| PUT | `/api/automation/quiet` | admin | starts the quiet time for the given number of minutes, or ends it with 0. |
+
 ## blocklist
 
 | Method | Path | Access | What it does |
@@ -106,11 +120,16 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | GET | `/api/books/discover` | any account | GET /api/books/discover?list=trending&period=weekly&page=1 GET /api/books/discover?list=browse&subject=fantasy&from=2000&to=2010&sort=popular&page=1 |
 | GET | `/api/books/import` | admin |  |
 | POST | `/api/books/import` | admin | starts reading the books folders (administrators). |
+| POST | `/api/books/import/match` | admin | attaches a book picked by hand to one of the files the last import did not find (administrators, like the import itself). |
+| POST | `/api/books/import/retry` | admin | looks again only at the books the last import did not find (or could not save), without reading the folders again: for the ones Open Library or Audnexus did ... |
 | GET | `/api/books/progress` | any account | GET /api/books/progress: where the person is in every book. |
 | GET | `/api/books/search` | any account | looks books up on Open Library by title or author. |
 | GET | `/api/books/subjects` | any account | GET /api/books/subjects: the genres the Discover filter offers. |
 | DELETE | `/api/books/{id}` | admin | removes a book; with ?deleteFiles=true its files go to the recycle bin of their folder (or are deleted when the bin is off). |
 | GET | `/api/books/{id}` | any account |  |
+| GET | `/api/books/{id}/comic` | signed in | says how many pages the comic of a book has. |
+| GET | `/api/books/{id}/comic/{n}` | signed in | serves one page (n counts from 1). |
+| GET | `/api/books/{id}/file-cover` | any account | serves the cover of a book taken from its own file (the first page of a comic). |
 | POST | `/api/books/{id}/grab` | signed in |  |
 | GET | `/api/books/{id}/links` | any account | GET /api/books/{id}/links: where the book can be read or listened to, the connected Audiobookshelf and Kavita servers that have it. |
 | GET | `/api/books/{id}/listen/{n}` | signed in | GET /api/books/{id}/listen/{n}: one track, with ranges for seeking. |
@@ -314,6 +333,7 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | PUT | `/api/library/bulk/no-upgrade` | admin | switches the search for better versions off (noUpgrade true) or back on for the chosen titles. |
 | PUT | `/api/library/bulk/profile` | admin | gives the chosen titles a quality profile. |
 | POST | `/api/library/bulk/remove` | admin | takes the chosen titles out of the library, one after the other. |
+| POST | `/api/library/bulk/replace-smaller` | admin | starts the replacement for the movies of a selection. |
 | POST | `/api/library/bulk/search-now` | admin | looks for releases of the chosen titles that are monitored and still missing something. |
 | PUT | `/api/library/bulk/sources` | admin | chooses where the chosen titles are downloaded from. |
 | PUT | `/api/library/bulk/tags` | admin | adds and removes tags on the chosen titles (administrators). |
@@ -406,6 +426,7 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | PUT | `/api/movies/{id}/monitored` | signed in |  |
 | PUT | `/api/movies/{id}/no-upgrade` | admin | and handleSetSeriesNoUpgrade switch the search for better versions off for one title (or back on). |
 | PUT | `/api/movies/{id}/profile` | admin |  |
+| POST | `/api/movies/{id}/replace-smaller` | signed in | starts the replacement for one movie. |
 | POST | `/api/movies/{id}/rescan` | admin | looks at a movie's file again, for the Rescan files button. |
 | GET | `/api/movies/{id}/search` | signed in | is the interactive search for one library movie: every matching release across the indexers, with the reasons automation would skip it. |
 | POST | `/api/movies/{id}/search-now` | signed in | runs the automatic search for one movie right now, even if it is unmonitored, grabbing the best acceptable release. |
@@ -475,6 +496,7 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 |---|---|---|---|
 | GET | `/api/notifications` | admin |  |
 | POST | `/api/notifications` | admin |  |
+| POST | `/api/notifications/digest` | admin | sends the summary now, so a person can see what it looks like. |
 | GET | `/api/notifications/events` | admin | lists the events a target can subscribe to. |
 | GET | `/api/notifications/push-key` | admin | answers the public key a browser subscribes with. |
 | POST | `/api/notifications/test` | admin | sends a test message through a target that need not be saved: send the type and config from the form as they stand, or just an id to test a saved target, or ... |
@@ -799,4 +821,4 @@ Every route the server exposes. Routes marked **public** need no sign-in; all ot
 | PUT | `/api/watched/settings` | admin | PUT /api/watched/settings {"sync": true, "cleanup": {...}} |
 | POST | `/api/watched/sync` | admin | POST /api/watched/sync: read what's been watched now. |
 
-469 routes.
+481 routes.

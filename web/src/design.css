@@ -1677,6 +1677,9 @@ fieldset.group .card, fieldset.group table { max-width: 100%; }
 .mig-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto; display: grid; gap: 3px; font-size: 0.86rem; }
 .mig-list small { color: var(--text-dim); }
 .mig-act { display: inline-block; min-width: 88px; font-size: 0.74rem; font-weight: 600; }
+.type-tag { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; line-height: 1.5; vertical-align: 1px; color: var(--tc); background: color-mix(in srgb, var(--tc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 40%, transparent); }
+.type-tag.type-movie { --tc: var(--c-movie); }
+.type-tag.type-tv { --tc: var(--c-tv); }
 .mig-profiles { margin-top: 16px; display: grid; gap: 8px; }
 .mig-profiles td { padding: 4px 8px 4px 0; }
 .mig-progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 4px 0 6px; }
@@ -2788,6 +2791,8 @@ a.bar-label:hover { color: var(--accent); }
 .wrow.kind-book { --kc: var(--c-book); }
 .qrow.kind-book { border-left-color: var(--c-book); }
 .book-import { margin-bottom: 18px; display: grid; gap: 12px; }
+.import-table .find-by-hand { margin: 4px 0 8px; }
+.import-table td .btn-sm { margin-top: 4px; }
 .book-import-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
 .book-import-head h2 { margin: 0 0 4px; font-size: 1.05rem; }
 .book-import-head .hint { margin: 0; max-width: 80ch; }
@@ -3088,3 +3093,15 @@ img[data-broken] { visibility: hidden; }
 /* Permissions of another account: two columns, one on a phone. */
 .perm-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 600px) { .perm-rows { grid-template-columns: minmax(0, 1fr); } }
+
+/* Speed schedule (Settings > Downloading) */
+.speed-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 10px; }
+.speed-days { flex-wrap: wrap; }
+.speed-rule select { min-width: 0; }
+
+/* Add-ons (Settings > Connections) and the page that frames one */
+.addon-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.addon-row input:not([type='checkbox']) { flex: 1 1 160px; min-width: 0; }
+.addon-row select { flex: 0 0 auto; }
+.app-frame { display: flex; flex-direction: column; height: calc(100vh - 150px); min-height: 420px; }
+.app-frame-view { flex: 1; width: 100%; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }

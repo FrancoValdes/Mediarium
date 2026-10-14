@@ -21,6 +21,7 @@ import (
 	"unicode"
 
 	"github.com/rdborg/mediarium/internal/netguard"
+	"github.com/rdborg/mediarium/internal/speed"
 )
 
 // Services this package speaks to.
@@ -223,7 +224,14 @@ func Fetch(ctx context.Context, hc *http.Client, f File, dir string, progress fu
 		return fmt.Errorf("write %s: %w", filepath.Base(dest), err)
 	}
 	w := &countingWriter{w: out, n: have, report: progress}
-	_, copyErr := io.Copy(w, resp.Body)
+	var body io.Reader = resp.Body
+	if f.Size > 0 {
+		// One byte more than the file's size is enough to tell that the
+		// service sends too much, without letting it fill the disk.
+		body = io.LimitReader(resp.Body, f.Size-have+1)
+	}
+	// The download speed limit and its schedule cover these files too.
+	_, copyErr := io.Copy(w, &limitedReader{ctx: ctx, r: body})
 	closeErr := out.Close()
 	if copyErr != nil {
 		return fmt.Errorf("download %s: %w", filepath.Base(dest), copyErr)
@@ -231,10 +239,30 @@ func Fetch(ctx context.Context, hc *http.Client, f File, dir string, progress fu
 	if closeErr != nil {
 		return fmt.Errorf("write %s: %w", filepath.Base(dest), closeErr)
 	}
+	if f.Size > 0 && w.n > f.Size {
+		_ = os.Remove(part)
+		return fmt.Errorf("download %s: the service sent more than the file's size of %d bytes", filepath.Base(dest), f.Size)
+	}
 	if f.Size > 0 && w.n != f.Size {
 		return fmt.Errorf("download %s: got %d of %d bytes", filepath.Base(dest), w.n, f.Size)
 	}
 	return os.Rename(part, dest)
+}
+
+// limitedReader holds each read back to the shared download speed limit.
+type limitedReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (l *limitedReader) Read(p []byte) (int, error) {
+	n, err := l.r.Read(p)
+	if n > 0 {
+		if werr := speed.Wait(l.ctx, n); werr != nil && err == nil {
+			err = werr
+		}
+	}
+	return n, err
 }
 
 type countingWriter struct {

@@ -30,6 +30,42 @@ func TestParseEdgeCases(t *testing.T) {
 		{"season range end is not a group", "Show.Name.S01E100-S01E102", parser.Release{Title: "Show Name", Season: 1, Episode: 100, Episodes: []int{100}}},
 		{"backwards range keeps the first", "Show.Name.S01E05-E02", parser.Release{Title: "Show Name", Season: 1, Episode: 5, Episodes: []int{5}}},
 
+		// A separator between season and episode is still one episode, not a pack
+		{"space between season and episode", "Show S01 E01 1080p", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1}, Resolution: "1080p"}},
+		{"dots and one digit", "Show.S1.E1.1080p", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1}, Resolution: "1080p"}},
+		{"dash between season and episode", "Show.S02-E05.720p.HDTV-GRP", parser.Release{Title: "Show", Season: 2, Episode: 5, Episodes: []int{5}, Resolution: "720p", Source: "HDTV", Group: "GRP"}},
+		{"underscore between season and episode", "Show_S03_E10_1080p", parser.Release{Title: "Show", Season: 3, Episode: 10, Episodes: []int{10}, Resolution: "1080p"}},
+		{"spaced multi-episode", "Show S01 E01E02 720p", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1, 2}, Resolution: "720p"}},
+		{"spaced range", "Show S01 E01-E03 720p", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1, 2, 3}, Resolution: "720p"}},
+		{"pack followed by an audio tag", "Show.S01.EAC3.1080p-GRP", parser.Release{Title: "Show", Season: 1, Resolution: "1080p", AudioCodec: "EAC3", Group: "GRP"}},
+
+		// More episode shapes
+		{"episodes joined by a dot", "Show.S01E01.E02.1080p.WEB-DL-GRP", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1, 2}, Resolution: "1080p", Source: "WEB-DL", Group: "GRP"}},
+		{"episodes joined by a dot at the end", "Show.S01E01.E02", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1, 2}}},
+		{"NxNN range", "Show.1x01-1x03.720p.HDTV-GRP", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1, 2, 3}, Resolution: "720p", Source: "HDTV", Group: "GRP"}},
+		{"NxNN range without the second season", "Show.1x01-03.720p", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1, 2, 3}, Resolution: "720p"}},
+		{"NxNN range over two seasons keeps the first", "Show.1x05-2x01.720p", parser.Release{Title: "Show", Season: 1, Episode: 5, Episodes: []int{5}, Resolution: "720p"}},
+		{"NxNN followed by a resolution", "Show.1x05-720p", parser.Release{Title: "Show", Season: 1, Episode: 5, Episodes: []int{5}, Resolution: "720p"}},
+		{"year-numbered season", "Show.S2024E01.1080p.WEB-GRP", parser.Release{Title: "Show", Season: 2024, Episode: 1, Episodes: []int{1}, Resolution: "1080p", Source: "WEB", Group: "GRP"}},
+		{"year-numbered season with a range", "Show.S2019E01-E03", parser.Release{Title: "Show", Season: 2019, Episode: 1, Episodes: []int{1, 2, 3}}},
+		{"three digits is not a season", "Show.S201E01", parser.Release{Title: "Show S201E01"}},
+
+		// Packs of several seasons
+		{"multi-season pack", "Show.S01-S03.1080p", parser.Release{Title: "Show", Season: 1, SeasonTo: 3, Resolution: "1080p"}},
+		{"multi-season pack without the second S", "Show.S01-03.1080p", parser.Release{Title: "Show", Season: 1, SeasonTo: 3, Resolution: "1080p"}},
+		{"multi-season pack in words", "Show.Season.1-4.1080p.BluRay-GRP", parser.Release{Title: "Show", Season: 1, SeasonTo: 4, Resolution: "1080p", Source: "BluRay", Group: "GRP"}},
+		{"backwards season range is one season", "Show.S03-S01.1080p", parser.Release{Title: "Show", Season: 3, Resolution: "1080p"}},
+		{"season pack followed by a resolution", "Show.S01-720p", parser.Release{Title: "Show", Season: 1, Resolution: "720p"}},
+		{"season pack with a group", "Show.S02-GRP", parser.Release{Title: "Show", Season: 2, Group: "GRP"}},
+		{"episode wins over a pack marker", "Show.S01-S02E05.720p", parser.Release{Title: "Show", Season: 2, Episode: 5, Episodes: []int{5}, Resolution: "720p"}},
+
+		// Season marker first
+		{"title after Season", "Season.2.Show.1080p", parser.Release{Title: "Show", Season: 2, Resolution: "1080p"}},
+		{"title after S01E01", "S01E05.Show.Name.720p.HDTV-GRP", parser.Release{Title: "Show Name", Season: 1, Episode: 5, Episodes: []int{5}, Resolution: "720p", Source: "HDTV", Group: "GRP"}},
+		{"title after Season up to the year", "Season 1 Show Name 2019 1080p", parser.Release{Title: "Show Name", Year: 2019, Season: 1, Resolution: "1080p"}},
+		{"title after Season up to the group", "Season.1.Show-GRP", parser.Release{Title: "Show", Season: 1, Group: "GRP"}},
+		{"only a season marker", "S01E01", parser.Release{Season: 1, Episode: 1, Episodes: []int{1}}},
+
 		// Codecs, HDR and editions with dots
 		{"H.264 with a dot", "Movie.2019.1080p.BluRay.H.264-GRP", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Source: "BluRay", Codec: "x264", Group: "GRP"}},
 		{"H.265 with a dot", "Movie.2019.2160p.WEB-DL.H.265-GRP", parser.Release{Title: "Movie", Year: 2019, Resolution: "2160p", Source: "WEB-DL", Codec: "x265", Group: "GRP"}},
@@ -45,6 +81,24 @@ func TestParseEdgeCases(t *testing.T) {
 		{"a hyphenated title has no group", "Spider-Man", parser.Release{Title: "Spider-Man"}},
 		{"a hyphenated title with a year", "X-Men.2000.1080p.BluRay-GRP", parser.Release{Title: "X-Men", Year: 2000, Resolution: "1080p", Source: "BluRay", Group: "GRP"}},
 		{"a bare name with a dash", "Jay-Z", parser.Release{Title: "Jay-Z"}},
+		{"postbot is not a group", "Movie.2019.1080p.BluRay.x264-GRP-postbot", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Source: "BluRay", Codec: "x264", Group: "GRP"}},
+		{"Obfuscated is not a group", "Movie.2019.1080p.WEB-DL.x264-GRP-Obfuscated", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Source: "WEB-DL", Codec: "x264", Group: "GRP"}},
+		{"xpost is not a group", "Show.S01E01.720p.HDTV.x264-GRP-xpost", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1}, Resolution: "720p", Source: "HDTV", Codec: "x264", Group: "GRP"}},
+		{"Scrambled is not a group", "Movie.2019.1080p-GRP-Scrambled", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"BUYMORE is not a group", "Movie.2019.1080p-GRP-BUYMORE", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"WhiteRev is not a group", "Movie.2019.1080p-GRP-WhiteRev", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"AsRequested is not a group", "Movie.2019.1080p-GRP-AsRequested", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"Chaos is not a group", "Movie.2019.1080p-GRP-Chaos", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"RP is not a group", "Movie.2019.1080p-GRP-RP", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"NZBGeek is not a group", "Movie.2019.1080p-GRP-NZBGeek", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"sample is not a group", "Movie.2019.1080p-GRP-sample.mkv", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"suffixes in any case and stacked", "Movie.2019.1080p-GRP-OBFUSCATED-postBOT", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
+		{"suffix with nothing before it", "Movie.2019.1080p-postbot", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p"}},
+		{"suffix after a bare title", "Movie-postbot", parser.Release{Title: "Movie"}},
+		{"a group that only starts like a suffix", "Movie.2019.1080p-RPG", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "RPG"}},
+		{"a site tag after the group", "Movie.2019.1080p.BluRay.x264-GRP[rarbg]", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Source: "BluRay", Codec: "x264", Group: "GRP"}},
+		{"two site tags after the group", "Show.S01E01.1080p.WEB-GRP[eztv][rarbg]", parser.Release{Title: "Show", Season: 1, Episode: 1, Episodes: []int{1}, Resolution: "1080p", Source: "WEB", Group: "GRP"}},
+		{"a site tag after a suffix", "Movie.2019.1080p-GRP-postbot[rarbg]", parser.Release{Title: "Movie", Year: 2019, Resolution: "1080p", Group: "GRP"}},
 
 		// Years in titles
 		{"title that is a year", "1917.2019.1080p.BluRay.x264-GRP", parser.Release{Title: "1917", Year: 2019, Resolution: "1080p", Source: "BluRay", Codec: "x264", Group: "GRP"}},
@@ -100,6 +154,13 @@ func TestParseHugeNameIsFast(t *testing.T) {
 		"long season":    strings.Repeat("Season 1 ", 1200),
 		"long range":     "Show.S01E01-" + strings.Repeat("E", 5000),
 		"long open tags": strings.Repeat("S1E", 4000),
+		"long spaced":    strings.Repeat("S01 E01 ", 40000),
+		"long dotted":    "Show.S01E01" + strings.Repeat(".E01", 100000),
+		"long seasons":   strings.Repeat("S01-S03.", 40000),
+		"long suffixes":  "Movie.2019" + strings.Repeat("-postbot", 40000),
+		"long site tags": "Movie.2019-GRP" + strings.Repeat("[rarbg]", 40000),
+		"long crosses":   strings.Repeat("1x01-1x03.", 30000),
+		"long Season":    strings.Repeat("Season.", 50000) + "1",
 	}
 	for name, in := range inputs {
 		start := time.Now()

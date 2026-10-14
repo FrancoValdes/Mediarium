@@ -3,6 +3,8 @@
 # Besides building and testing, it keeps the documentation honest:
 #   * the reference pages in docs/reference are generated from the code, and the
 #     build fails if they are out of date (run `go run ./tools/docgen`)
+#   * the list of sentences the server sends, which the web app translates
+#     (web/src/serverText.json), is generated too (run `go run ./tools/msgextract`)
 #   * THIRD_PARTY_NOTICES.md lists the licence of everything bundled, and the
 #     build fails if it is out of date (run `go run ./tools/notices`)
 #   * a pull request that changes the app but touches neither docs/ nor
@@ -39,6 +41,8 @@ jobs:
         run: go test $(go list ./... | grep -v torrentclient)
       - name: Reference docs are up to date
         run: go run ./tools/docgen -check
+      - name: The list of server sentences is up to date
+        run: go run ./tools/msgextract -check
 
   # Bug patterns the compiler doesn't catch (staticcheck's SA checks).
   static:

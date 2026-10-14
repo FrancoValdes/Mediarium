@@ -24,6 +24,43 @@ func seedItem(t *testing.T, repo *queue.Repo, movieID int64, status queue.Status
 	return id
 }
 
+// A pause or stop that comes just after a download finished must not turn it
+// back into a paused or stopped one.
+func TestPauseAndStopLeaveFinishedItemsAlone(t *testing.T) {
+	db := openDB(t)
+	repo := queue.NewRepo(db)
+	lib := library.NewRepo(db)
+	m, _ := lib.Add(library.Movie{TMDBID: 1, Title: "Film"})
+
+	for _, st := range []queue.Status{queue.StatusCompleted, queue.StatusFailed, queue.StatusStopped, queue.StatusConflict, queue.StatusPaused} {
+		t.Run(string(st), func(t *testing.T) {
+			id := seedItem(t, repo, m.ID, st)
+			if err := repo.Pause(id, false); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("pausing a %s item: err = %v, want sql.ErrNoRows", st, err)
+			}
+			if st != queue.StatusPaused {
+				if ok, err := repo.Stop(id); err != nil || ok {
+					t.Fatalf("stopping a %s item: ok = %v, err = %v", st, ok, err)
+				}
+			}
+			if got, _ := repo.Get(id); got.Status != st {
+				t.Fatalf("a %s item became %s", st, got.Status)
+			}
+		})
+	}
+	for _, st := range []queue.Status{queue.StatusQueued, queue.StatusDownloading, queue.StatusImporting, queue.StatusPaused} {
+		t.Run("stop "+string(st), func(t *testing.T) {
+			id := seedItem(t, repo, m.ID, st)
+			if ok, err := repo.Stop(id); err != nil || !ok {
+				t.Fatalf("stopping a %s item: ok = %v, err = %v", st, ok, err)
+			}
+			if got, _ := repo.Get(id); got.Status != queue.StatusStopped {
+				t.Fatalf("a stopped %s item is %s", st, got.Status)
+			}
+		})
+	}
+}
+
 func TestPauseKeepsTheItemAndItsProgress(t *testing.T) {
 	db := openDB(t)
 	repo := queue.NewRepo(db)

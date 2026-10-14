@@ -1,6 +1,9 @@
 package httpsec
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 // contentSecurityPolicy fits the single-page app: everything comes from
 // Mediarium itself except poster and cover images (TMDB, the Cover Art
@@ -31,9 +34,26 @@ const hstsValue = "max-age=15552000"
 // (directly or as reported by a trusted proxy): sent over plain HTTP it
 // would be ignored anyway, and a LAN visit over http:// must keep working.
 func (p *Proxies) Headers(next http.Handler) http.Handler {
+	return p.HeadersWithFrames(next, nil)
+}
+
+// youtubeFrame is the one place Mediarium frames by default.
+const youtubeFrame = "frame-src https://www.youtube-nocookie.com;"
+
+// HeadersWithFrames is Headers, with the origins frames() names (the add-ons
+// a person set to open inside Mediarium) allowed in a frame next to the
+// trailer player. frames is asked on every request, so a change in the
+// settings applies at once; nil allows none.
+func (p *Proxies) HeadersWithFrames(next http.Handler, frames func() []string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		policy := contentSecurityPolicy
+		if frames != nil {
+			if extra := frames(); len(extra) > 0 {
+				policy = strings.Replace(policy, youtubeFrame, "frame-src https://www.youtube-nocookie.com "+strings.Join(extra, " ")+";", 1)
+			}
+		}
+		h.Set("Content-Security-Policy", policy)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")

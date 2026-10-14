@@ -28,6 +28,9 @@ type Deps struct {
 	TVRoot     func() string
 	// DefaultProfileID is the default quality profile's id (0 = none set).
 	DefaultProfileID func() int64
+	// DefaultTVProfileID is the default quality profile for shows (0 or nil =
+	// shows use DefaultProfileID).
+	DefaultTVProfileID func() int64
 
 	// Definition finds a site definition by id (Prowlarr's definitionName
 	// is the same id); it returns indexers.ErrDefinitionNotFound for an

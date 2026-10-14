@@ -25,6 +25,14 @@ import (
 // one.
 func newImportConflictTestServer(t *testing.T, movieContent []byte) (client *http.Client, httpSrv *httptest.Server, movie library.Movie, existingPath string) {
 	t.Helper()
+	_, client, httpSrv, movie, existingPath = newImportConflictEnv(t, movieContent)
+	return client, httpSrv, movie, existingPath
+}
+
+// newImportConflictEnv is newImportConflictTestServer that also returns the
+// server.
+func newImportConflictEnv(t *testing.T, movieContent []byte) (server *api.Server, client *http.Client, httpSrv *httptest.Server, movie library.Movie, existingPath string) {
+	t.Helper()
 	nntpSrv := newFakeNNTPServer(t, movieContent)
 	indexerSrv := newFakeIndexerServer(t)
 
@@ -50,7 +58,7 @@ func newImportConflictTestServer(t *testing.T, movieContent []byte) (client *htt
 	if err != nil {
 		t.Fatalf("load key: %v", err)
 	}
-	server, err := api.New(db, cfg, box, "", "test")
+	server, err = api.New(db, cfg, box, "", "test")
 	if err != nil {
 		t.Fatalf("new api server: %v", err)
 	}
@@ -93,7 +101,65 @@ func newImportConflictTestServer(t *testing.T, movieContent []byte) (client *htt
 		t.Fatalf("write pre-existing file: %v", err)
 	}
 
-	return client, httpSrv, movie, existingPath
+	return server, client, httpSrv, movie, existingPath
+}
+
+// TestImportNeverTakesAnotherTitlesFile: a remake with the same title and
+// year renders to the same file name as the film already in the library.
+// Even with "overwrite", that file belongs to the other film and is left
+// alone; the download fails with a reason instead.
+func TestImportNeverTakesAnotherTitlesFile(t *testing.T) {
+	movieContent := []byte("the remake's bytes, which must not replace the original")
+	server, client, httpSrv, movie, existingPath := newImportConflictEnv(t, movieContent)
+	postJSONMethod[map[string]any](t, client, http.MethodPut, httpSrv.URL+"/api/settings", map[string]any{
+		"importConflictPolicy": "overwrite",
+	}, http.StatusOK)
+	original, err := server.MovieRepo.Add(library.Movie{TMDBID: 9608, Title: "The Fixture Movie", Year: 1999, Monitored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.MovieRepo.SetStatus(original.ID, library.StatusDownloaded, "Bluray-1080p", existingPath); err != nil {
+		t.Fatal(err)
+	}
+
+	item := grabFixtureAndWaitForEnd(t, client, httpSrv, movie, movieContent)
+	if item["status"] != "failed" {
+		t.Fatalf("the import should have been refused, got %+v", item)
+	}
+	if got, _ := os.ReadFile(existingPath); string(got) != "pre-existing file content" {
+		t.Fatalf("the other film's file was replaced: %q", got)
+	}
+	after, err := server.MovieRepo.Get(original.ID)
+	if err != nil || after.FilePath != existingPath || after.Status != library.StatusDownloaded {
+		t.Fatalf("the other film's record changed: %+v %v", after, err)
+	}
+	if mine, _ := server.MovieRepo.Get(movie.ID); mine.FilePath == existingPath {
+		t.Fatal("the grabbed film now points at the other film's file")
+	}
+}
+
+// TestKeepingTheExistingFileLeavesTheMovieDownloaded: an upgrade parked on a
+// conflict, and the person keeps the file the movie already has. The movie
+// still has that file, so it must not go back to "missing" (which would make
+// the automatic searches grab it again and again).
+func TestKeepingTheExistingFileLeavesTheMovieDownloaded(t *testing.T) {
+	movieContent := []byte("an upgrade nobody wanted after all")
+	server, client, httpSrv, movie, existingPath := newImportConflictEnv(t, movieContent)
+	if err := server.MovieRepo.SetStatus(movie.ID, library.StatusDownloaded, "WEBDL-720p", existingPath); err != nil {
+		t.Fatal(err)
+	}
+	item := grabFixtureAndWaitForConflict(t, client, httpSrv, movie, movieContent)
+	if item["status"] != "conflict" {
+		t.Fatalf("expected the upgrade to wait for a decision, got %+v", item)
+	}
+	queueID := int64(item["id"].(float64))
+	postJSON[map[string]any](t, client, fmt.Sprintf("%s/api/queue/%d/resolve-conflict", httpSrv.URL, queueID), map[string]any{
+		"overwrite": false,
+	}, http.StatusOK)
+	finalMovie := getJSON[map[string]any](t, client, fmt.Sprintf("%s/api/movies/%d", httpSrv.URL, movie.ID))
+	if finalMovie["status"] != "downloaded" {
+		t.Fatalf("the movie still has its file, so it stays downloaded, got %+v", finalMovie)
+	}
 }
 
 // conflictWorkDir is the working folder of a parked download (the test
@@ -108,7 +174,9 @@ func conflictWorkDir(t *testing.T, existingPath string, queueID int64, mustExist
 	return dir
 }
 
-func grabFixtureAndWaitForConflict(t *testing.T, client *http.Client, httpSrv *httptest.Server, movie library.Movie, movieContent []byte) map[string]any {
+// grabFixtureAndWaitForEnd grabs the fixture release and waits until its
+// download is parked, failed or completed.
+func grabFixtureAndWaitForEnd(t *testing.T, client *http.Client, httpSrv *httptest.Server, movie library.Movie, movieContent []byte) map[string]any {
 	t.Helper()
 	searchResp := getJSON[[]map[string]any](t, client, httpSrv.URL+"/api/search?q=fixture")
 	if len(searchResp) != 1 {
@@ -140,6 +208,12 @@ func grabFixtureAndWaitForConflict(t *testing.T, client *http.Client, httpSrv *h
 	if item == nil {
 		t.Fatal("timed out waiting for the queue item to reach conflict")
 	}
+	return item
+}
+
+func grabFixtureAndWaitForConflict(t *testing.T, client *http.Client, httpSrv *httptest.Server, movie library.Movie, movieContent []byte) map[string]any {
+	t.Helper()
+	item := grabFixtureAndWaitForEnd(t, client, httpSrv, movie, movieContent)
 	if item["status"] != "conflict" {
 		t.Fatalf("expected the grab to park in status=conflict (destination collision), got %+v", item)
 	}

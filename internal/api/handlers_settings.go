@@ -15,6 +15,7 @@ import (
 	"github.com/rdborg/mediarium/internal/organizer"
 	"github.com/rdborg/mediarium/internal/plainerror"
 	"github.com/rdborg/mediarium/internal/quality"
+	"github.com/rdborg/mediarium/internal/queue"
 	"github.com/rdborg/mediarium/internal/settings"
 	"github.com/rdborg/mediarium/internal/subtitles"
 )
@@ -71,9 +72,13 @@ type settingsPayload struct {
 	// as-is) is distinguishable from "explicitly set to false" — a plain
 	// bool would make every partial PUT that doesn't mention it silently
 	// disable automation.
-	AutomationEnabled *bool  `json:"automationEnabled,omitempty"`
-	DefaultProfileID  int64  `json:"defaultProfileId,omitempty"`
-	DefaultSources    string `json:"defaultSources,omitempty"` // usenet | torrent | both
+	AutomationEnabled *bool `json:"automationEnabled,omitempty"`
+	DefaultProfileID  int64 `json:"defaultProfileId,omitempty"`
+	// DefaultTVProfileID is the profile shows with none of their own use; 0
+	// clears it (shows then use DefaultProfileID like movies), left out leaves
+	// it alone.
+	DefaultTVProfileID *int64 `json:"defaultTvProfileId,omitempty"`
+	DefaultSources     string `json:"defaultSources,omitempty"` // usenet | torrent | both
 
 	// Subtitles: languages to keep (OpenSubtitles codes) and whether to fetch
 	// them automatically after import and on a schedule.
@@ -168,6 +173,9 @@ type settingsPayload struct {
 	// distinguishable from "explicitly turned off".
 	RequireVPNForTorrents *bool `json:"requireVpnForTorrents,omitempty"`
 
+	// Indexer traffic through the VPN. A pointer for the same reason.
+	RouteIndexersThroughVPN *bool `json:"routeIndexersThroughVpn,omitempty"`
+
 	// Curated/public list import — Trakt's public
 	// list-items endpoint only needs an app client ID, no user OAuth.
 	// A pointer for the same reason as OpenSubtitlesAPIKey.
@@ -204,18 +212,29 @@ type settingsPayload struct {
 	// free space below which no new download starts (5 by default, 0 = off).
 	SpeedLimitMB    *int    `json:"speedLimitMB,omitempty"`
 	SpeedLimitHours *string `json:"speedLimitHours,omitempty"`
-	MinFreeGB       *int    `json:"minFreeGB,omitempty"`
+	// SpeedSchedule: lines of "on these days, at these hours, limit to N MB/s".
+	// The first line that fits the moment sets the limit; when none does, the
+	// plain limit above applies.
+	SpeedSchedule *[]speedRule `json:"speedSchedule,omitempty"`
+	MinFreeGB     *int         `json:"minFreeGB,omitempty"`
 	// TorrentStallHours: hours a torrent may get no data before it is given up on (0 = never, absent = the default of each client).
 	TorrentStallHours *int `json:"torrentStallHours,omitempty"`
 	// DownloadHours is when new downloads may start ("1-7", "" = any time).
 	DownloadHours *string `json:"downloadHours,omitempty"`
 	// NotifyQuietHours is when everyday messages wait ("23-7", "" = never).
 	NotifyQuietHours *string `json:"notifyQuietHours,omitempty"`
+	// DigestDay is the day of the weekly summary (0 is Sunday, -1 = no
+	// summary) and DigestHour the hour it is sent.
+	DigestDay  *int `json:"digestDay,omitempty"`
+	DigestHour *int `json:"digestHour,omitempty"`
 
 	// DownloadsAtOnce is how many downloads may run at the same time, Usenet
 	// and torrents together (1 to 5, one by default). The rest wait in line. A
 	// pointer so an omitted field leaves it alone.
 	DownloadsAtOnce *int `json:"downloadsAtOnce,omitempty"`
+	// NewestFirst: among the downloads the automatic searches added, the
+	// movie that came out (or the episode that aired) latest starts first.
+	NewestFirst *bool `json:"newestFirst,omitempty"`
 
 	// Checks on releases (Settings > Downloading). UsenetRetentionDays: Usenet
 	// posts older than this many days are not taken (0 = no limit).
@@ -307,6 +326,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	illegalCharReplacement, _ := s.Settings.Get(settings.KeyIllegalCharReplacement)
 	requireVPNForTorrents := s.vpnRequiredForTorrents()
+	routeIndexersThroughVPN := s.vpnForIndexers()
 	importConflictPolicy, _ := s.Settings.Get(settings.KeyImportConflictPolicy)
 	if importConflictPolicy == "" {
 		importConflictPolicy = "skip"
@@ -326,12 +346,19 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if from, to, ok := s.speedLimitHours(); ok {
 		speedHours = strconv.Itoa(from) + "-" + strconv.Itoa(to)
 	}
+	speedSchedule := s.speedSchedule()
+	if speedSchedule == nil {
+		speedSchedule = []speedRule{}
+	}
+	digestDay, digestHour := s.digestWhen()
 	dlHours := ""
 	if from, to, ok := s.downloadHours(); ok {
 		dlHours = strconv.Itoa(from) + "-" + strconv.Itoa(to)
 	}
+	defaultTVProfile := s.defaultTVProfileID()
 	musicEnabled := s.musicEnabled()
 	downloadsAtOnce := s.downloadsAtOnce()
+	newestFirst := s.newestFirstOn()
 	huntHours, releaseMinutes := s.huntHours(), s.releaseCheckMinutes()
 	retention, rejectExe, skipDupes, precheck := s.retentionDays(), s.rejectExecutables(), s.skipDuplicates(), s.precheckEnabled()
 
@@ -358,6 +385,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		ReleaseCheckMinutes:      &releaseMinutes,
 		LegalAcknowledgedAt:      legalAt,
 		DefaultProfileID:         s.defaultProfileID(),
+		DefaultTVProfileID:       &defaultTVProfile,
 		DefaultSources:           s.defaultSources(),
 		SubtitleLanguages:        s.subtitleLanguages(),
 		SubtitleProfiles:         s.subtitleProfiles(),
@@ -393,6 +421,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		InfoLanguage:             s.infoLanguage(),
 		InfoLanguages:            metadata.InfoLanguages,
 		RequireVPNForTorrents:    &requireVPNForTorrents,
+		RouteIndexersThroughVPN:  &routeIndexersThroughVPN,
 		ImportConflictPolicy:     importConflictPolicy,
 		HasTraktClientID:         s.Trakt().HasClientID(),
 		FlareSolverrURL:          &flareSolverr,
@@ -405,11 +434,15 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		BackupKeep:               &backupKeep,
 		SpeedLimitMB:             &speedMB,
 		SpeedLimitHours:          &speedHours,
+		SpeedSchedule:            &speedSchedule,
 		DownloadHours:            &dlHours,
 		MinFreeGB:                &minFree,
 		TorrentStallHours:        &stallHours,
 		NotifyQuietHours:         &quiet,
+		DigestDay:                &digestDay,
+		DigestHour:               &digestHour,
 		DownloadsAtOnce:          &downloadsAtOnce,
+		NewestFirst:              &newestFirst,
 		UsenetRetentionDays:      &retention,
 		RejectExecutables:        &rejectExe,
 		SkipDuplicates:           &skipDupes,
@@ -440,6 +473,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// written, so a bad one can't leave the update half applied.
 	if req.DefaultProfileID != 0 {
 		if err := s.checkProfileChoice(req.DefaultProfileID); err != nil {
+			writeProfileError(w, err)
+			return
+		}
+	}
+	if req.DefaultTVProfileID != nil && *req.DefaultTVProfileID != 0 {
+		if err := s.checkProfileChoice(*req.DefaultTVProfileID); err != nil {
 			writeProfileError(w, err)
 			return
 		}
@@ -655,6 +694,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.DefaultTVProfileID != nil {
+		val := ""
+		if *req.DefaultTVProfileID != 0 {
+			val = strconv.FormatInt(*req.DefaultTVProfileID, 10)
+		}
+		if err := s.Settings.Set(settings.KeyDefaultTVProfileID, val, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 	if req.DefaultProfileID != 0 {
 		if err := s.Settings.Set(settings.KeyDefaultProfileID, strconv.FormatInt(req.DefaultProfileID, 10), false); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -723,6 +772,17 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+	}
+	if req.RouteIndexersThroughVPN != nil {
+		value := "1"
+		if !*req.RouteIndexersThroughVPN {
+			value = "0"
+		}
+		if err := s.Settings.Set(settings.KeyVPNRouteIndexers, value, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.applyVPNRoutes()
 	}
 
 	if req.TMDBAPIKey != "" {
@@ -813,6 +873,32 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		s.applySpeedLimit(time.Now())
 	}
+	if req.SpeedSchedule != nil {
+		rules := *req.SpeedSchedule
+		if len(rules) > maxSpeedRules {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("The speed schedule can have up to %d lines.", maxSpeedRules))
+			return
+		}
+		for i, r := range rules {
+			if !r.valid() {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("Line %d of the speed schedule isn't right: days are 0 (Sunday) to 6, hours 0 to 23, the limit 0 to 10000 MB/s.", i+1))
+				return
+			}
+			if rules[i].Days == nil {
+				rules[i].Days = []int{}
+			}
+		}
+		val := ""
+		if len(rules) > 0 {
+			b, _ := json.Marshal(rules)
+			val = string(b)
+		}
+		if err := s.Settings.Set(settings.KeySpeedSchedule, val, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.applySpeedLimit(time.Now())
+	}
 	if req.DownloadHours != nil {
 		h := strings.TrimSpace(*req.DownloadHours)
 		if _, _, ok := parseHours(h); h != "" && !ok {
@@ -824,6 +910,31 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.kickDownloads()
+	}
+	if req.DigestDay != nil || req.DigestHour != nil {
+		day, hour := s.digestWhen()
+		if req.DigestDay != nil {
+			day = *req.DigestDay
+		}
+		if req.DigestHour != nil {
+			hour = *req.DigestHour
+		}
+		if day < -1 || day > 6 || hour < 0 || hour > 23 {
+			writeError(w, http.StatusBadRequest, "The weekly summary day is 0 (Sunday) to 6 (Saturday), or -1 for none, and the hour is 0 to 23.")
+			return
+		}
+		dayVal := ""
+		if day >= 0 {
+			dayVal = strconv.Itoa(day)
+		}
+		if err := s.Settings.Set(settings.KeyDigestDay, dayVal, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := s.Settings.Set(settings.KeyDigestHour, strconv.Itoa(hour), false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	if req.NotifyQuietHours != nil {
 		h := strings.TrimSpace(*req.NotifyQuietHours)
@@ -920,6 +1031,18 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+	}
+	if req.NewestFirst != nil {
+		val := ""
+		if *req.NewestFirst {
+			val = "1"
+		}
+		if err := s.Settings.Set(settings.KeyNewestFirst, val, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		queue.SetNewestFirst(*req.NewestFirst)
+		s.dispatch.Kick()
 	}
 	if req.DownloadsAtOnce != nil {
 		if err := s.Settings.Set(settings.KeyDownloadsConcurrent, strconv.Itoa(*req.DownloadsAtOnce), false); err != nil {

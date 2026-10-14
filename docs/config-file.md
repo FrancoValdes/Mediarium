@@ -16,7 +16,60 @@ One block for each Settings page that holds a single set of values:
 | `proxy` | The SOCKS5 or HTTP proxy for Usenet, indexers and torrents ([vpn.md](./vpn.md#a-socks5-or-http-proxy-instead)) |
 | `systemOptions` | The update options under Settings > System (daily check, overnight install, restart when stuck) |
 
-Things that are lists you add to (indexers, Usenet servers, quality profiles, custom formats, notifications, media servers, accounts) are not in the file yet. They stay on their Settings pages.
+Things you add several of are **lists**. Each item has a `name`, and Mediarium finds the one you mean by that name (capital letters don't matter):
+
+| List | Where it is in Mediarium |
+|---|---|
+| `indexers` | Settings > Indexers (Newznab, Torznab and the sites from the site list) |
+| `usenetServers` | Settings > Downloading > Usenet servers |
+| `mediaServers` | Settings > Media servers (Plex, Jellyfin, Emby, Kodi) |
+| `qualityProfiles` | Settings > Profiles |
+
+An item Mediarium doesn't have is **added**, one it has is **changed** to match the file, and one that is not in the file is **left alone**. Nothing is ever deleted by the file: delete on the Settings page.
+
+Custom formats, notifications and accounts are not in the file yet.
+
+In `settings`, `defaultProfileId` is the quality profile movies use when they have none of their own, and `defaultTvProfileId` is the one shows use (`0` means shows use the movie default). Both are profile numbers, as shown by `config export`.
+
+```yaml
+usenetServers:
+  - name: Main server
+    host: news.example.com
+    port: 563
+    useSsl: true
+    username: me
+    password: ${NEWS_PASSWORD}
+    connections: 20
+
+indexers:
+  - name: My Newznab
+    kind: newznab
+    baseUrl: https://indexer.example.com
+    apiKey: ${NZB_KEY}
+    protocol: usenet
+    priority: 1          # 1 preferred, 2 normal, 3 last resort
+
+qualityProfiles:
+  - name: Any HD
+    allowed: [WEBDL-720p, WEBDL-1080p, Bluray-1080p]
+    cutoff: WEBDL-1080p
+  - name: Only 1080p
+    allowed: [WEBDL-1080p, Bluray-1080p]
+    cutoff: WEBDL-1080p
+    upgradeAllowed: true
+    fallback: [Any HD]   # other profiles, by name
+    formatScores:        # custom formats, by name
+      - format: x265 (HD)
+        score: 10
+```
+
+A server, indexer or media server added from the file is switched on, unless the file says `enabled: false`.
+
+In a quality profile, `fallback` lists other profiles by their **name**, and each of `formatScores` names a custom format with `format:`. A profile used as a fallback has to be in Mediarium already or come earlier in the file; a custom format has to be in Mediarium already (custom formats are not in the file). A name Mediarium doesn't have is reported for that profile, and the profile is left as it is.
+
+For an indexer from the site list, use `kind: cardigann`, the `definitionId`, and the site's own settings under `settings:` (a password or cookie there can be `${NAME}` too). The names under `settings:` are checked against the site's own settings, so a typo stops the command like any other (when Mediarium can't read the list of sites, they are passed on unchecked). Newznab and Torznab indexers have no `settings:`.
+
+An indexer's `kind` and `definitionId`, and the `protocol` and `apiKey` of an indexer from the site list, can't be changed once it is added (remove it and add it again). The file still accepts them, but they are not compared or sent for an indexer Mediarium already has.
 
 ## Start from what you have
 
@@ -50,7 +103,7 @@ debrid:
 
 Write a password or a key as `${NAME}`. It is replaced with the environment variable `NAME` when the file is applied, so the secret never has to be in the file or in git. `${NAME:-fallback}` uses `fallback` when `NAME` isn't set. A `${NAME}` with no value and no fallback stops the command before anything is changed.
 
-These are the values Mediarium accepts but never shows back: in `settings` `tmdbApiKey`, `openSubtitlesApiKey`, `openSubtitlesUsername`, `openSubtitlesPassword`, `subdlApiKey` and `traktClientId`; `password` in `downloadClient` and `proxy`; `apiKey` in `debrid`. Because they can't be compared, they are sent again every time you apply.
+These are the values Mediarium accepts but never shows back: in `settings` `tmdbApiKey`, `openSubtitlesApiKey`, `openSubtitlesUsername`, `openSubtitlesPassword`, `subdlApiKey` and `traktClientId`; `password` in `downloadClient` and `proxy`; `apiKey` in `debrid`; and in the lists the `password` of a Usenet server, the `apiKey` of an indexer (and the passwords of a site's `settings`) and the `token` of a media server. Because they can't be compared, they are sent again every time you apply.
 
 ## See what would change, then apply
 

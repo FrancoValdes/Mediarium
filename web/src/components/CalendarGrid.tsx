@@ -17,7 +17,7 @@ import '../calendar.css'
 // The width (in pixels) up to which calendar.css shows only the list of days.
 const NARROW_PANEL = 640
 
-type View = 'month' | 'agenda' | 'posters'
+type View = 'month' | 'agenda' | 'posters' | 'backdrops'
 const VIEW_KEY = 'mediarium.calendar.view'
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -134,24 +134,30 @@ function Entry({ e, past, card }: { e: CalendarEntry; past: boolean; card?: bool
 }
 
 // One release as a big poster with its name in a frosted bubble: the Posters view of the calendar.
-function PosterTile({ e, past }: { e: CalendarEntry; past: boolean }) {
+// In the Backdrops view (wide) it is a wide still with the title's logo on it
+// instead, once both have been fetched; before that it falls back to the poster.
+function PosterTile({ e, past, wide }: { e: CalendarEntry; past: boolean; wide?: boolean }) {
   const g = glyphOf(e.kind, e.subtitle)
   const { code, rest } = splitSubtitle(e)
   const [brokenSrc, setBrokenSrc] = useState<string | undefined>()
+  const [brokenLogo, setBrokenLogo] = useState(false)
   const late = past && e.status === 'missing'
-  const cls = `pt k-${g} s-${e.status}${late ? ' late' : ''}`
+  const src = wide && e.backdropUrl ? e.backdropUrl : e.posterUrl
+  const logo = wide && e.backdropUrl && e.logoUrl && !brokenLogo ? e.logoUrl : undefined
+  const cls = `pt k-${g} s-${e.status}${late ? ' late' : ''}${wide ? ' wide' : ''}`
   const tip = `${e.title}${e.subtitle ? ` · ${e.subtitle}` : ''} (${STATUS_LABEL[e.status] ?? e.status})`
   const body = (
     <>
-      {e.posterUrl && brokenSrc !== e.posterUrl ? (
-        <img src={e.posterUrl} alt="" loading="lazy" decoding="async" onError={() => setBrokenSrc(e.posterUrl)} />
+      {src && brokenSrc !== src ? (
+        <img src={src} alt="" loading="lazy" decoding="async" onError={() => setBrokenSrc(src)} />
       ) : (
         <span className="pt-blank" aria-hidden="true">
           <KindGlyph kind={g} size={34} />
         </span>
       )}
-      <span className="pt-bubble">
-        <span className="pt-title">{e.title}</span>
+      {logo && <img className="pt-logo" src={logo} alt="" loading="lazy" decoding="async" onError={() => setBrokenLogo(true)} />}
+      <span className={`pt-bubble${logo ? ' has-logo' : ''}`}>
+        <span className={logo ? 'sr-only' : 'pt-title'}>{e.title}</span>
         <span className="pt-meta">
           <KindGlyph kind={g} size={12} />
           {code ?? rest ?? KIND_LABEL[g]}
@@ -175,7 +181,7 @@ function PosterTile({ e, past }: { e: CalendarEntry; past: boolean }) {
 function storedView(): View {
   try {
     const v = localStorage.getItem(VIEW_KEY)
-    return v === 'agenda' || v === 'posters' ? v : 'month'
+    return v === 'agenda' || v === 'posters' || v === 'backdrops' ? v : 'month'
   } catch {
     return 'month'
   }
@@ -279,6 +285,7 @@ export default function CalendarGrid({ entries, compact }: { entries: CalendarEn
   )
 
   const Heading = compact ? 'h3' : 'h2'
+  const tiles = view === 'posters' || view === 'backdrops' // a big picture for each day
   const fullDate = (d: Date) => d.toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
@@ -311,6 +318,9 @@ export default function CalendarGrid({ entries, compact }: { entries: CalendarEn
             <button type="button" className={view === 'posters' ? 'active' : ''} aria-pressed={view === 'posters'} onClick={() => pickView('posters')}>
               {t('Posters')}
             </button>
+            <button type="button" className={view === 'backdrops' ? 'active' : ''} aria-pressed={view === 'backdrops'} onClick={() => pickView('backdrops')}>
+              {t('Backdrops')}
+            </button>
             <button type="button" className={view === 'agenda' ? 'active' : ''} aria-pressed={view === 'agenda'} onClick={() => pickView('agenda')}>
               {t('Agenda')}
             </button>
@@ -326,7 +336,7 @@ export default function CalendarGrid({ entries, compact }: { entries: CalendarEn
             </span>
           ))}
         </div>
-        <div key={monthKey} className={`prog-grid${view === 'posters' ? ' posters' : ''}${slide ? ` slide-${slide}` : ''}`}>
+        <div key={monthKey} className={`prog-grid${tiles ? ' posters' : ''}${view === 'backdrops' ? ' backdrops' : ''}${slide ? ` slide-${slide}` : ''}`}>
           {cells.map((d, i) => {
             const key = iso(d)
             const list = byDay.get(key) ?? []
@@ -346,9 +356,9 @@ export default function CalendarGrid({ entries, compact }: { entries: CalendarEn
                     {key === today ? `, ${t('Today')}` : ''}
                   </span>
                 </div>
-                {view === 'posters' && list.length > 0 && (
+                {tiles && list.length > 0 && (
                   <div className="pt-day">
-                    <PosterTile e={list[0]} past={past} />
+                    <PosterTile e={list[0]} past={past} wide={view === 'backdrops'} />
                     {list.length > 1 && (
                       <button type="button" className="pt-more" onClick={() => setOpenDay(open ? null : key)} aria-expanded={open}>
                         {t('+{n} more', { n: list.length - 1 })}
@@ -364,21 +374,21 @@ export default function CalendarGrid({ entries, compact }: { entries: CalendarEn
                         </div>
                         <div className="pt-pop-grid">
                           {list.map((e) => (
-                            <PosterTile key={`${e.kind}-${e.id}`} e={e} past={past} />
+                            <PosterTile key={`${e.kind}-${e.id}`} e={e} past={past} wide={view === 'backdrops'} />
                           ))}
                         </div>
                       </div>
                     )}
                   </div>
                 )}
-                {view !== 'posters' && list.length > 0 && (
+                {!tiles && list.length > 0 && (
                   <div className="prog-slots">
                     {(open ? list : list.slice(0, cap)).map((e) => (
                       <Entry key={`${e.kind}-${e.id}`} e={e} past={past} />
                     ))}
                   </div>
                 )}
-                {view !== 'posters' && list.length > cap && (
+                {!tiles && list.length > cap && (
                   <button type="button" className="prog-more" onClick={() => setOpenDay(open ? null : key)} aria-expanded={open}>
                     {open ? t('Show less') : t('+{n} more', { n: list.length - cap })}
                   </button>

@@ -5,6 +5,8 @@ import { api, type Book } from '../api'
 import Icon from '../components/Icon'
 import { useDocumentTitle } from '../documentTitle'
 import { t } from '../i18n'
+import ComicReader from './ComicReader'
+import { animateTurn, type Turn, type TurnSpeed } from './turn'
 
 type Theme = 'light' | 'sepia' | 'dark'
 type Font = 'serif' | 'sans'
@@ -12,7 +14,10 @@ interface Prefs {
   size: number // percent
   theme: Theme
   font: Font
+  turn: Turn // how a page turn looks
+  speed: TurnSpeed // how long it takes
 }
+
 
 const PREFS_KEY = 'mediarium.reader'
 const THEMES: Record<Theme, { bg: string; fg: string; link: string }> = {
@@ -28,9 +33,15 @@ const FONTS: Record<Font, string> = {
 function loadPrefs(): Prefs {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>
-    return { size: Math.min(200, Math.max(70, Number(p.size) || 105)), theme: p.theme && p.theme in THEMES ? p.theme : 'light', font: p.font === 'sans' ? 'sans' : 'serif' }
+    return {
+      size: Math.min(200, Math.max(70, Number(p.size) || 105)),
+      theme: p.theme && p.theme in THEMES ? p.theme : 'light',
+      font: p.font === 'sans' ? 'sans' : 'serif',
+      turn: p.turn === 'none' || p.turn === 'fade' ? p.turn : 'slide',
+      speed: p.speed === 'fast' || p.speed === 'slow' ? p.speed : 'normal',
+    }
   } catch {
-    return { size: 105, theme: 'light', font: 'serif' }
+    return { size: 105, theme: 'light', font: 'serif', turn: 'slide', speed: 'normal' }
   }
 }
 
@@ -56,6 +67,7 @@ export default function Reader() {
   if (book.ebook.status !== 'downloaded') return <ReaderMessage title={book.title} text={t('There is no ebook for this book yet. Once Mediarium has downloaded it, it opens here.')} />
   const format = (book.ebook.format ?? '').toLowerCase()
   if (format === 'pdf') return <PdfReader book={book} />
+  if (COMIC.has(format)) return <ComicReader book={book} />
   // Kindle books open as an EPUB copy Mediarium makes for the reader.
   if (KINDLE.has(format)) return <EpubReader book={book} src={`${api.bookFileUrl(book.id)}?as=epub`} />
   if (format !== 'epub') {
@@ -79,6 +91,7 @@ export default function Reader() {
 }
 
 const KINDLE = new Set(['mobi', 'azw', 'azw3', 'prc'])
+const COMIC = new Set(['cbz', 'cbr', 'cb7'])
 
 function ReaderMessage({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) {
   return (
@@ -122,6 +135,9 @@ function EpubReader({ book, src }: { book: Book; src: string }) {
   const epub = useRef<EpubBook | null>(null)
   const rendition = useRef<Rendition | null>(null)
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
+  const prefsRef = useRef(prefs)
+  prefsRef.current = prefs
+  const turning = useRef(false)
   const [toc, setToc] = useState<NavItem[]>([])
   const [panel, setPanel] = useState<'' | 'toc' | 'settings'>('')
   const [percent, setPercent] = useState(0)
@@ -144,6 +160,22 @@ function EpubReader({ book, src }: { book: Book; src: string }) {
     },
     [book.id],
   )
+
+  // Turn a page: the old one slides or fades out, the new one comes in. With
+  // "none" (or when the system asks for less motion) it just turns.
+  const turn = useCallback(async (dir: 'next' | 'prev') => {
+    const r = rendition.current
+    if (!r || turning.current) return
+    turning.current = true
+    try {
+      const { turn: effect, speed } = prefsRef.current
+      await animateTurn(viewer.current, effect, speed, dir, () => (dir === 'next' ? r.next() : r.prev()))
+    } finally {
+      turning.current = false
+    }
+  }, [])
+  const turnRef = useRef(turn)
+  turnRef.current = turn
 
   // Open the book once.
   useEffect(() => {
@@ -189,7 +221,7 @@ function EpubReader({ book, src }: { book: Book; src: string }) {
         })
         r.on('touchend', (e: TouchEvent) => {
           const dx = (e.changedTouches[0]?.screenX ?? 0) - startX
-          if (Math.abs(dx) > 50) void (dx < 0 ? r.next() : r.prev())
+          if (Math.abs(dx) > 50) void turnRef.current(dx < 0 ? 'next' : 'prev')
         })
         r.on('keyup', onKey)
         b.loaded.navigation.then((nav) => {
@@ -247,8 +279,10 @@ function EpubReader({ book, src }: { book: Book; src: string }) {
       }
     })()
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') void rendition.current?.next()
-      if (e.key === 'ArrowLeft' || e.key === 'PageUp') void rendition.current?.prev()
+      // The arrows move the place slider and Space presses a button: those keys belong to the control.
+      if ((e.target as HTMLElement | null)?.closest?.('input, select, textarea, button')) return
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') void turnRef.current('next')
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') void turnRef.current('prev')
     }
     document.addEventListener('keyup', onKey)
     const onHide = () => {
@@ -353,6 +387,24 @@ function EpubReader({ book, src }: { book: Book; src: string }) {
             ))}
           </div>
           <div className="rdr-row">
+            <span>{t('Page turn')}</span>
+            {(['slide', 'fade', 'none'] as Turn[]).map((x) => (
+              <button key={x} className={`btn-sm${prefs.turn === x ? ' primary' : ''}`} onClick={() => setPrefs((p) => ({ ...p, turn: x }))}>
+                {x === 'slide' ? t('Slide') : x === 'fade' ? t('Fade') : t('None')}
+              </button>
+            ))}
+          </div>
+          {prefs.turn !== 'none' && (
+            <div className="rdr-row">
+              <span>{t('Turn speed')}</span>
+              {(['fast', 'normal', 'slow'] as TurnSpeed[]).map((x) => (
+                <button key={x} className={`btn-sm${prefs.speed === x ? ' primary' : ''}`} onClick={() => setPrefs((p) => ({ ...p, speed: x }))}>
+                  {x === 'fast' ? t('Fast') : x === 'normal' ? t('Normal') : t('Slow')}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="rdr-row">
             <span>{t('Font')}</span>
             {(['serif', 'sans'] as Font[]).map((f) => (
               <button key={f} className={`btn-sm${prefs.font === f ? ' primary' : ''}`} style={{ fontFamily: FONTS[f] }} onClick={() => setPrefs((p) => ({ ...p, font: f }))}>
@@ -364,11 +416,11 @@ function EpubReader({ book, src }: { book: Book; src: string }) {
       )}
 
       <main className="rdr-page">
-        <button className="rdr-turn prev" onClick={() => void rendition.current?.prev()} aria-label={t('Previous page')}>
+        <button className="rdr-turn prev" onClick={() => void turn('prev')} aria-label={t('Previous page')}>
           <Icon name="chevron-left" size={26} />
         </button>
         <div className="rdr-viewer" ref={viewer} />
-        <button className="rdr-turn next" onClick={() => void rendition.current?.next()} aria-label={t('Next page')}>
+        <button className="rdr-turn next" onClick={() => void turn('next')} aria-label={t('Next page')}>
           <Icon name="chevron-right" size={26} />
         </button>
         {!ready && <div className="rdr-opening">{t('Opening the book…')}</div>}

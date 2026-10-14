@@ -327,8 +327,11 @@ func (s *Service) UpdateProfile(userID int64, username, firstName, lastName, ema
 	} else if taken {
 		return nil, ErrUsernameTaken
 	}
-	_, err := s.db.Exec(`UPDATE users SET username = ?, first_name = ?, last_name = ?, email = ? WHERE id = ?`,
-		username, firstName, lastName, email, userID)
+	// An address the person types themselves is not one an administrator
+	// vouched for (see LocalUsersByEmail), unless it stays the same.
+	_, err := s.db.Exec(`UPDATE users SET username = ?, first_name = ?, last_name = ?,
+		email_by_admin = CASE WHEN lower(email) = lower(?) THEN email_by_admin ELSE 0 END, email = ? WHERE id = ?`,
+		username, firstName, lastName, email, email, userID)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			return nil, ErrUsernameTaken
@@ -394,17 +397,59 @@ func (s *Service) ResetPassword(username, newPassword string) error {
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	res, err := s.db.Exec(`UPDATE users SET password_hash = ? WHERE username = ? AND auth_source = 'local'`, string(hash), username)
+	id, err := s.localIDByName(strings.TrimSpace(username))
 	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin reset password: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, string(hash), id); err != nil {
 		return fmt.Errorf("update password: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("no password account named %q (accounts that sign in through single sign-on or the directory have no password here)", username)
-	}
-	if _, err := s.db.Exec(`DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = ?)`, username); err != nil {
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
 		return fmt.Errorf("clear sessions: %w", err)
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit reset password: %w", err)
+	}
 	return nil
+}
+
+// localIDByName finds the account with a password here called username, in
+// any letter case like signing in does. An older database can hold two names
+// that differ only in case; the exact one wins then, and otherwise it is
+// refused rather than guessed.
+func (s *Service) localIDByName(username string) (int64, error) {
+	rows, err := s.db.Query(`SELECT id, username FROM users WHERE username = ? COLLATE NOCASE AND auth_source = 'local'`, username)
+	if err != nil {
+		return 0, fmt.Errorf("look up account: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return 0, fmt.Errorf("look up account: %w", err)
+		}
+		if name == username {
+			return id, nil
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("look up account: %w", err)
+	}
+	switch len(ids) {
+	case 0:
+		return 0, fmt.Errorf("no password account named %q (accounts that sign in through single sign-on or the directory have no password here)", username)
+	case 1:
+		return ids[0], nil
+	}
+	return 0, fmt.Errorf("more than one account is named %q in different letter case; type the name exactly as it is spelled", username)
 }
 
 // CreateSession issues a new opaque session token, returning the raw token

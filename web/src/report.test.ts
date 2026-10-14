@@ -1,7 +1,7 @@
 // Run with: npm test (uses node's built-in test runner, no extra packages).
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { GITHUB_URL_MAX, draftProblem, fitWithin, githubIssueURL } from './report.ts'
+import { GITHUB_URL_MAX, SUPPORT_NOTE, draftProblem, fitWithin, githubIssueURL } from './report.ts'
 
 test('a draft needs a short title and a sentence or two', () => {
   assert.equal(draftProblem({ title: 'ok', message: 'Long enough message' }), 'title')
@@ -10,15 +10,20 @@ test('a draft needs a short title and a sentence or two', () => {
   assert.equal(draftProblem({ title: 'Import fails', message: 'Every import fails with an error.' }), '')
 })
 
-test('a problem opens the bug form with the version and the report', () => {
-  const { url, reportFits } = githubIssueURL({ kind: 'problem', title: 'Repair fails', message: 'It fails & stops.', version: '3.0.0', report: 'Version: 3.0.0\nlog line' })
+test('a problem opens the bug form with the version, and the report stays out of the link', () => {
+  const { url } = githubIssueURL({ kind: 'problem', title: 'Repair fails', message: 'It fails & stops.', version: '3.0.0', report: 'Version: 3.0.0\nlog line /data/movies' })
   const q = new URL(url).searchParams
-  assert.equal(reportFits, true)
   assert.equal(q.get('template'), 'bug_report.yml')
   assert.equal(q.get('title'), 'Repair fails')
   assert.equal(q.get('version'), '3.0.0')
   assert.equal(q.get('what-happened'), 'It fails & stops.')
-  assert.equal(q.get('support'), 'Version: 3.0.0\nlog line')
+  assert.equal(q.get('support'), SUPPORT_NOTE)
+  assert.ok(!url.includes('log+line') && !url.includes('movies'))
+})
+
+test('without a report there is no note either', () => {
+  const { url } = githubIssueURL({ kind: 'problem', title: 'Logs', message: 'No report this time.', version: '3' })
+  assert.equal(new URL(url).searchParams.get('support'), null)
 })
 
 test('an idea opens the feature form and never carries the report', () => {
@@ -29,15 +34,11 @@ test('an idea opens the feature form and never carries the report', () => {
   assert.equal(q.get('support'), null)
 })
 
-test('a report too long for a link is left out, and a long message is cut', () => {
-  const big = githubIssueURL({ kind: 'problem', title: 'Logs', message: 'Lots of log lines below.', version: '3', report: 'line\n'.repeat(5000) })
-  assert.equal(big.reportFits, false)
-  assert.equal(new URL(big.url).searchParams.get('support'), null)
-  assert.ok(big.url.length <= GITHUB_URL_MAX)
-
-  const long = githubIssueURL({ kind: 'problem', title: 'Long', message: 'ä'.repeat(8000), version: '3' })
+test('a long message is cut to fit in a link', () => {
+  const long = githubIssueURL({ kind: 'problem', title: 'Long', message: 'ä'.repeat(8000), version: '3', report: 'line\n'.repeat(5000) })
   assert.ok(long.url.length <= GITHUB_URL_MAX)
   assert.match(new URL(long.url).searchParams.get('what-happened') ?? '', /cut short/)
+  assert.equal(new URL(long.url).searchParams.get('support'), SUPPORT_NOTE)
 })
 
 test('screenshots shrink to fit, never grow', () => {

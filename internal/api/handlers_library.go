@@ -244,6 +244,7 @@ func (s *Server) handleGetMovie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := toMoviePayload(m, s.accountNames())
+	out.SizeBytes = fileSize(m.FilePath)
 	if t, err := s.MovieRepo.TitleTags(library.TagMovie, m.ID); err == nil {
 		out.Tags = t
 	}
@@ -300,7 +301,7 @@ func (s *Server) removeMovie(id int64, deleteFiles bool) (string, error) {
 	}
 	var deleted removedFiles
 	if deleteFiles {
-		if err := checkRemovable(s.movieRootFor(m), []string{m.FilePath}); err != nil {
+		if err := s.checkFilesRemovable(s.movieRootFor(m), []string{m.FilePath}); err != nil {
 			return m.Title, &removeProblem{http.StatusConflict, err.Error()}
 		}
 	}
@@ -314,7 +315,7 @@ func (s *Server) removeMovie(id int64, deleteFiles bool) (string, error) {
 		m = now
 		if wantFiles && m.FilePath != "" {
 			deleteFiles, tracked = true, 1
-			if err := checkRemovable(s.movieRootFor(m), []string{m.FilePath}); err != nil {
+			if err := s.checkFilesRemovable(s.movieRootFor(m), []string{m.FilePath}); err != nil {
 				return m.Title, &removeProblem{http.StatusConflict, err.Error()}
 			}
 		}

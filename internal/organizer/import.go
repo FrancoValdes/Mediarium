@@ -1,6 +1,8 @@
 package organizer
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -220,7 +222,9 @@ func importPlace(src, destPath string, policy ConflictPolicy, isBetter func() bo
 		return ImportResult{}, fmt.Errorf("%s: %w", filepath.Base(src), ErrNotRegularFile)
 	}
 	replacing := false
-	if destInfo, err := os.Stat(destPath); err == nil {
+	// Lstat: a link at the destination, even one that leads nowhere, is
+	// something already there, and goes through the conflict policy.
+	if destInfo, err := os.Lstat(destPath); err == nil {
 		if os.SameFile(srcInfo, destInfo) {
 			return ImportResult{DestPath: destPath, UsedHardlink: true}, nil
 		}
@@ -245,8 +249,10 @@ func importPlace(src, destPath string, policy ConflictPolicy, isBetter func() bo
 
 	// An existing file is never removed first: the new file is staged beside it
 	// and renamed over it, so a failure part-way leaves the old file intact.
-	staging := destPath + stagingSuffix
-	_ = os.Remove(staging) // leftover from an earlier crashed attempt; ours by name
+	// Each import gets a staging name of its own, so two imports to the same
+	// place can't remove or overwrite each other's file.
+	_ = os.Remove(destPath + stagingSuffix) // left by an older version that crashed; ours by name
+	staging := stagingPath(destPath)
 
 	target := destPath
 	if replacing {
@@ -275,6 +281,17 @@ func importPlace(src, destPath string, policy ConflictPolicy, isBetter func() bo
 		return ImportResult{}, err
 	}
 	return ImportResult{DestPath: destPath}, nil
+}
+
+// stagingPath is a new name beside destPath for a file on its way there. The
+// random part makes it unique to one import; the name is cut so it still fits
+// in 255 bytes.
+func stagingPath(destPath string) string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	suffix := "." + hex.EncodeToString(b[:]) + stagingSuffix
+	dir, base := filepath.Split(destPath)
+	return filepath.Join(dir, truncateName(base, 255-len(suffix))+suffix)
 }
 
 // finishReplace renames the staged file over the existing one.

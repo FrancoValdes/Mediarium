@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { api, isAdmin, isRequested, isViewer, type IssueCategory, type RequestStatus } from '../api'
 import { useAuth } from '../AuthContext'
-import { t } from '../i18n'
+import { st as serverText, t } from '../i18n'
 import { useFocusTrap } from '../useFocusTrap'
 import { ISSUE_CATEGORY } from './issueCategories'
 import Icon from './Icon'
@@ -53,7 +53,7 @@ export default function TitleRequestActions({
     setBusy(true)
     try {
       const res = kind === 'movie' ? await api.addMovie(tmdbId, { fourK: true }) : await api.addSeries(tmdbId, { fourK: true })
-      toast.success(isRequested(res) ? res.message : t('Sent.'))
+      toast.success(isRequested(res) ? serverText(res.message) : t('Sent.'))
       api.requestStatus().then(setSt).catch(() => undefined)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

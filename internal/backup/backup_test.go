@@ -518,6 +518,7 @@ func TestApplyPendingCleansUpCrashedUploads(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(dir, ".restore-upload-789.zip"), []byte("partial"), 0o600)
 	os.WriteFile(filepath.Join(dir, ".backup-snapshot-1.db"), []byte("partial"), 0o600)
+	os.WriteFile(filepath.Join(dir, ".restore-unlocked-42.zip"), []byte("database and key"), 0o600)
 
 	if res, err := backup.ApplyPending(dir, fixedNow); err != nil || res != (backup.Result{}) {
 		t.Fatalf("result %+v, err %v", res, err)

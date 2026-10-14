@@ -10,6 +10,7 @@ import {
   type PlexWatchlistRow,
   type QualityProfile,
 } from '../api'
+import { defaultProfileFor } from '../profileDefaults'
 import { timeAgo } from '../format'
 import { plural, t, tx } from '../i18n'
 import { sortProfiles } from './qualityBlurb'
@@ -112,6 +113,7 @@ export default function ImportLists() {
   const [error, setError] = useState('')
   const [profiles, setProfiles] = useState<QualityProfile[]>([])
   const [defaultProfile, setDefaultProfile] = useState(0)
+  const [defaultTvProfile, setDefaultTvProfile] = useState(0)
   const [folders, setFolders] = useState<{ movies: string[]; tv: string[] }>({ movies: [], tv: [] })
   const [knownTags, setKnownTags] = useState<string[]>([])
   const [editing, setEditing] = useState<{ id?: number; draft: ImportListInput; hasKey: boolean; hasCsv: boolean } | null>(null)
@@ -132,6 +134,7 @@ export default function ImportLists() {
     api.listProfiles().then((r) => {
       setProfiles(sortProfiles(r.profiles))
       setDefaultProfile(r.defaultId)
+      setDefaultTvProfile(defaultProfileFor('tv', r))
     }).catch(() => undefined)
     api.libraryFolders().then(setFolders).catch(() => undefined)
     api.listTags().then((l) => setKnownTags(l.map((x) => x.name))).catch(() => undefined)
@@ -224,6 +227,7 @@ export default function ImportLists() {
           sources={data.sources}
           profiles={profiles}
           defaultProfile={defaultProfile}
+          defaultTvProfile={defaultTvProfile}
           folders={folders}
           knownTags={knownTags}
           onCancel={() => setEditing(null)}
@@ -365,6 +369,7 @@ function ListForm({
   sources,
   profiles,
   defaultProfile,
+  defaultTvProfile,
   folders,
   knownTags,
   onCancel,
@@ -374,6 +379,7 @@ function ListForm({
   sources: ImportListSource[]
   profiles: QualityProfile[]
   defaultProfile: number
+  defaultTvProfile: number
   folders: { movies: string[]; tv: string[] }
   knownTags: string[]
   onCancel: () => void
@@ -394,6 +400,20 @@ function ListForm({
     setPreview(null)
   }
   const setCfg = (patch: Partial<ImportListInput['config']>) => set({ config: { ...d.config, ...patch } })
+
+  const movieDefault = profiles.find((p) => p.id === defaultProfile)?.name
+  const tvDefault = profiles.find((p) => p.id === defaultTvProfile)?.name
+  // A list of shows follows the default for TV; a list of both says which each gets.
+  const defaultLabel =
+    d.media === 'tv'
+      ? tvDefault
+        ? t('Default ({name})', { name: tvDefault })
+        : t('Default')
+      : d.media !== 'movie' && movieDefault && tvDefault && movieDefault !== tvDefault
+        ? t('Default ({movies} for movies, {tv} for TV)', { movies: movieDefault, tv: tvDefault })
+        : movieDefault
+          ? t('Default ({name})', { name: movieDefault })
+          : t('Default')
 
   const singleMedia = d.media === 'movie' ? 'movie' : d.media === 'tv' ? 'tv' : null
   useEffect(() => {
@@ -600,7 +620,7 @@ function ListForm({
           <label>
             <TipLabel text={t('Decides which releases are good enough to download. "Default" uses the profile that is set as your default.')}>{t('Quality profile')}</TipLabel>
             <select value={d.profileId} onChange={(e) => set({ profileId: Number(e.target.value) })}>
-              <option value={0}>{profiles.find((p) => p.id === defaultProfile) ? t('Default ({name})', { name: profiles.find((p) => p.id === defaultProfile)?.name ?? '' }) : t('Default')}</option>
+              <option value={0}>{defaultLabel}</option>
               {profiles.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}

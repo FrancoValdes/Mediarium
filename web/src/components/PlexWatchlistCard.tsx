@@ -4,6 +4,7 @@ import { api, isAdmin, type PlexWatchlistStatus } from '../api'
 import { useAuth } from '../AuthContext'
 import { timeAgo } from '../format'
 import { t, tx } from '../i18n'
+import { pollPin } from '../pinPoll'
 import Icon from './Icon'
 import { MediaServerMark } from './mediaServerBrand'
 import Switch from './Switch'
@@ -20,11 +21,11 @@ export default function PlexWatchlistCard() {
   const [waiting, setWaiting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const stopPoll = useRef<() => void>(() => undefined)
 
   useEffect(() => {
     api.plexWatchlist().then(setSt).catch(() => setSt({ connected: false, autoAdd: true, added: 0, requested: 0 }))
-    return () => clearInterval(timer.current)
+    return () => stopPoll.current()
   }, [])
 
   async function connect() {
@@ -33,22 +34,27 @@ export default function PlexWatchlistCard() {
       const p = await api.plexWatchlistPin()
       setWaiting(true)
       window.open(p.authUrl, 'plex-sign-in', 'width=620,height=760,noopener,noreferrer')
-      clearInterval(timer.current)
-      timer.current = setInterval(async () => {
-        try {
+      stopPoll.current()
+      stopPoll.current = pollPin({
+        check: async () => {
           const r = await api.plexWatchlistPinStatus(p.pinId)
-          if (r.done && r.status) {
-            clearInterval(timer.current)
-            setWaiting(false)
-            setSt(r.status)
-            toast.success(t('Plex watchlist connected.'))
-          }
-        } catch (e) {
-          clearInterval(timer.current)
+          return r.done && r.status ? r.status : undefined
+        },
+        lifeSeconds: p.expiresIn,
+        onDone: (status) => {
+          setWaiting(false)
+          setSt(status)
+          toast.success(t('Plex watchlist connected.'))
+        },
+        onExpired: () => {
+          setWaiting(false)
+          setError(t('The sign-in expired. Try again.'))
+        },
+        onError: (e) => {
           setWaiting(false)
           setError(e instanceof Error ? e.message : String(e))
-        }
-      }, 2000)
+        },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }

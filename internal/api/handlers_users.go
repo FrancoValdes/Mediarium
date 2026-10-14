@@ -279,6 +279,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 // handleDeleteUser removes an account with its sessions and API keys. Titles
 // it added stay in the library. An administrator cannot delete themselves.
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	if !requireSession(w, r) {
+		return
+	}
 	id, ok := accountID(w, r)
 	if !ok {
 		return

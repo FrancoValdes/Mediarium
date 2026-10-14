@@ -63,8 +63,13 @@ func (s *cgSession) download(ctx context.Context, link string) (*Download, error
 	if strings.HasPrefix(link, "magnet:") {
 		return &Download{Magnet: link}, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if err := s.checkPageAddress(link); err != nil {
+		return nil, err
+	}
+	if err := s.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer s.unlock()
 	if err := s.ensureLogin(ctx); err != nil {
 		return nil, err
 	}
@@ -210,6 +215,10 @@ func (s *cgSession) downloadOnce(ctx context.Context, link string) (*Download, e
 			}
 			if strings.HasPrefix(target, "magnet:") {
 				return &Download{Magnet: target}, nil
+			}
+			if err := s.checkPageAddress(target); err != nil {
+				lastErr = err
+				continue
 			}
 			d, err := s.fetchFile(ctx, target, headers)
 			if err == nil {

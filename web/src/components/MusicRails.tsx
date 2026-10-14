@@ -12,7 +12,7 @@ import Dropdown from './Dropdown'
 import Icon from './Icon'
 import PosterCard from './PosterCard'
 import type { ItemState } from './state'
-import { plural, t } from '../i18n'
+import { plural, t, st } from '../i18n'
 
 export type MusicListId = MusicList | 'artists'
 
@@ -490,7 +490,7 @@ export function MusicBrowseGrid({ filters, onAdd, onClear, rows = 3 }: { filters
           </button>
         </p>
       )}
-      {data?.note && <p className="music-note">{data.note}</p>}
+      {data?.note && <p className="music-note">{st(data.note)}</p>}
       {empty && !data?.note ? (
         <div className="empty-state">
           <Icon name="compass" size={36} />

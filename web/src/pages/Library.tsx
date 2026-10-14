@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { Link, useNavigate } from 'react-router-dom'
 import { api, can, isAdmin, type Book, type BookFormat, type BulkResult, type BulkTitle, type CollectionListItem, type Movie, type MusicArtist, type QualityProfile, type QueueItem, type Series, type SourcePref } from '../api'
 import { useAuth } from '../AuthContext'
+import { defaultProfileFor } from '../profileDefaults'
 import { useKinds, useModules, type MediaKind } from '../ModulesContext'
 import MusicLibrary from './MusicLibrary'
 import BookLibrary from './BookLibrary'
@@ -27,7 +28,7 @@ import FilterToggle from '../components/FilterToggle'
 import InfoTip from '../components/InfoTip'
 import HelpLink from '../components/HelpLink'
 import { useUrlState } from '../useUrlState'
-import { plural, t, tx } from '../i18n'
+import { plural, t, tx, st } from '../i18n'
 import { compareTitles } from '../titleSort'
 
 type Kind = 'movie' | 'tv'
@@ -175,6 +176,7 @@ export default function Library() {
   const [shows, setShows] = useState<Item[] | null>(null)
   const [profiles, setProfiles] = useState<QualityProfile[]>([])
   const [defaultProfile, setDefaultProfile] = useState(0)
+  const [defaultTvProfile, setDefaultTvProfile] = useState(0)
   const [error, setError] = useState('')
   const text = ui.q
   const setText = (v: string) => patchUi({ q: v })
@@ -258,6 +260,7 @@ export default function Library() {
     api.listProfiles().then((r) => {
       setProfiles(r.profiles)
       setDefaultProfile(r.defaultId)
+      setDefaultTvProfile(defaultProfileFor('tv', r))
     }).catch(() => undefined)
   }, [])
 
@@ -332,7 +335,7 @@ export default function Library() {
     setBusy(true)
     try {
       const r = await (i.kind === 'movie' ? api.searchNowMovie(i.id) : api.searchNowSeries(i.id))
-      toast.info(`${i.title}: ${r.message}`)
+      toast.info(`${i.title}: ${st(r.message)}`)
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -392,12 +395,12 @@ export default function Library() {
   function report(r: { message: string; failed: BulkResult['failed'] }) {
     if (r.failed.length === 0) {
       setNote(null)
-      toast.success(r.message)
+      toast.success(st(r.message))
       return
     }
     const titleOf = (k: string, id: number) => (items ?? []).find((i) => i.kind === k && i.id === id)?.title
     setNote({ message: r.message, lines: failureLines(r.failed, titleOf) })
-    toast.error(r.message)
+    toast.error(st(r.message))
   }
   async function runBulk(action: () => Promise<{ message: string; failed: BulkResult['failed'] }>) {
     setBusy(true)
@@ -443,7 +446,44 @@ export default function Library() {
     try {
       const r = await api.bulkSearchNow(wanted.map((i) => ({ kind: i.kind, id: i.id })))
       if (r.failed.length > 0) report(r)
-      else toast.info(r.message)
+      else toast.info(st(r.message))
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function replaceChosen() {
+    const withFile = chosen.filter((i) => i.kind === 'movie' && i.status === 'downloaded')
+    if (withFile.length === 0) {
+      toast.info(t('Nothing to replace. Only movies that have a file can be replaced with a smaller version.'))
+      return
+    }
+    const todo = withFile.slice(0, BULK_SEARCH_LIMIT)
+    const total = todo.reduce((sum, i) => sum + i.sizeBytes, 0)
+    const answer = await confirm({
+      title: t('Replace {what} with a smaller version?', { what: count(todo.length, noun) }),
+      body: (
+        <>
+          <p>
+            <strong>{nameList(todo.map((i) => i.title))}</strong>
+          </p>
+          <p>{t('For each one, Mediarium looks for a release that its quality profile accepts and that is smaller than the file it has now. The files take up {size} together.', { size: formatBytes(total) })}</p>
+          <p>{t('A file is only removed once its new version is downloaded and in your library. If nothing suitable is found, or a download fails, that file stays.')}</p>
+          {withFile.length > todo.length && <p>{t('It does at most {limit} titles at a time. Run it again for the other {over}.', { limit: BULK_SEARCH_LIMIT, over: withFile.length - todo.length })}</p>}
+        </>
+      ),
+      confirmLabel: t('Look for smaller versions'),
+    })
+    if (!answer) return
+    setBusy(true)
+    setNote(null)
+    try {
+      const r = await api.bulkReplaceSmaller(todo.map((i) => ({ kind: i.kind, id: i.id })))
+      if (r.failed.length > 0) report(r)
+      else toast.info(st(r.message))
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -489,12 +529,18 @@ export default function Library() {
     await runBulk(() => api.bulkRemove(bulkTitles(), answer.checked))
   }
 
+  const defaultChoiceLabel = useMemo(() => {
+    const movieName = profiles.find((p) => p.id === defaultProfile)?.name
+    const tvName = profiles.find((p) => p.id === defaultTvProfile)?.name
+    if (movieName && tvName && movieName !== tvName) return t('Default ({movies} for movies, {tv} for TV)', { movies: movieName, tv: tvName })
+    return t('Default ({name})', { name: movieName ?? t('the default profile') })
+  }, [profiles, defaultProfile, defaultTvProfile])
   const profileChoices = useMemo(
     () => [
-      { id: '0', label: t('Default ({name})', { name: profiles.find((p) => p.id === defaultProfile)?.name ?? t('the default profile') }) },
+      { id: '0', label: defaultChoiceLabel },
       ...sortProfiles(profiles).map((p) => ({ id: String(p.id), label: p.name })),
     ],
-    [profiles, defaultProfile],
+    [profiles, defaultChoiceLabel],
   )
 
   const total = items?.length ?? 0
@@ -661,6 +707,14 @@ export default function Library() {
             <Icon name="search" size={15} /> {t('Search now')}
           </button>
           <InfoTip text={t('Looks for releases of the selected titles that are monitored and missing something, at most 25 at a time. The search runs in the background and anything it finds shows up in Activity.')} />
+          {kind === 'movie' && (
+            <>
+              <button className="btn-sm btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void replaceChosen()}>
+                <Icon name="download" size={15} /> {t('Replace with smaller')}
+              </button>
+              <InfoTip text={t('For movies you moved to a lower quality profile. Looks for a smaller release the profile accepts, downloads it, and only then removes the big file. At most 25 at a time.')} />
+            </>
+          )}
           <button className="btn-sm btn-danger btn-with-icon" disabled={chosen.length === 0 || busy} onClick={() => void removeChosen()}>
             <Icon name="trash" size={15} /> {t('Remove from library')}
           </button>
@@ -834,7 +888,7 @@ export default function Library() {
                     </div>
                   )}
                 </td>
-                <td style={{ color: 'var(--text-dim)' }}>{profiles.find((p) => p.id === (i.profileId || defaultProfile))?.name ?? '—'}</td>
+                <td style={{ color: 'var(--text-dim)' }}>{profiles.find((p) => p.id === (i.profileId || (i.kind === 'movie' ? defaultProfile : defaultTvProfile)))?.name ?? '—'}</td>
                 <td>
                   <div className="row-actions">
                     {actionsFor(i).map((a) => (

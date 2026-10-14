@@ -100,7 +100,7 @@ export const TOPICS: TopicDef[] = [
     title: 'Downloads: Usenet, torrents and VPN',
     summary: 'The built-in downloaders, download clients, the torrent port, seeding, clean-up and the VPN.',
     group: 'Downloading',
-    sources: [{ file: 'downloads.md' }, { file: 'vpn.md', title: 'VPN protection' }],
+    sources: [{ file: 'downloads.md' }, { file: 'vpn.md', title: 'VPN protection' }, { file: 'cross-seeding.md', title: 'Cross-seeding' }],
   },
   {
     id: 'indexers',

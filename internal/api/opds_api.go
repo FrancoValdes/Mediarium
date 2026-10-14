@@ -393,6 +393,9 @@ var opdsFileTypes = map[string]string{
 	"azw":  "application/vnd.amazon.ebook",
 	"azw3": "application/vnd.amazon.ebook",
 	"prc":  "application/x-mobipocket-ebook",
+	"cbz":  "application/vnd.comicbook+zip",
+	"cbr":  "application/vnd.comicbook-rar",
+	"cb7":  "application/x-cb7",
 }
 
 func (s *Server) opdsBookEntry(v opdsView, b books.Book) opds.Entry {

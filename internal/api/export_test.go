@@ -174,6 +174,7 @@ func SetFeedbackEndpointForTest(url string) func() {
 	feedbackEndpoint = url
 	feedbackLimit.Lock()
 	feedbackLimit.sent = nil
+	feedbackLimit.byPerson = nil
 	feedbackLimit.Unlock()
 	return func() { feedbackEndpoint = old }
 }
@@ -181,8 +182,9 @@ func SetFeedbackEndpointForTest(url string) func() {
 func LeadingZeroBitsForTest(b []byte) int { return leadingZeroBits(b) }
 
 const (
-	FeedbackPowBits = feedbackPowBits
-	FeedbackPerHour = feedbackPerHour
+	FeedbackPowBits        = feedbackPowBits
+	FeedbackPerHour        = feedbackPerHour
+	FeedbackPerHourInstall = feedbackPerHourInstall
 )
 
 // SetDebridURLForTest points the debrid services at a fake; the returned

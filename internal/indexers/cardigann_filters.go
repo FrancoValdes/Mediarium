@@ -2,6 +2,7 @@ package indexers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"math"
@@ -79,8 +80,15 @@ func argAt(args []string, i int) string {
 // applyFilters runs a filter chain over value. vars may be nil when no
 // template variables are available.
 func applyFilters(value string, filters []FilterBlock, vars *tmplVars) (string, error) {
+	return applyFiltersWith(value, filters, vars, nil)
+}
+
+// applyFiltersWith is applyFilters spending the regular expressions' work from
+// budget (nil: unlimited), so one page can't run them over its text without
+// end.
+func applyFiltersWith(value string, filters []FilterBlock, vars *tmplVars, budget *workBudget) (string, error) {
 	for _, f := range filters {
-		out, err := applyFilter(value, f, vars)
+		out, err := applyFilterWith(value, f, vars, budget)
 		if err != nil {
 			return "", fmt.Errorf("filter %s: %w", f.Name, err)
 		}
@@ -100,6 +108,25 @@ func tmplArg(s string, vars *tmplVars) (string, error) {
 }
 
 func applyFilter(data string, f FilterBlock, vars *tmplVars) (string, error) {
+	return applyFilterWith(data, f, vars, nil)
+}
+
+// errPageTooComplex is returned once a page has used up its work budget.
+var errPageTooComplex = errors.New("the page is too complex to read")
+
+// regexFor compiles a filter's pattern and pays for running it over data.
+func regexFor(pattern, data string, budget *workBudget) (*regexp.Regexp, error) {
+	c := compileDotNetRegexCost(pattern)
+	if c.err != nil {
+		return nil, c.err
+	}
+	if !budget.spend(int64(len(data)+1) * c.weight) {
+		return nil, errPageTooComplex
+	}
+	return c.re, nil
+}
+
+func applyFilterWith(data string, f FilterBlock, vars *tmplVars, budget *workBudget) (string, error) {
 	args := filterArgs(f.Args)
 	switch f.Name {
 	case "querystring":
@@ -120,7 +147,7 @@ func applyFilter(data string, f FilterBlock, vars *tmplVars) (string, error) {
 		}
 		return v.Get(name), nil
 	case "regexp":
-		re, err := compileDotNetRegex(argAt(args, 0))
+		re, err := regexFor(argAt(args, 0), data, budget)
 		if err != nil {
 			return "", err
 		}
@@ -130,7 +157,10 @@ func applyFilter(data string, f FilterBlock, vars *tmplVars) (string, error) {
 		}
 		return m[1], nil
 	case "re_replace":
-		re, err := compileDotNetRegex(argAt(args, 0))
+		re, err := regexFor(argAt(args, 0), data, budget)
+		if errors.Is(err, errPageTooComplex) || errors.Is(err, errRegexTooBig) {
+			return "", err
+		}
 		if err != nil {
 			warnSkippedRegex(err)
 			return data, nil
@@ -247,8 +277,13 @@ const maxFilterBytes = 96 << 20
 // the replacement's own length, plus the text of the whole match for each group
 // reference in it.
 func regexReplace(re *regexp.Regexp, data, replacement string) (string, error) {
+	return regexReplaceMax(re, data, replacement, maxFilterBytes)
+}
+
+// regexReplaceMax is regexReplace with a limit of its own.
+func regexReplaceMax(re *regexp.Regexp, data, replacement string, limit int) (string, error) {
 	rep := dotNetReplacement(replacement)
-	if (len(data)+1)*(len(rep)+1)+len(data) > maxFilterBytes {
+	if (len(data)+1)*(len(rep)+1)+len(data) > limit {
 		return "", fmt.Errorf("the replacement could make the text too large")
 	}
 	return re.ReplaceAllString(data, rep), nil

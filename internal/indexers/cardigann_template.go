@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"reflect"
 	"regexp"
 	"regexp/syntax"
 	"strconv"
@@ -83,6 +84,7 @@ var tmplFuncs = template.FuncMap{
 	"join":       tmplJoin,
 	"re_replace": tmplReReplace,
 	"__mod":      func(s any) any { return s }, // replaced per execution
+	"__range":    func(v any) any { return v }, // replaced per execution
 }
 
 // applyTemplate renders a Cardigann template string. encode, if set, is
@@ -99,20 +101,230 @@ func applyTemplate(src string, vars *tmplVars, encode func(string) string) (stri
 	if err != nil {
 		return "", fmt.Errorf("template %q: %w", src, err)
 	}
-	mod := func(s any) any { return s }
+	run := &tmplRun{deadline: time.Now().Add(maxTemplateTime), loopsLeft: maxTemplateLoops}
+	mod := func(s any) (any, error) { return s, run.check() }
 	if encode != nil {
-		mod = func(s any) any { return encode(fmt.Sprint(s)) }
+		mod = func(s any) (any, error) { return encode(fmt.Sprint(s)), run.check() }
 	}
 	t, err = t.Clone()
 	if err != nil {
 		return "", fmt.Errorf("template %q: %w", src, err)
 	}
-	t.Funcs(template.FuncMap{"__mod": mod})
+	t.Funcs(run.funcs(mod))
 	w := &limitedWriter{max: maxTemplateOutput}
 	if err := t.Execute(w, vars.data()); err != nil {
 		return "", fmt.Errorf("template %q: %w", src, err)
 	}
 	return strings.ReplaceAll(w.sb.String(), "<no value>", ""), nil
+}
+
+// A template can build text in variables, where the output limit never sees
+// it, and loop over whatever a variable holds. tmplRun keeps one execution
+// within bounds: every loop is counted, every function that builds text is
+// size-checked, and the whole run has a deadline.
+type tmplRun struct {
+	deadline  time.Time
+	loopsLeft int
+}
+
+const (
+	// maxTemplateTime is how long one template may run. Real ones take
+	// microseconds.
+	maxTemplateTime = time.Second
+	// maxRangeItems is the longest list one {{ range }} may loop over.
+	maxRangeItems = 10000
+	// maxTemplateLoops is how many loop turns one template may take in all.
+	maxTemplateLoops = 100000
+)
+
+var (
+	errTemplateTooSlow  = errors.New("the template takes too long")
+	errTemplateTooLoopy = errors.New("the template loops too many times")
+)
+
+func (r *tmplRun) check() error {
+	if time.Now().After(r.deadline) {
+		return errTemplateTooSlow
+	}
+	return nil
+}
+
+// funcs are the functions one execution sees: the built-in ones that build
+// text are replaced with size-checked versions.
+func (r *tmplRun) funcs(mod func(any) (any, error)) template.FuncMap {
+	return template.FuncMap{
+		"__mod":   mod,
+		"__range": r.rangeOver,
+		"printf":  r.printf,
+		"print": func(args ...any) (string, error) {
+			if err := r.fits(len(args), args); err != nil {
+				return "", err
+			}
+			return fmt.Sprint(args...), nil
+		},
+		"println": func(args ...any) (string, error) {
+			if err := r.fits(len(args)+1, args); err != nil {
+				return "", err
+			}
+			return fmt.Sprintln(args...), nil
+		},
+		// escaping makes text up to six times longer
+		"html":     r.escaper(template.HTMLEscaper),
+		"js":       r.escaper(template.JSEscaper),
+		"urlquery": r.escaper(template.URLQueryEscaper),
+		"join": func(list any, sep string) (string, error) {
+			if err := r.check(); err != nil {
+				return "", err
+			}
+			out := tmplJoin(list, sep)
+			if len(out) > maxTemplateOutput {
+				return "", errTemplateTooLong
+			}
+			return out, nil
+		},
+		"re_replace": func(s any, pattern, replacement string) (string, error) {
+			if err := r.check(); err != nil {
+				return "", err
+			}
+			return tmplReReplace(s, pattern, replacement)
+		},
+	}
+}
+
+// rangeOver is what every {{ range }} loops over (see rewriteAction): a list
+// or map, or a small number, counted against the run's loop allowance.
+func (r *tmplRun) rangeOver(v any) (any, error) {
+	if err := r.check(); err != nil {
+		return nil, err
+	}
+	if v == nil {
+		return nil, nil
+	}
+	rv := reflect.ValueOf(v)
+	var n int64
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map:
+		n = int64(rv.Len())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		n = rv.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if rv.Uint() > maxRangeItems {
+			n = maxRangeItems + 1
+		} else {
+			n = int64(rv.Uint())
+		}
+	default:
+		return nil, fmt.Errorf("{{ range }} can only loop over a list, not a %s", rv.Kind())
+	}
+	if n > maxRangeItems {
+		return nil, fmt.Errorf("{{ range }} can loop over at most %d items", maxRangeItems)
+	}
+	if n > 0 {
+		r.loopsLeft -= int(n)
+	}
+	if r.loopsLeft < 0 {
+		return nil, errTemplateTooLoopy
+	}
+	return v, nil
+}
+
+// printf is fmt.Sprintf that refuses to build more than maxTemplateOutput:
+// widths and precisions are read from the format before anything is built.
+func (r *tmplRun) printf(format string, args ...any) (string, error) {
+	if err := r.check(); err != nil {
+		return "", err
+	}
+	verbs, widths, ok := formatCost(format)
+	if !ok {
+		return "", errTemplateTooLong
+	}
+	longest := 0
+	for _, a := range args {
+		longest = max(longest, approxLen(a))
+	}
+	if int64(len(format))+int64(verbs)*int64(longest)+widths > maxTemplateOutput {
+		return "", errTemplateTooLong
+	}
+	return fmt.Sprintf(format, args...), nil
+}
+
+// fits checks that printing args (with extra separators) stays within the
+// output limit.
+func (r *tmplRun) fits(extra int, args []any) error {
+	if err := r.check(); err != nil {
+		return err
+	}
+	total := int64(extra)
+	for _, a := range args {
+		total += int64(approxLen(a))
+	}
+	if total > maxTemplateOutput {
+		return errTemplateTooLong
+	}
+	return nil
+}
+
+func (r *tmplRun) escaper(esc func(...any) string) func(...any) (string, error) {
+	return func(args ...any) (string, error) {
+		if err := r.fits(len(args), args); err != nil {
+			return "", err
+		}
+		total := 0
+		for _, a := range args {
+			total += approxLen(a)
+		}
+		if total*6 > maxTemplateOutput {
+			return "", errTemplateTooLong
+		}
+		return esc(args...), nil
+	}
+}
+
+// approxLen is about how long a value is once printed. Strings are the only
+// values a template can make long; the rest come from the definition.
+func approxLen(a any) int {
+	switch v := a.(type) {
+	case string:
+		return len(v)
+	case nil, bool, int, int64, float64:
+		return 32
+	}
+	return len(fmt.Sprint(a))
+}
+
+// formatCost reads a printf format: how many verbs it has and the sum of the
+// widths and precisions it asks for. ok is false for a width taken from an
+// argument (*) or one too large to be real.
+func formatCost(format string) (verbs int, widths int64, ok bool) {
+	for i := 0; i < len(format); i++ {
+		if format[i] != '%' {
+			continue
+		}
+		verbs++
+		for i++; i < len(format); i++ {
+			c := format[i]
+			if c == '*' {
+				return 0, 0, false
+			}
+			if c >= '0' && c <= '9' {
+				j := i
+				for j < len(format) && format[j] >= '0' && format[j] <= '9' {
+					j++
+				}
+				if j-i > 7 {
+					return 0, 0, false
+				}
+				n, _ := strconv.Atoi(format[i:j])
+				widths += int64(n)
+				i = j - 1
+				continue
+			}
+			if !strings.ContainsRune("+-# .[]", rune(c)) {
+				break // the verb itself
+			}
+		}
+	}
+	return verbs, widths, true
 }
 
 // checkTemplate reports whether src can be compiled, without running it.
@@ -345,8 +557,15 @@ func rewriteAction(action string) (text, keyword string, err error) {
 	case "define", "template", "block":
 		return "", "", fmt.Errorf("{{ %s }} is not supported", first)
 	case "range":
-		if rangeOverNumber(strings.TrimPrefix(trimmed, "range")) {
+		rest := strings.TrimPrefix(trimmed, "range")
+		if rangeOverNumber(rest) {
 			return "", "", fmt.Errorf("{{ range }} can only loop over a list, not a number")
+		}
+		// a variable can still hold a number or a huge list: every loop goes
+		// through __range, which checks what it is given
+		decl := rangeDeclRe.FindString(rest)
+		if pipe := strings.TrimSpace(rest[len(decl):]); pipe != "" {
+			code = " range " + strings.TrimSpace(decl) + " __range (" + pipe + ") "
 		}
 	}
 	if controlWords[first] {
@@ -360,6 +579,9 @@ func rewriteAction(action string) (text, keyword string, err error) {
 }
 
 var declRe = regexp.MustCompile(`^\$[A-Za-z0-9_]*\s*(:=|=)`)
+
+// rangeDeclRe is the "$i, $e :=" a range action may start with.
+var rangeDeclRe = regexp.MustCompile(`^\s*\$[A-Za-z0-9_]*\s*(,\s*\$[A-Za-z0-9_]*\s*)?(:=|=)`)
 
 func tmplJoin(list any, sep string) string {
 	switch l := list.(type) {
@@ -382,10 +604,13 @@ func tmplJoin(list any, sep string) string {
 func tmplReReplace(s any, pattern, replacement string) (string, error) {
 	re, err := compileDotNetRegex(pattern)
 	if err != nil {
+		if errors.Is(err, errRegexTooBig) {
+			return "", err
+		}
 		warnSkippedRegex(err)
 		return fmt.Sprint(s), nil
 	}
-	return regexReplace(re, fmt.Sprint(s), replacement)
+	return regexReplaceMax(re, fmt.Sprint(s), replacement, maxTemplateOutput)
 }
 
 var (
@@ -466,53 +691,91 @@ func isHex(s string) bool {
 
 // --- regular expressions ---
 
+// compiledRegex is a cached compile: the expression and its cost per byte of
+// text, or why it can't be used.
+type compiledRegex struct {
+	re     *regexp.Regexp
+	weight int64
+	err    error
+}
+
 var (
 	regexCacheMu sync.Mutex
-	regexCache   = map[string]*regexp.Regexp{}
+	regexCache   = map[string]compiledRegex{}
 )
 
-// maxRegexSteps is the largest compiled pattern accepted. Real definitions use
-// patterns of a few hundred steps.
-const maxRegexSteps = 10000
+const (
+	// maxRegexSteps is the largest compiled pattern accepted. Real definitions
+	// use patterns of a few hundred steps.
+	maxRegexSteps = 10000
+	// maxRegexLength is the longest pattern compiled at all. Real ones are a
+	// few hundred characters.
+	maxRegexLength = 4 << 10
+)
+
+// errRegexTooBig marks a pattern refused for its size, not its dialect: one
+// that would cost too much to run rather than one Go can't express.
+var errRegexTooBig = errors.New("the regular expression is too complex")
 
 // compileDotNetRegex compiles a regular expression written for .NET (the
 // dialect Cardigann definitions target) with Go's RE2 engine. Constructs RE2
 // lacks (look-around, back-references, atomic groups) fail with a clear
 // error.
 func compileDotNetRegex(pattern string) (*regexp.Regexp, error) {
+	c := compileDotNetRegexCost(pattern)
+	return c.re, c.err
+}
+
+// compileDotNetRegexCost is compileDotNetRegex with the pattern's cost per
+// byte of text it runs over. Failures are cached too, so a bad pattern used on
+// every row is only looked at once.
+func compileDotNetRegexCost(pattern string) compiledRegex {
 	regexCacheMu.Lock()
-	re, ok := regexCache[pattern]
+	c, ok := regexCache[pattern]
 	regexCacheMu.Unlock()
 	if ok {
-		return re, nil
+		return c
+	}
+	c = buildDotNetRegex(pattern)
+	regexCacheMu.Lock()
+	if len(regexCache) > 4096 {
+		regexCache = map[string]compiledRegex{}
+	}
+	regexCache[pattern] = c
+	regexCacheMu.Unlock()
+	return c
+}
+
+func buildDotNetRegex(pattern string) compiledRegex {
+	if len(pattern) > maxRegexLength {
+		return compiledRegex{err: fmt.Errorf("regular expression %q is too long: %w", shortenText(pattern, 60), errRegexTooBig)}
 	}
 	for _, bad := range []struct{ tok, what string }{
 		{"(?=", "look-ahead"}, {"(?!", "negative look-ahead"}, {"(?<=", "look-behind"},
 		{"(?<!", "negative look-behind"}, {"(?>", "atomic group"},
 	} {
 		if strings.Contains(pattern, bad.tok) {
-			return nil, fmt.Errorf("regular expression %q uses a %s, which is not supported", pattern, bad.what)
+			return compiledRegex{err: fmt.Errorf("regular expression %q uses a %s, which is not supported", pattern, bad.what)}
 		}
 	}
 	translated := translateDotNetRegex(pattern)
-	re, err := regexp.Compile(translated)
-	if err != nil {
-		return nil, fmt.Errorf("regular expression %q is not supported: %w", pattern, err)
-	}
 	// Matching takes time in proportion to the pattern's size times the text's:
-	// a pattern of a million steps run over a page of 16 MB never finishes.
+	// a pattern of a million steps run over a page of 16 MB never finishes. The
+	// size is measured before the real compile, which is the costly part.
+	steps := 0
 	if parsed, perr := syntax.Parse(translated, syntax.Perl); perr == nil {
-		if prog, cerr := syntax.Compile(parsed.Simplify()); cerr == nil && len(prog.Inst) > maxRegexSteps {
-			return nil, fmt.Errorf("regular expression %q is too complex", shortenText(pattern, 60))
+		if prog, cerr := syntax.Compile(parsed.Simplify()); cerr == nil {
+			steps = len(prog.Inst)
 		}
 	}
-	regexCacheMu.Lock()
-	if len(regexCache) > 4096 {
-		regexCache = map[string]*regexp.Regexp{}
+	if steps > maxRegexSteps {
+		return compiledRegex{err: fmt.Errorf("regular expression %q: %w", shortenText(pattern, 60), errRegexTooBig)}
 	}
-	regexCache[pattern] = re
-	regexCacheMu.Unlock()
-	return re, nil
+	re, err := regexp.Compile(translated)
+	if err != nil {
+		return compiledRegex{err: fmt.Errorf("regular expression %q is not supported: %w", pattern, err)}
+	}
+	return compiledRegex{re: re, weight: 1 + int64(steps)/16}
 }
 
 var dotNetGroupRef = regexp.MustCompile(`\$(\d+)`)

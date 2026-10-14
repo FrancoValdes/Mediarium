@@ -3,16 +3,19 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -31,6 +34,7 @@ import (
 	"github.com/rdborg/mediarium/internal/queue"
 	"github.com/rdborg/mediarium/internal/settings"
 	"github.com/rdborg/mediarium/internal/torrentclient"
+	"github.com/rdborg/mediarium/internal/vpn"
 )
 
 // runPipeline is the whole grab -> download -> organize flow (the
@@ -127,6 +131,9 @@ func (s *Server) runPipeline(queueID, movieID int64, movieTitle string, movieYea
 	if ctx.Err() != nil {
 		return fail(ctx.Err()) // cancelled: never import for a movie that was removed
 	}
+	if owner := otherFileOwner(s.trackedFileOwners(), destPath, movieID, nil); owner != "" {
+		return fail(errFileOfAnother(owner, destPath)) // never another title's file
+	}
 	policy, isBetter := s.importConflictPolicy(movieID, tier)
 	// The file the movie has now, and whether this import may take its place
 	// (decided before the movie's quality is updated below).
@@ -135,6 +142,14 @@ func (s *Server) runPipeline(queueID, movieID int64, movieTitle string, movieYea
 		earlierFile = cur.FilePath
 	}
 	replaceEarlier := replacesOldFiles(policy, isBetter)
+	if item, err := s.QueueRepo.Get(queueID); err == nil && item.ReplacesFile != "" {
+		// A smaller version a person asked for: it takes the file's place even
+		// though it is of a lower quality. The old file is only removed below,
+		// once the new one is in the library.
+		var replacing bool
+		policy, isBetter, replacing = smallerVersionPolicy(item.ReplacesFile, earlierFile, destPath, policy, isBetter)
+		replaceEarlier = replaceEarlier || replacing
+	}
 	result, err := s.importDownloaded(videoFile, destPath, policy, isBetter)
 	if err != nil {
 		return fail(fmt.Errorf("couldn't move the file into your library: %w", err))
@@ -209,7 +224,7 @@ func (s *Server) prepareDownload(ctx context.Context, queueID int64, downloadURL
 	)
 	// A retry of a failed Usenet download starts from the files it already
 	// has when they are still there and pass PAR2 (see reuseDownloaded).
-	reused := s.reuseDownloaded(queueID, downloadURL, incompleteDir)
+	reused := s.reuseDownloaded(queueID, incompleteDir)
 	if !reused && protocol != indexers.ProtocolTorrent && keptResume(incompleteDir) {
 		s.queueEvent(queueID, "retried", queue.LevelInfo, "Carrying on from the part already downloaded")
 	}
@@ -282,6 +297,12 @@ func (s *Server) downloadUsenet(ctx context.Context, queueID int64, nzbURL, inco
 	if looksLikeTorrentFile(nzbBytes) {
 		return 0, errors.New("this is a .torrent file, but its indexer is set up as a Usenet indexer. Open Settings > Indexers & Search, remove it and add it again on the Torrent tab")
 	}
+	// An indexer at its daily limit, or showing a login or maintenance page,
+	// sends something that is not an NZB: that says nothing about the release,
+	// so it is not blocklisted.
+	if err := notAnNZB(nzbBytes, nzbURL); err != nil {
+		return 0, err
+	}
 	nzb, err := download.ParseNZB(nzbBytes)
 	if err != nil {
 		return 0, badRelease(fmt.Errorf("couldn't read the NZB file: %w", err))
@@ -329,6 +350,71 @@ func (s *Server) downloadUsenet(ctx context.Context, queueID int64, nzbURL, inco
 	return res.MissingSegments, nil
 }
 
+// notAnNZB returns an error when b is clearly not an NZB file: a web page, or
+// an XML reply whose root is not <nzb> (a Newznab <error> such as "Request
+// limit reached"). It returns nil for anything that starts like an NZB, broken
+// or not: ParseNZB judges those. downloadURL is only used to keep its key out
+// of the message.
+func notAnNZB(b []byte, downloadURL string) error {
+	head := bytes.TrimSpace(bytes.TrimPrefix(b, []byte("\xef\xbb\xbf")))
+	lower := strings.ToLower(string(head[:min(len(head), 512)]))
+	if strings.HasPrefix(lower, "<!doctype html") || strings.HasPrefix(lower, "<html") {
+		return errors.New("the indexer sent a web page instead of the NZB file. It may be down for maintenance, or want you to sign in again")
+	}
+	dec := xml.NewDecoder(bytes.NewReader(head))
+	dec.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) { return r, nil }
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			if len(head) == 0 || head[0] != '<' {
+				return errors.New("the indexer didn't send an NZB file")
+			}
+			return nil // XML that breaks later: ParseNZB says what is wrong
+		}
+		start, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(start.Name.Local) {
+		case "nzb":
+			return nil
+		case "error":
+			description := ""
+			for _, a := range start.Attr {
+				if a.Name.Local == "description" {
+					description = hideURLValues(strings.TrimSpace(a.Value), downloadURL)
+				}
+			}
+			if description == "" {
+				return errors.New("the indexer refused to send the NZB file")
+			}
+			if len(description) > 200 {
+				description = description[:200]
+			}
+			return fmt.Errorf("the indexer refused to send the NZB file: %s", description)
+		default:
+			return errors.New("the indexer didn't send an NZB file")
+		}
+	}
+}
+
+// hideURLValues removes the query values of rawURL (the indexer key among
+// them) from text an indexer wrote.
+func hideURLValues(text, rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return text
+	}
+	for _, values := range u.Query() {
+		for _, v := range values {
+			if len(v) >= 6 {
+				text = strings.ReplaceAll(text, v, "...")
+			}
+		}
+	}
+	return text
+}
+
 // downloadTorrent handles both magnet URIs and direct .torrent file URLs.
 // Every torrent runs in one shared engine listening on the torrent port
 // (see torrentRegistry), saved in this queue item's own folder.
@@ -371,6 +457,16 @@ func (s *Server) downloadTorrent(ctx context.Context, queueID int64, downloadURL
 		s.torrents.stop(job)
 		return errTorrentsDisabled
 	}
+	// A VPN tunnel that is replaced or closed would leave this torrent dialling
+	// through a dead connection until it stalls: stop it instead.
+	var tunnelGone atomic.Bool
+	if vt, ok := tunnel.(*vpn.Tunnel); ok && vt != nil {
+		go watchTunnel(ctx, tunnelCheck, func() bool { return s.VPNManager.Tunnel() == vt }, func() {
+			tunnelGone.Store(true)
+			slog.Warn("torrent: the VPN connection changed, stopping the torrent", "queueId", queueID)
+			s.torrents.stop(job)
+		})
+	}
 
 	var t *torrent.Torrent
 	if magnet != "" {
@@ -385,6 +481,13 @@ func (s *Server) downloadTorrent(ctx context.Context, queueID int64, downloadURL
 		s.torrents.stop(job)
 		if !s.torrentsEnabled() {
 			return errTorrentsDisabled
+		}
+		if tunnelGone.Load() {
+			return errVPNChanged
+		}
+		if errors.Is(err, torrentclient.ErrNoMetadata) && ctx.Err() == nil {
+			// A dead magnet: blocklist it and try another release.
+			return badRelease(err)
 		}
 		return fmt.Errorf("couldn't add the torrent: %w", err)
 	}
@@ -406,6 +509,9 @@ func (s *Server) downloadTorrent(ctx context.Context, queueID int64, downloadURL
 		if !s.torrentsEnabled() {
 			return errTorrentsDisabled
 		}
+		if tunnelGone.Load() {
+			return errVPNChanged
+		}
 		if errors.Is(err, torrentclient.ErrStalled) {
 			// No one is sharing it: blocklist it and try another release.
 			return badRelease(err)
@@ -425,6 +531,38 @@ func (s *Server) downloadTorrent(ctx context.Context, queueID int64, downloadURL
 		}
 	}()
 	return nil
+}
+
+// tunnelCheck is how often a running torrent checks that the VPN tunnel it was
+// started on is still the one in use. A variable so tests can shorten it.
+var tunnelCheck = 30 * time.Second
+
+// errVPNChanged fails a torrent whose VPN connection was replaced or closed
+// while it ran. Nothing is wrong with the release, so it is not blocklisted.
+var errVPNChanged = errors.New("the VPN connection changed while this torrent was downloading. Press Retry to carry on through the current connection")
+
+// watchTunnel calls gone once still has reported false on two checks in a row
+// (a VPN that is reconnecting gets one check to come back), then returns. It
+// returns without calling gone when ctx ends.
+func watchTunnel(ctx context.Context, every time.Duration, still func() bool, gone func()) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	misses := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if still() {
+				misses = 0
+				continue
+			}
+			if misses++; misses >= 2 {
+				gone()
+				return
+			}
+		}
+	}
 }
 
 // torrentListenPort is the port the torrent engine listens on: the saved
@@ -550,6 +688,10 @@ func (s *Server) conflictPolicy(incomingTier quality.Tier, upgrades bool, curren
 // (nothing new was imported, so the movie goes back to missing, matching
 // how any other failed grab is handled).
 func (s *Server) resolveConflict(queueID int64, overwrite bool) error {
+	// One decision at a time: two clicks (keep and replace, or replace twice)
+	// must not both get past the status check below.
+	queueControlMu.Lock()
+	defer queueControlMu.Unlock()
 	item, err := s.QueueRepo.Get(queueID)
 	if err != nil {
 		return err
@@ -565,9 +707,18 @@ func (s *Server) resolveConflict(queueID int64, overwrite bool) error {
 		// The download is not wanted: its working folder goes (a torrent
 		// still seeding keeps it until its seeding goal is met).
 		s.cleanupWorkDir(s.workDirFor(queueID), indexers.Protocol(item.Protocol))
-		return s.MovieRepo.SetStatus(item.MovieID, library.StatusMissing, "", "")
+		// The movie keeps the file it has: downloaded when that is still
+		// there, missing otherwise.
+		m, err := s.MovieRepo.Get(item.MovieID)
+		if err != nil {
+			return nil // removed from the library meanwhile
+		}
+		return s.MovieRepo.SetStatus(item.MovieID, restoredMovieStatus(m), "", "")
 	}
 
+	if owner := otherFileOwner(s.trackedFileOwners(), item.DestPath, item.MovieID, nil); owner != "" {
+		return errFileOfAnother(owner, item.DestPath)
+	}
 	result, err := s.importDownloaded(item.SourcePath, item.DestPath, organizer.ConflictOverwrite, nil)
 	if err != nil {
 		return fmt.Errorf("couldn't replace the existing file: %w", err)

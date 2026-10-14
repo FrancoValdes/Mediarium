@@ -87,6 +87,9 @@ const PATHS: Record<string, string> = {
 
 export type IconName = keyof typeof PATHS
 
+// The names of the icons there are, for choosing one by name.
+export const ICON_NAMES: Record<string, string> = PATHS
+
 export default function Icon({ name, size = 18, ...rest }: { name: IconName; size?: number } & Omit<SVGProps<SVGSVGElement>, 'name'>) {
   return (
     <svg

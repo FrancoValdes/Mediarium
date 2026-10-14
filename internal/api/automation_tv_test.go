@@ -236,7 +236,7 @@ func TestTVAutomationRunsThatOverlapGrabOnce(t *testing.T) {
 // was blocklisted, and the automatic retry looks for something else. The
 // episodes are grabbed only after the pack has failed, never alongside it.
 func TestHuntTVFallsBackToEpisodesWhenThePackIsBad(t *testing.T) {
-	env := newTVAutoEnvWith(t, []string{s1e1WEB, s1e2WEB, sPack, otherE01}, wholeSeasonMissing, http.StatusOK, "this is not an nzb")
+	env := newTVAutoEnvWith(t, []string{s1e1WEB, s1e2WEB, sPack, otherE01}, wholeSeasonMissing, http.StatusOK, brokenNZB)
 	env.server.TestHunt(context.Background())
 	requireTitles(t, env.grabbedTitles(t), sPack)
 

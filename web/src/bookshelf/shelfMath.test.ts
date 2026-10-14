@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildChapters, chapterAt, formatAudioPosition, formatClock, nextSpeed, overallPercent, parseAudioPosition, trackLabel } from './shelfMath.ts'
+import { buildChapters, chapterAt, formatAudioPosition, formatClock, nextSpeed, openingPage, overallPercent, parseAudioPosition, trackLabel } from './shelfMath.ts'
 
 test('audiobook positions read and write', () => {
   assert.deepEqual(parseAudioPosition('2:93.5'), { track: 2, seconds: 93.5 })
@@ -75,4 +75,14 @@ test('which chapter is playing', () => {
   assert.equal(chapterAt(ch, 1, 150), 2)
   assert.equal(chapterAt(ch, 2, 10), 3)
   assert.equal(chapterAt(ch, 9, 10), 0)
+})
+
+test('a comic opens on the saved page when it is one of its pages', () => {
+  assert.equal(openingPage('page:37', 40), 37)
+  assert.equal(openingPage('page:40', 40), 40)
+  assert.equal(openingPage('page:41', 40), 1)
+  assert.equal(openingPage('page:0', 40), 1)
+  assert.equal(openingPage('page:x', 40), 1)
+  assert.equal(openingPage('epubcfi(/6/2)', 40), 1)
+  assert.equal(openingPage(undefined, 40), 1)
 })

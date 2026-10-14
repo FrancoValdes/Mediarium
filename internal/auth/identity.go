@@ -250,13 +250,15 @@ func (s *Service) RenameExternal(userID int64, username string) (bool, error) {
 }
 
 // LocalUsersByEmail lists the accounts with a password here that have this
-// email address (any letter case), for linking a first single sign-on.
+// email address (any letter case), for linking a first single sign-on. Only
+// addresses an administrator set count: one a person typed on their own
+// profile could belong to someone else.
 func (s *Service) LocalUsersByEmail(email string) ([]User, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
 		return nil, nil
 	}
-	rows, err := s.db.Query(`SELECT `+userCols+` FROM users WHERE lower(email) = lower(?) AND auth_source = 'local'`, email)
+	rows, err := s.db.Query(`SELECT `+userCols+` FROM users WHERE lower(email) = lower(?) AND auth_source = 'local' AND email_by_admin = 1`, email)
 	if err != nil {
 		return nil, fmt.Errorf("look up email: %w", err)
 	}

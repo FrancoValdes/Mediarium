@@ -13,7 +13,7 @@ import AuthorBooks from '../components/AuthorBooks'
 import BookSeries from '../components/BookSeries'
 import { audioDetails, localDate } from '../bookSeries'
 import { useDocumentTitle } from '../documentTitle'
-import { locale, t } from '../i18n'
+import { locale, t, st as serverText } from '../i18n'
 import { useModules } from '../ModulesContext'
 import { useLive } from '../useLive'
 import { bookState } from './BookLibrary'
@@ -166,8 +166,8 @@ function FormatPanel({ book, format, queue, onChanged }: { book: Book; format: B
     setSearching(true)
     try {
       const r = await api.searchNowBook(book.id, format)
-      if (r.grabbed > 0) toast.success(r.message)
-      else toast.info(r.message)
+      if (r.grabbed > 0) toast.success(serverText(r.message))
+      else toast.info(serverText(r.message))
       onChanged()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

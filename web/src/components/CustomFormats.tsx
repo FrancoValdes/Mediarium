@@ -3,7 +3,7 @@ import Dropdown from './Dropdown'
 import { useToast } from './Toast'
 import { useConfirm } from './ConfirmProvider'
 import { api, type CustomFormat, type FormatTestResult, type QualityProfile, type TrashFormat, type TrashProfile } from '../api'
-import { plural, t, tx } from '../i18n'
+import { plural, t, tx, st } from '../i18n'
 import TipLabel from './TipLabel'
 
 type Panel = 'list' | 'trash' | 'paste' | 'test'
@@ -445,7 +445,7 @@ function TestPanel({ profiles, hasFormats }: { profiles: QualityProfile[]; hasFo
               </>
             )}
           </p>
-          {result.reason && <p style={{ margin: '4px 0 0', color: 'var(--text-dim)' }}>{result.reason}</p>}
+          {result.reason && <p style={{ margin: '4px 0 0', color: 'var(--text-dim)' }}>{st(result.reason)}</p>}
           {result.matched.length === 0 ? (
             <p style={{ color: 'var(--text-dim)' }}>{t('No custom format matches this name.')}</p>
           ) : (

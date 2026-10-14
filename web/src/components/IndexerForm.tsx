@@ -5,7 +5,7 @@ import SitePicker from './SitePicker'
 import { useToast } from './Toast'
 import { FieldError, FormProblem, useValidation } from '../useValidation'
 import { apiKey as apiKeyCheck, firstError, maxLength, required, url as urlCheck } from '../validate'
-import { t, tx } from '../i18n'
+import { t, tx, st } from '../i18n'
 import TipLabel from './TipLabel'
 
 // Usenet indexers that are open to new members, offered as a quick fill for the
@@ -192,7 +192,7 @@ export default function IndexerForm({ onAdded, torrentDisabled }: { onAdded: (i:
       )}
       {test.forKey === detailsKey && test.state === 'fail' && (
         <div className="test-result fail">
-          <Icon name="warning" size={15} /> {test.message}
+          <Icon name="warning" size={15} /> {st(test.message)}
         </div>
       )}
         </>

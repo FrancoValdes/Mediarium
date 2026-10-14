@@ -34,10 +34,15 @@ export function draftProblem(d: Pick<ReportDraft, 'title' | 'message'>): '' | 't
   return ''
 }
 
+// Put in the Support report box instead of the report itself.
+export const SUPPORT_NOTE = 'Paste the support report here. Mediarium copied it for you.'
+
 // A link that opens a new GitHub issue with the form already filled in. The
-// support report goes in only when it fits; reportFits says whether it did, so
-// the dialog can offer to copy it instead.
-export function githubIssueURL(d: ReportDraft): { url: string; reportFits: boolean } {
+// support report never goes in the link: a link stays in the browser history
+// and in the logs of every proxy on the way, even when the issue is never
+// sent. The dialog copies the report instead, and the link only leaves a note
+// in its box.
+export function githubIssueURL(d: ReportDraft): { url: string } {
   const params = new URLSearchParams()
   const title = d.title.trim()
   const message = d.message.trim()
@@ -50,15 +55,10 @@ export function githubIssueURL(d: ReportDraft): { url: string; reportFits: boole
     params.set('title', title)
     if (d.version) params.set('version', d.version)
     params.set('what-happened', message)
+    if ((d.report ?? '').trim()) params.set('support', SUPPORT_NOTE)
   }
-  const base = `${ISSUES}?${params.toString()}`
-  const report = d.kind === 'problem' ? (d.report ?? '').trim() : ''
-  if (!report) return { url: base.length > GITHUB_URL_MAX ? shorten(d) : base, reportFits: true }
-  const withReport = new URLSearchParams(params)
-  withReport.set('support', report)
-  const full = `${ISSUES}?${withReport.toString()}`
-  if (full.length <= GITHUB_URL_MAX) return { url: full, reportFits: true }
-  return { url: base.length > GITHUB_URL_MAX ? shorten(d) : base, reportFits: false }
+  const url = `${ISSUES}?${params.toString()}`
+  return { url: url.length > GITHUB_URL_MAX ? shorten(d) : url }
 }
 
 // A very long message doesn't fit in a link either: cut it and say so.
@@ -67,7 +67,7 @@ function shorten(d: ReportDraft): string {
   let message = d.message.trim()
   for (;;) {
     message = message.slice(0, Math.floor(message.length * 0.8))
-    const { url } = githubIssueURL({ ...d, message: message + note, report: undefined })
+    const { url } = githubIssueURL({ ...d, message: message + note })
     if (url.length <= GITHUB_URL_MAX || message.length < 100) return url
   }
 }

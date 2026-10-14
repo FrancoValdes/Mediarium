@@ -70,11 +70,30 @@ func (s *Server) defaultProfileID() int64 {
 	return id
 }
 
+// defaultTVProfileID returns the profile shows with none of their own use, or
+// 0 when none is set (shows then use the same default as movies).
+func (s *Server) defaultTVProfileID() int64 {
+	v, _ := s.Settings.Get(settings.KeyDefaultTVProfileID)
+	id, _ := strconv.ParseInt(v, 10, 64)
+	return id
+}
+
+// defaultTVProfileOrDefault is the profile a show with none of its own uses:
+// the default for shows when one is set, else the default for everything.
+func (s *Server) defaultTVProfileOrDefault() int64 {
+	if id := s.defaultTVProfileID(); id != 0 {
+		return id
+	}
+	return s.defaultProfileID()
+}
+
 // profileSet is every stored profile plus the default, loaded once per
 // automation run so each item can be judged against its own profile.
 type profileSet struct {
 	byID map[int64]quality.Profile
 	def  quality.Profile
+	// defTV is the default for shows; nil means shows use def.
+	defTV *quality.Profile
 	// language is the preferred audio language, given to every profile
 	// resolve returns.
 	language string
@@ -102,15 +121,31 @@ func (s *Server) loadProfiles() (profileSet, error) {
 	} else if len(list) > 0 {
 		ps.def = list[0]
 	}
+	if p, ok := ps.byID[s.defaultTVProfileID()]; ok {
+		ps.defTV = &p
+	}
 	return ps, nil
 }
 
-// resolve returns the profile for an item; 0 or an unknown id means default.
-// Its fallback profiles are filled in (FallbackProfiles), in order.
+// resolve returns the profile for a movie; 0 or an unknown id means the
+// default. Its fallback profiles are filled in (FallbackProfiles), in order.
 func (ps profileSet) resolve(id int64) quality.Profile {
+	return ps.resolveWith(id, ps.def)
+}
+
+// resolveTV is resolve for a show: 0 or an unknown id means the default for
+// shows when one is set, else the same default movies use.
+func (ps profileSet) resolveTV(id int64) quality.Profile {
+	if ps.defTV != nil {
+		return ps.resolveWith(id, *ps.defTV)
+	}
+	return ps.resolveWith(id, ps.def)
+}
+
+func (ps profileSet) resolveWith(id int64, def quality.Profile) quality.Profile {
 	p, ok := ps.byID[id]
 	if !ok {
-		p = ps.def
+		p = def
 	}
 	p.FallbackProfiles = nil
 	p.Language = ps.language
@@ -166,6 +201,8 @@ type profileListPayload struct {
 	Profiles  []profilePayload `json:"profiles"`
 	Tiers     []string         `json:"tiers"`
 	DefaultID int64            `json:"defaultId"`
+	// DefaultTVID is the default for shows; 0 = shows use DefaultID.
+	DefaultTVID int64 `json:"defaultTvId"`
 }
 
 func toProfilePayload(p quality.Profile, inUse int) profilePayload {
@@ -271,7 +308,7 @@ func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := profileListPayload{Profiles: []profilePayload{}, Tiers: []string{}, DefaultID: s.defaultProfileID()}
+	out := profileListPayload{Profiles: []profilePayload{}, Tiers: []string{}, DefaultID: s.defaultProfileID(), DefaultTVID: s.defaultTVProfileID()}
 	for _, p := range list {
 		out.Profiles = append(out.Profiles, toProfilePayload(p, usage[p.ID]))
 	}
@@ -362,6 +399,10 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "That isn't a valid profile ID.")
+		return
+	}
+	if id == s.defaultTVProfileID() {
+		writeError(w, http.StatusConflict, "That profile is the default for TV. Pick another default for TV first.")
 		return
 	}
 	if err := s.QualityRepo.Delete(id, s.defaultProfileID()); err != nil {
@@ -490,7 +531,7 @@ func (s *Server) seriesNeedsUpgradeSearch(id, profileID int64) bool {
 	if err != nil {
 		return false
 	}
-	p := profiles.resolve(profileID)
+	p := profiles.resolveTV(profileID)
 	below := false
 	for _, ep := range eps {
 		if ep.Status == library.StatusDownloaded && tierKnown(ep.Quality) && outgrown(p, quality.Tier(ep.Quality)) {

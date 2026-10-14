@@ -13,7 +13,7 @@ import ViewerNotice from './ViewerNotice'
 import PosterCard, { PosterFallback, type CardRibbon } from './PosterCard'
 import { describeState } from './state'
 import { useToast } from './Toast'
-import { t } from '../i18n'
+import { t, st } from '../i18n'
 
 // The books part of Discover: what people are reading on Open Library, a few
 // popular genres, or (with a filter picked) one list of everything matching.
@@ -277,7 +277,7 @@ function AddDialog({ target, onClose, prefer }: { target: BookFound; onClose: ()
         searchNow: true,
       })
       if (isRequested(b)) {
-        toast.success(b.message)
+        toast.success(st(b.message))
         onClose()
         return
       }

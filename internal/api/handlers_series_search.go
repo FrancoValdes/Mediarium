@@ -184,9 +184,13 @@ func (s *Server) handleSeriesSearch(w http.ResponseWriter, r *http.Request) {
 // coversTarget reports whether a parsed release satisfies a season/episode
 // request: for an episode, that episode itself, a multi-episode release
 // containing it, or a whole-season pack; for a season, only a pack. A
-// special (season 0) needs a release that is that special.
+// special (season 0) needs a release that is that special. A pack of
+// several seasons (S01-S03) is never taken for one season.
 func coversTarget(rel parser.Release, season, episode int) bool {
 	if rel.Season != season || (season == 0 && (!rel.Special || episode <= 0 || len(rel.Episodes) == 0)) {
+		return false
+	}
+	if rel.SeasonTo > rel.Season {
 		return false
 	}
 	isPack := len(rel.Episodes) == 0

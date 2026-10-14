@@ -208,6 +208,29 @@ func TestOnlyWantedFilesAreDownloaded(t *testing.T) {
 	}
 }
 
+// TestADiskThatRefusesDataIsNotAStall proves a torrent whose data cannot be
+// written ends with ErrWriteFailed straight away, not with ErrStalled (which
+// would blocklist a good release) hours later.
+func TestADiskThatRefusesDataIsNotAStall(t *testing.T) {
+	sw := newSwarm(t, swarmFiles(), 0)
+	_, tr, dir := sw.leech(t, false)
+	// A file where the torrent's folder has to go: every write fails.
+	if err := os.WriteFile(filepath.Join(dir, sw.name), []byte("in the way"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctl := mediarium.NewControl(tr)
+	sw.connect(t, tr)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	err := ctl.Download(ctx, time.Hour, nil)
+	if !errors.Is(err, mediarium.ErrWriteFailed) {
+		t.Fatalf("err = %v, want ErrWriteFailed", err)
+	}
+	if errors.Is(err, mediarium.ErrStalled) {
+		t.Fatal("a write failure must not look like a stalled torrent")
+	}
+}
+
 func TestLeavingEveryFileOutIsRefused(t *testing.T) {
 	sw := newSwarm(t, swarmFiles(), 0)
 	_, tr, _ := sw.leech(t, false)

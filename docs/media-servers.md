@@ -200,7 +200,8 @@ If your internet is slow, a download can make the picture stutter. On the media 
 - Every half minute Mediarium asks each Plex, Jellyfin and Emby server whether anyone is watching. A paused stream counts as watching. Silo, Audiobookshelf, Kavita and webhook servers aren't asked.
 - While someone is watching, running downloads and downloads waiting in line are paused. Downloads that are only being unpacked and imported are left to finish: they use no internet.
 - When nobody has been watching for two checks in a row (about a minute), the downloads Mediarium paused are put back. It only resumes what it paused itself: one you paused by hand stays paused. The list is kept in the settings, so a restart can't leave downloads paused for good.
-- If no server can be asked (all are down), nothing changes. Switching the setting off gives back what it was holding.
+- If no server can be asked for a short while (all are down), nothing changes. Switching the setting off gives back what it was holding.
+- When no media server can be asked any more (it is down, or its address changed) while downloads are held, they carry on after 10 minutes of trying; when every Plex, Jellyfin and Emby server is removed or switched off, they carry on at the next check. Downloads are never left paused because the server that said someone was watching went away.
 - It is off by default. The page shows how many people were watching at the last check. Scripts: `GET` and `PUT /api/downloads/stream-pause` with `{"enabled": true}`.
 
 ## NFO and artwork files

@@ -286,6 +286,47 @@ func TestTVPackMissingAnEpisodeReturnsItToMissing(t *testing.T) {
 	}
 }
 
+// TestTVPackFilesNeverOverwriteEachOther: two files of one pack that name the
+// same episode get the same destination. Even with "overwrite", the second
+// one must not replace the first one this very run imported.
+func TestTVPackFilesNeverOverwriteEachOther(t *testing.T) {
+	first := []byte("episode one, the copy imported first " + strings.Repeat("a", 400))
+	second := []byte("episode one again, a second copy in the pack " + strings.Repeat("b", 400))
+	e2 := []byte("episode two " + strings.Repeat("c", 400))
+	env := newTVEnv(t, map[string]nntpArticle{
+		"a@example": {fileName: "Fixture.Show.S01E01.1080p.WEB-DL.x264-GRP.mkv", content: first},
+		"b@example": {fileName: "Fixture.Show.S01E01.720p.WEB-DL.x264-GRP.mkv", content: second},
+		"c@example": {fileName: "Fixture.Show.S01E02.1080p.WEB-DL.x264-GRP.mkv", content: e2},
+	})
+	postJSONMethod[map[string]any](t, env.client, http.MethodPut, env.httpSrv.URL+"/api/settings", map[string]any{
+		"importConflictPolicy": "overwrite",
+	}, http.StatusOK)
+
+	env.grab(t, "Fixture.Show.S01.1080p.WEB-DL.x264-GRP")
+	if status, errMsg := env.waitForTerminal(t); status != "completed" {
+		t.Fatalf("expected the pack to complete, got status=%q error=%q", status, errMsg)
+	}
+	ep, err := env.server.MovieRepo.GetEpisode(env.seriesID, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(ep.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(first) && string(got) != string(second) {
+		t.Fatal("episode one holds neither copy")
+	}
+	// Whichever copy went in first stays: the file was written once.
+	entries, _ := os.ReadDir(filepath.Join(env.tvRoot, "Fixture Show (2011)", "Season 01"))
+	if len(entries) != 2 {
+		t.Fatalf("expected one file per episode, got %d", len(entries))
+	}
+	if string(got) != string(first) {
+		t.Fatalf("the second copy of episode one replaced the first (files are imported in name order)")
+	}
+}
+
 // A release with no recognisable season and no hint can't be routed.
 func TestTVGrabWithoutSeasonIsRejected(t *testing.T) {
 	env := newTVEnv(t, map[string]nntpArticle{"x@example": {fileName: "x.mkv", content: []byte("x")}})

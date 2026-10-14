@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/rdborg/mediarium/internal/speed"
 )
 
 func TestSafeName(t *testing.T) {
@@ -90,6 +93,52 @@ func TestFetchCarriesOn(t *testing.T) {
 	// A finished file isn't fetched again.
 	if err := Fetch(context.Background(), srv.Client(), File{Name: f.Name, Size: f.Size, URL: "http://127.0.0.1:1/gone"}, dir, func(int64) {}); err != nil {
 		t.Fatalf("a complete file was downloaded again: %v", err)
+	}
+}
+
+// A service that sends far more than the file's size is stopped one byte
+// past it, and the part is thrown away, so it can't fill the disk.
+func TestFetchStopsAtTheFileSize(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chunk := []byte(strings.Repeat("x", 32<<10))
+		for i := 0; i < 1024; i++ { // 32 MB, unless the reader stops early
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	f := File{Name: "big.mkv", Size: 1000, URL: srv.URL}
+	err := Fetch(context.Background(), srv.Client(), f, dir, func(int64) {})
+	if err == nil || !strings.Contains(err.Error(), "more than the file's size") {
+		t.Fatalf("expected a refusal, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "big.mkv.part")); err == nil {
+		t.Fatal("the oversized part should be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "big.mkv")); err == nil {
+		t.Fatal("nothing should be kept under the file's name")
+	}
+}
+
+// The download speed limit covers files fetched from a debrid service.
+func TestFetchKeepsToTheSpeedLimit(t *testing.T) {
+	content := strings.Repeat("x", 300_000)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, content)
+	}))
+	defer srv.Close()
+	speed.Set(200_000) // bytes per second; the first 4 MB burst is used up below
+	defer speed.Set(0)
+	// Use up the burst so the limit shows at once.
+	_ = speed.Wait(context.Background(), 4<<20)
+	start := time.Now()
+	if err := Fetch(context.Background(), srv.Client(), File{Name: "a.mkv", Size: int64(len(content)), URL: srv.URL}, t.TempDir(), func(int64) {}); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took < time.Second {
+		t.Fatalf("300 kB at 200 kB/s took %v: the limit was ignored", took)
 	}
 }
 

@@ -106,9 +106,21 @@ func TestUsageStatsAreSentOnlyAfterYes(t *testing.T) {
 	if reset.Preview.ID == sent.ID {
 		t.Fatal("Reset my ID kept the same ID")
 	}
+	// A new ID still waits for the next day.
+	server.TestSendStats()
+	if recv.count() != 1 {
+		t.Fatalf("Reset my ID sent a second message the same day (%d)", recv.count())
+	}
 	putJSON(t, client, base+"/api/usage-stats", map[string]string{"choice": "no"}, http.StatusOK)
 	if got := getJSON[statsState](t, client, base+"/api/usage-stats"); got.HasID || got.Choice != "no" {
 		t.Fatalf("No must forget the ID: %+v", got)
+	}
+	// Nor does No and then Yes again.
+	putJSON(t, client, base+"/api/usage-stats", map[string]string{"choice": "yes"}, http.StatusOK)
+	server.TestSendStats()
+	time.Sleep(200 * time.Millisecond)
+	if recv.count() != 1 {
+		t.Fatalf("No and Yes again sent a second message the same day (%d)", recv.count())
 	}
 }
 

@@ -132,6 +132,21 @@ func (s *Server) seriesRootFor(sr library.Series) string {
 	return chosenFolder(sr.RootPath, s.tvFolders(), s.tvRoot())
 }
 
+// fileRoot is the library folder an existing file is in. A title's folder can
+// be changed after its files arrived (only new files go to the new one), so
+// work on a file it already has uses the folder that holds it: preferred (the
+// title's folder) when it does, else whichever video folder does, else
+// preferred.
+func (s *Server) fileRoot(preferred, file string) string {
+	if preferred != "" && rootContaining([]string{preferred}, file) != "" {
+		return preferred
+	}
+	if r := rootContaining(s.videoRoots(), file); r != "" {
+		return r
+	}
+	return preferred
+}
+
 // videoRoots are the movie and TV library folders, extra and copies folders included.
 func (s *Server) videoRoots() []string {
 	out := append(s.movieFolders(), s.tvFolders()...)

@@ -8,6 +8,116 @@ under [Unreleased]. How releases are cut: [docs/RELEASING.md](docs/RELEASING.md)
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-14
+
+### Added
+- **The settings file now holds your lists too** (asked for by jdamner on GitHub, #43): indexers, Usenet servers, media servers and quality profiles can be in the YAML file, each item matched by its name. A missing one is added, a different one is changed, and one that is not in the file is left alone. `config export` writes them, `config diff` and `config apply` use them. Passwords and keys stay `${NAME}` from the environment.
+- **Speed schedule** (inspired by TryToTilt's fork on GitHub): Settings > Downloading > Download rules has a new box where you add lines of "on these days, from this hour to that hour, limit to this speed". The first line that fits the moment sets the limit, so downloads can be slow on weekday evenings and unlimited at night.
+- **Weekly summary** (an idea from TryToTilt's fork on GitHub): once a week Mediarium can send one short message with what arrived, what failed and what is still missing, to the notification targets that have **Weekly summary** ticked. It is off until you pick a day under Settings > Notifications, and **Send one now** shows what it looks like.
+- **"Start newer releases first"** (asked for by 12nick12 on GitHub, #49): a switch under Downloads at the same time. With it on, among the downloads Mediarium finds by itself, the newest movie or episode starts first. Downloads you add by hand, or move to the front, still go first.
+- **Run the books that were not found again** (asked for by thegliffy on GitHub, #42): after a books import, a button on the import card looks again only at the books that were not found, without reading the folders again, for when Open Library or Audible did not answer the first time.
+- **Password-protected ZIP downloads** (a follow-up to the password support for RAR and 7z, asked for by 12nick12 on GitHub, #44): a ZIP with a password in the NZB or after the release name (`{{password}}`) is now opened with the same password. Without the password, or with a wrong one, the download fails as "password protected" like before.
+- **Page-turn animation in the ebook reader** (an idea from TryToTilt's fork on GitHub): under **Aa** you can choose how a page turn looks (slide, fade or none) and how fast it is. It is off by itself when your device is set to reduce motion.
+- **Backdrops view in the calendar** (an idea from TryToTilt's fork on GitHub): next to Posters, each release can be a wide still with the title's logo over it. The pictures are fetched from TMDB in the background, a few at a time, and a title shows its poster until its picture is there.
+- **Quiet for a while** (an idea from TryToTilt's fork on GitHub): three buttons under the automation numbers (1 hour, 4 hours, until morning) hold the heavy background work, the searches, refreshes, subtitle sweep and picture fetching, so a small server isn't busy while something plays. Downloads, imports and backups carry on.
+- **Add-ons**: Settings > Connections > Add-ons keeps links to other programs you run next to Mediarium (a channel guide, a dashboard). They show in the players menu and open in a new tab or inside Mediarium. Mediarium doesn't run them or load their code; give one a read-only API key if it should read your library.
+- **A better installed app and tablet layouts**: the app has shortcuts (long-press the icon for Activity, Calendar, Library and Discover), a proper icon for round and squircle masks, and a "Mediarium can't be reached" page (in your language) with a Try again button when the server is down, instead of the browser's own error. Tablets get a narrower menu in landscape, a wider menu drawer in portrait and bigger touch targets; foldables open flat keep clear of the hinge. See [Using it as an app](docs/INSTALL.md#using-it-as-an-app-on-a-phone-tablet-or-computer).
+- **Comics**: `.cbz`, `.cbr` and `.cb7` files go in the ebooks folder like any book, are named from their `ComicInfo.xml` (series, number, writer, year), open in the reader page by page (one page or two, fit to the page or the width, left to right or right to left for manga, with the page-turn animation) and keep your place. See [Comics](docs/books.md#comics).
+- **More screen languages**: Italian, Dutch, Polish, Russian and Ukrainian, next to Spanish, German, French and the two Portuguese. Polish, Russian and Ukrainian get their own plural forms (2 to 4 differs from 5 or more).
+- **Messages from the server in your language**: error messages, the notes in the Activity list and the results of checks now appear in the screen language (about a thousand sentences, in all eleven languages), where before they were always English. A sentence Mediarium has no translation for is shown as it came.
+- **Send indexer traffic through the VPN** (asked for and written by spamoom on GitHub, #63 and pull request #62): a new switch under the kill switch in Settings > Downloading > VPN and proxy. Searches, RSS, release downloads, IRC announces and debrid then go through the built-in VPN, and wait while it isn't connected instead of going without it. Indexers on your own network still connect directly. Off by default. See `docs/vpn.md`.
+- **Separate default quality profile for TV** (asked for by anguyen1776 on GitHub, #60, and a Reddit user): under Settings > Library > Quality, **Make default for TV** gives shows a default of their own while movies keep theirs. Nothing changes until you set one. The library import and the migration lists also tag each title as Movie or TV, and each season on a show's page has a **Find missing** button that searches only that season's missing episodes.
+- **Find it myself for books** (asked for by varnakube on GitHub, #64): each book a books import could not find now has a button to search Open Library by hand and pick the right one, with an optional **Rename the file to match**.
+- **Replace with a smaller version** (asked about by mirisbowring on GitHub, discussion #65): if you moved a movie to a lower quality profile (4K to 1080p, say), press it on the movie's page, or use **Replace with smaller** in Library > Select. Mediarium finds a smaller release your profile accepts and only removes the big file once the new one is in your library.
+
+### Fixed
+- **Indexers saying "too many requests"** (reported by anguyen1776 on GitHub, #61): the automatic search for missing movies and episodes asked every indexer for every title one right after the other, hundreds of requests in a minute with a big library, which Newznab indexers answer with "too many requests" and a pause. Searches on one indexer are now spaced at least a second and a half apart (six seconds for an indexer that has already complained), and a search by hand still starts at once when the indexer hasn't been asked just before. A big library takes longer to go through, never gets the indexer paused.
+- Opening Mediarium by the server's public IP address now always asks for the setup code before the first account is made, also when Docker or Podman hand the visit on from a private address.
+- Deleting an account, switching off someone's two-step sign-in, and making an e-reader password, Kobo address or calendar feed now need you signed in on the web page; an API key can't do them.
+- Wrong tries at your own password when adding a passkey, linking single sign-on or changing two-step sign-in now count per account as well as per address.
+- With password sign-in turned off and directory sign-in on, the sign-in form no longer shows which user names have an account here.
+- Single sign-on only links a first sign-in by email to an address an administrator set on the account, never one a person typed on their own profile. If you use this, save those addresses again under Edit.
+- A new password set by an administrator now also revokes that person's API keys, e-reader password, Kobo address and calendar feed.
+- Changing the Not interested list now needs the right to add that kind of title yourself.
+- `reset-password` accepts the user name in any letter case and works with a piped-in password.
+- Many identical requests sent at once by one person now make just one request, and can't get past the request limit.
+- The torrent engine's own log lines are now cleaned of passkeys and other secrets like the rest of the log.
+- Cloud backup settings no longer reuse the saved key, password or passphrase when you point them at another storage address or bucket; you type them again.
+- An unlocked copy of a passphrase-protected backup left behind by a crash during a restore is now removed at start-up.
+- The encryption key file is now written safely on first start, so a crash can't leave half a key.
+- Picking a release no longer reads the whole download history while other grabs wait.
+- Searching Activity for text with % or _ now finds exactly that text.
+- One person can no longer use up the problem-report limit for everyone; administrators can always send theirs.
+- Reset my ID no longer sends a second usage message on the same day.
+- Push notifications no longer cut a letter in half, and very long titles are shortened.
+- Indexers: a broken or hostile site definition can no longer crash Mediarium or tie up a search for minutes. Rows, templates, regular expressions and nested pages are now kept within limits, and a crash in one indexer's search only costs that indexer's results.
+- Indexers: when searches for one indexer are already lined up for more than 10 minutes, a new search skips that indexer instead of waiting for hours, and cancelled searches no longer hold back the ones after them.
+- Indexers: a site from the definition list only gets your login or key at the address you chose (or its own domain), not at other addresses the definition lists. Links and redirects from a site on the internet can't point Mediarium at your own machine or home network.
+- Indexers: very large Newznab/Torznab replies are read item by item and stop at 5,000 releases. Dates far in the future and impossible sizes are ignored, and a site reply over 16 MB now shows an error instead of quietly giving fewer results.
+- Torrents: a magnet link nobody shares now gives up after 10 minutes and the next release is tried, instead of holding a download place for good.
+- Torrents: a full disk or a VPN change no longer gets a good release blocklisted as "no one is sharing it"; the download stops at once with the real reason.
+- Usenet: an indexer's "request limit reached" answer, or a login or maintenance page, no longer blocklists the release you grabbed.
+- Usenet: with a single Usenet server, one connection that drops no longer fails the whole download while the other connections work.
+- Usenet: an article that arrives damaged is fetched from your next server instead of being saved as it is.
+- Activity: pausing or stopping a download that had just finished no longer turns it into a paused or stopped one that downloads again.
+- Activity: Blocklist & search again on a paused download, or one waiting for your decision, now frees the title and deletes the partial files.
+- Activity: choosing to keep the existing file on a conflict leaves the movie as downloaded instead of missing (which made it download again and again).
+- Library: a download never replaces a file that belongs to another movie or episode (such as a remake with the same title and year), and two files of one season pack can't overwrite each other.
+- Media servers: downloads paused while someone was watching now carry on if the media server goes away or is removed.
+- Other apps: searches sent by Radarr/Sonarr/Lidarr-style apps run one after another, so a long list no longer holds up your own searches; one command may name at most 200 titles.
+- Downloads: with "start newer releases first", season packs, albums and books take their turn, and a resumed download goes back to the front of the line.
+- Downloads: files brought home from Real-Debrid or TorBox keep to the speed limit; a brief hiccup talking to a download client or debrid service no longer fails the download.
+- Downloads: the speed schedule applies within a minute of the hour, and safe mode still starts a download you started yourself when the download hours begin.
+- Books: automatic retries after bad releases have the same daily limit as movies and shows.
+- Activity: Retry on a failed download that keeps its files no longer loses them if Mediarium restarts while the retry waits in line.
+- After you changed the folder of a movie or show, deleting, removing, renaming or rescanning the files it already had now works on the folder they are in, instead of being refused or proposing a move to the new folder.
+- Renaming files to match the naming setting no longer leaves the library pointing at the old name when a subtitle or other side file can't be renamed: what was renamed is put back.
+- Rescan files no longer marks a file missing when the disk gives an error or when two files with the same name and different extensions are there.
+- With the proxy in Settings switched on, links from indexers can no longer reach the cloud metadata address through the proxy; pages FlareSolverr opens are checked the same way.
+- A saved token or password is no longer kept when a notification, indexer or media server address changes from https to http, when an ntfy server is emptied (it then falls back to ntfy.sh), or when an email server's encryption is switched off.
+- More ways of writing a local or metadata address inside an IPv6 address (local-use NAT64, Teredo) are now refused.
+- Debrid downloads stop as soon as the service sends more than the file's size.
+- An add-on address with spaces, quotes or semicolons is refused.
+- Settings file: a Usenet server (or indexer or media server) added from the file is now switched on unless the file says `enabled: false`.
+- Settings file: quality profiles name their fallback profiles and custom formats, so a file works on another install.
+- Settings file: a typo under an indexer's `settings:` is now reported, and values Mediarium can't change on an existing indexer no longer show as a change on every run.
+- Pressing Send one now for the weekly summary no longer cancels that week's scheduled summary.
+- Security: a .7z download can no longer hide a link or an oversized file after the first 64 KB of its file list, or behind a file name with a line break in it. Such archives are refused before anything is unpacked.
+- Unpacking a download again no longer damages a file that was already imported into the library as a hard link.
+- Comics: .cbr and .cb7 comics now open in the reader and get their cover. Mediarium goes by what the file really is, so a .cbr that is really a ZIP works too.
+- Comics: unpacked comics now take at most 2 GB of cache in total (the ones opened longest ago go first), and pages load with less memory.
+- File names: a title with no name now gets a `tmdb-<id>` folder and file instead of an empty folder and a hidden file, and names no longer start with a dot (which hid them).
+- File names: switching the naming style to Custom now checks the custom format you saved earlier, and an episode format must include {Season} and {Episode}.
+- Imports: two imports to the same place at the same time no longer delete each other's half-copied file, and a broken link where the file should go is now handled by the "if a file already exists" setting.
+- Importing a books folder laid out the usual comic way (one folder per series run, one file per issue) now adds every issue, with the series and issue number read from the file name. Before, only one issue per folder was added.
+- An odd year in a comic's ComicInfo.xml (like "2021-05") no longer throws away the rest of its details.
+- Lining up a subtitle with another one no longer runs for minutes on very long or dense subtitle files. It stops with a message instead, and stops when you leave the page.
+- Covers are resized with less memory, so very large cover pictures can't use up the server's memory.
+- A library scan now follows symlinked folders, and a library folder that is itself a symlink.
+- Moving over from Radarr, Sonarr, Medusa or SickChill no longer links a whole library folder's files to one title when the other app reports a library folder as a title's folder. That title is skipped with a reason.
+- Moving over from other apps checks indexers and Usenet servers the same way the settings pages do, skips one SickChill show that can't be read instead of failing the whole import, and refuses a redirect that switches between http and https.
+- A TMDB show that lists the same season twice no longer gets its episodes twice.
+- TV releases named "Show S01 E01" or "Show.S1.E1" are now read as one episode instead of a whole season, so they no longer satisfy a season search or fail the size check as a "pack".
+- Packs of several seasons ("S01-S03", "S01-03") are no longer grabbed as if they were season 1 only.
+- Release names like "S01E01.E02", "1x01-1x03" and year-numbered seasons ("S2024E01") are now read correctly.
+- The release group is now read correctly when a posting tool added "-postbot", "-Obfuscated", "-xpost" and the like, or a site tag such as "[rarbg]" after it, so preferred and blocked group rules work on these releases.
+- A release name that starts with its season ("Season.2.Show.1080p") now gets its show title.
+- Book, comic and music covers now show when Mediarium runs under a URL base (a sub-path behind a reverse proxy).
+- The single sign-on button on the sign-in page works under a URL base.
+- Opening Mediarium no longer removes the service workers of other apps on the same domain, such as Jellyfin under its own path.
+- Reopening a comic and leaving without turning a page no longer resets your place to page 1.
+- Translations: Russian and Ukrainian no longer use the "this one" sentence for 21, 31, 101 and so on, French no longer uses it for 0, and more counts use the right plural form (in English too: "Search for 1 title now?").
+- A very long error from the server can no longer freeze the page for readers using a language other than English.
+- When your session ends (it expired, or you were signed out elsewhere), Mediarium shows the sign-in page and takes you back to the same page after you sign in.
+- In the book reader, the arrow keys on the place slider and Space on a button no longer turn the page as well.
+- The audiobook player keeps your place when you leave it with the Back link.
+- A settings switch no longer flips back after a save when you click it right after coming back to the tab.
+- A push notification without a link opens Mediarium, not the root of the domain, under a URL base. The error page's link does the same.
+- The "can't be reached" page is now in Italian, Dutch, Polish, Russian and Ukrainian too, and follows the language you chose in Mediarium.
+- Report on GitHub no longer puts the support report in the link. It is copied for you to paste instead.
+- Connecting Plex (or Jellyfin Quick Connect) stops waiting when the code runs out and shows the success message only once.
+- Signing out clears the music queue kept in the browser.
+
 ## [3.0.5] - 2026-10-13
 
 ### Fixed

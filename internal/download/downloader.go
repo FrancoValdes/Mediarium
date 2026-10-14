@@ -72,7 +72,47 @@ type outcome struct {
 const (
 	maxFetchAttempts = 2 // one retry on a fresh connection after a network error
 	forwardBuffer    = 512
+	// reconnectRounds is how many more times a connection to the last server
+	// tries an article after a connection problem, while other connections to
+	// that server still work, waiting reconnectWait, then twice that, and so on.
+	reconnectRounds = 5
 )
+
+// reconnectWait is the first wait before a failed connection to the last
+// server tries again. A variable so tests can shorten it.
+var reconnectWait = 2 * time.Second
+
+// tierHealth counts the connections (workers) to one server: how many are
+// still running, how many are waiting after a connection problem, and when the
+// server last delivered an article. When every running one is failing and the
+// server has delivered nothing lately, it is down for this download.
+type tierHealth struct {
+	running atomic.Int32
+	failing atomic.Int32
+	served  atomic.Int64 // UnixNano of the last article delivered; 0 = none yet
+}
+
+// servedRecently is how long an article delivered by a server counts as proof
+// that it works, for a connection that is the last one left at the end of a
+// download.
+const servedRecently = time.Minute
+
+func (h *tierHealth) delivered() { h.served.Store(time.Now().UnixNano()) }
+
+// wait marks one worker as failing for d, then not failing again. It reports
+// false, without waiting, when every running worker is failing and the server
+// delivered nothing in the last minute (or when ctx ends).
+func (h *tierHealth) wait(ctx context.Context, d time.Duration) bool {
+	failing := h.failing.Add(1)
+	defer h.failing.Add(-1)
+	if failing >= h.running.Load() {
+		last := h.served.Load()
+		if last == 0 || time.Since(time.Unix(0, last)) > servedRecently {
+			return false
+		}
+	}
+	return sleepCtx(ctx, d) == nil
+}
 
 // Download fetches every file in nzb from a single server and fails if any
 // article is missing. It is DownloadFromServers for the one-server case.
@@ -201,13 +241,16 @@ func DownloadFromServers(ctx context.Context, servers []ClientConfig, nzb *NZB, 
 			conns = 1
 		}
 		var tier sync.WaitGroup
+		health := &tierHealth{}
+		health.running.Add(int32(conns)) // all of them, before any can fail
+		lastServer := i == len(servers)-1
 		for w := 0; w < conns; w++ {
 			tier.Add(1)
 			all.Add(1)
 			go func(i int, cfg ClientConfig) {
 				defer tier.Done()
 				defer all.Done()
-				runWorker(ctx, st, nzb, cfg, chans[i], func(j job, o outcome) { forward(ctx, st, chans, i, j, o) })
+				runWorker(ctx, st, nzb, cfg, chans[i], func(j job, o outcome) { forward(ctx, st, chans, i, j, o) }, lastServer, health)
 			}(i, cfg)
 		}
 		go func(i int) {
@@ -375,7 +418,12 @@ func plainConnError(cfg ClientConfig, err error) error {
 // draining its queue, passing every job on to the next server. The connection
 // is closed, and its place given back, when the worker ends for any reason:
 // finished, failed, cancelled, or the server removed.
-func runWorker(ctx context.Context, st *dlState, nzb *NZB, cfg ClientConfig, jobs <-chan job, pass func(job, outcome)) {
+//
+// On the last server (nothing to pass a job on to) a connection that fails is
+// not the end of the download while other connections to that server work:
+// see tierHealth.
+func runWorker(ctx context.Context, st *dlState, nzb *NZB, cfg ClientConfig, jobs <-chan job, pass func(job, outcome), lastServer bool, health *tierHealth) {
+	defer health.running.Add(-1)
 	var (
 		conn          *NNTPConn
 		release       func()
@@ -429,6 +477,76 @@ func runWorker(ctx context.Context, st *dlState, nzb *NZB, cfg ClientConfig, job
 		}
 	}
 
+	// fetch tries one article, with one retry on a fresh connection after a
+	// network error. exit says the download was cancelled.
+	fetch := func(j job) (last outcome, exit bool) {
+		f := nzb.Files[j.fileIndex]
+		seg := f.Segments[j.segmentIndex]
+		for attempt := 0; attempt < maxFetchAttempts; attempt++ {
+			if conn == nil {
+				if err := connect(); err != nil {
+					if ctx.Err() != nil {
+						return last, true
+					}
+					dead = plainConnError(cfg, err)
+					last = outcome{kind: failConn, err: dead}
+					break
+				}
+			}
+			if len(f.Groups) > 0 && f.Groups[0] != selectedGroup {
+				// Some servers need a GROUP before BODY-by-id; a refusal is
+				// not fatal (many serve BODY by message-id regardless).
+				var ne *NNTPError
+				if err := conn.SelectGroup(f.Groups[0]); err == nil {
+					selectedGroup = f.Groups[0]
+				} else if !errors.As(err, &ne) {
+					closeConn()
+					last = outcome{kind: failConn, err: fmt.Errorf("select group %s: %w", f.Groups[0], err)}
+					continue
+				}
+			}
+
+			body, err := conn.FetchBody(seg.MessageID)
+			if err != nil {
+				var ne *NNTPError
+				if errors.As(err, &ne) && (ne.Code == 430 || ne.Code == 423) {
+					last = outcome{kind: failNotFound, err: &ReleaseError{fmt.Errorf("fetch segment %s: %w", seg.MessageID, err)}}
+					break
+				}
+				closeConn()
+				last = outcome{kind: failConn, err: fmt.Errorf("fetch segment %s: %w", seg.MessageID, err)}
+				continue
+			}
+			part, err := DecodeYenc(bytesReader(body))
+			if err != nil {
+				last = outcome{kind: failDecode, err: &ReleaseError{fmt.Errorf("decode segment %s: %w", seg.MessageID, err)}}
+				break
+			}
+			if part.Damaged() {
+				// Corrupted on the way: the next server may have a good copy.
+				last = outcome{kind: failDecode, err: &ReleaseError{fmt.Errorf("decode segment %s: its checksum doesn't match", seg.MessageID)}}
+				break
+			}
+			offset, err := segmentOffset(part, st.limits[j.fileIndex])
+			if err != nil {
+				last = outcome{kind: failDecode, err: &ReleaseError{fmt.Errorf("decode segment %s: %w", seg.MessageID, err)}}
+				break
+			}
+			if _, err := st.files[j.fileIndex].WriteAt(part.Data, offset); err != nil {
+				st.recordFatal(fmt.Errorf("write segment %s: %w", seg.MessageID, err))
+				last = outcome{kind: failNone}
+				break
+			}
+			st.resume.mark(j.fileIndex, j.segmentIndex, int64(len(part.Data)))
+			st.reportBytes(int64(len(part.Data)))
+			health.delivered()
+			_ = speed.Wait(ctx, len(part.Data)) // the speed limit, when one is set
+			last = outcome{kind: failNone}
+			break
+		}
+		return last, false
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -437,69 +555,27 @@ func runWorker(ctx context.Context, st *dlState, nzb *NZB, cfg ClientConfig, job
 			if !ok {
 				return
 			}
-			if dead != nil {
+			if dead != nil && !lastServer {
 				pass(j, outcome{kind: failConn, err: dead})
 				continue
 			}
-			f := nzb.Files[j.fileIndex]
-			seg := f.Segments[j.segmentIndex]
-
-			var last outcome
-			for attempt := 0; attempt < maxFetchAttempts; attempt++ {
-				if conn == nil {
-					if err := connect(); err != nil {
-						if ctx.Err() != nil {
-							return
-						}
-						dead = plainConnError(cfg, err)
-						last = outcome{kind: failConn, err: dead}
-						break
-					}
+			dead = nil
+			last, exit := fetch(j)
+			if exit {
+				return
+			}
+			// On the last server a connection problem would end the whole
+			// download. While other connections to it still work, this one
+			// waits a little and tries again: only when every connection is
+			// failing is the download given up.
+			for round := 0; last.kind == failConn && lastServer && !errors.Is(last.err, errServerRemoved) && round < reconnectRounds; round++ {
+				if !health.wait(ctx, reconnectWait<<round) {
+					break // every connection is failing, or cancelled
 				}
-				if len(f.Groups) > 0 && f.Groups[0] != selectedGroup {
-					// Some servers need a GROUP before BODY-by-id; a refusal is
-					// not fatal (many serve BODY by message-id regardless).
-					var ne *NNTPError
-					if err := conn.SelectGroup(f.Groups[0]); err == nil {
-						selectedGroup = f.Groups[0]
-					} else if !errors.As(err, &ne) {
-						closeConn()
-						last = outcome{kind: failConn, err: fmt.Errorf("select group %s: %w", f.Groups[0], err)}
-						continue
-					}
+				dead = nil
+				if last, exit = fetch(j); exit {
+					return
 				}
-
-				body, err := conn.FetchBody(seg.MessageID)
-				if err != nil {
-					var ne *NNTPError
-					if errors.As(err, &ne) && (ne.Code == 430 || ne.Code == 423) {
-						last = outcome{kind: failNotFound, err: &ReleaseError{fmt.Errorf("fetch segment %s: %w", seg.MessageID, err)}}
-						break
-					}
-					closeConn()
-					last = outcome{kind: failConn, err: fmt.Errorf("fetch segment %s: %w", seg.MessageID, err)}
-					continue
-				}
-				part, err := DecodeYenc(bytesReader(body))
-				if err != nil {
-					last = outcome{kind: failDecode, err: &ReleaseError{fmt.Errorf("decode segment %s: %w", seg.MessageID, err)}}
-					break
-				}
-				offset, err := segmentOffset(part, st.limits[j.fileIndex])
-				if err != nil {
-					last = outcome{kind: failDecode, err: &ReleaseError{fmt.Errorf("decode segment %s: %w", seg.MessageID, err)}}
-					break
-				}
-				if _, err := st.files[j.fileIndex].WriteAt(part.Data, offset); err != nil {
-					st.recordFatal(fmt.Errorf("write segment %s: %w", seg.MessageID, err))
-					last = outcome{kind: failNone}
-					break
-				}
-				st.resume.mark(j.fileIndex, j.segmentIndex, int64(len(part.Data)))
-				st.reportBytes(int64(len(part.Data)))
-				_ = speed.Wait(ctx, len(part.Data)) // the speed limit, when one is set
-				last = outcome{kind: failNone}
-				break
 			}
 			if last.kind != failNone {
 				pass(j, last)

@@ -1,6 +1,7 @@
 package indexers
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"errors"
@@ -182,7 +183,8 @@ func looksLikeWebPage(body []byte) bool {
 // repeats it, is hidden in any message returned.
 func parseNewznabFeed(body []byte, indexerName, apiKey string) ([]Result, error) {
 	var feed newznabRSS
-	if err := xml.Unmarshal(body, &feed); err != nil {
+	var err error
+	if feed.Channel, err = decodeNewznabFeed(body); err != nil {
 		// Newznab reports bad credentials and the like as a bare <error> root
 		// element instead of an RSS feed; surface its description.
 		var apiErr struct {
@@ -204,9 +206,6 @@ func parseNewznabFeed(body []byte, indexerName, apiKey string) ([]Result, error)
 	}
 
 	items := feed.Channel.Items
-	if len(items) > maxNewznabItems {
-		items = items[:maxNewznabItems]
-	}
 	results := make([]Result, 0, len(items))
 	for _, item := range items {
 		results = append(results, item.toResult(indexerName))
@@ -216,6 +215,84 @@ func parseNewznabFeed(body []byte, indexerName, apiKey string) ([]Result, error)
 
 // maxNewznabItems is how many releases of one reply are used.
 const maxNewznabItems = 5000
+
+// decodeNewznabFeed reads the channel of an RSS feed one item at a time and
+// stops after maxNewznabItems: a reply of nothing but empty items would
+// otherwise turn 16 MB of text into hundreds of MB of releases first.
+func decodeNewznabFeed(body []byte) (newznabChannel, error) {
+	var ch newznabChannel
+	dec := xml.NewDecoder(bytes.NewReader(body))
+	var root xml.StartElement
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return ch, err
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			root = se
+			break
+		}
+	}
+	if root.Name.Local != "rss" {
+		return ch, fmt.Errorf("expected element type <rss> but have <%s>", root.Name.Local)
+	}
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return ch, err
+		}
+		switch t := tok.(type) {
+		case xml.EndElement: // </rss>
+			return ch, nil
+		case xml.StartElement:
+			if t.Name.Local != "channel" {
+				if err := dec.Skip(); err != nil {
+					return ch, err
+				}
+				continue
+			}
+			full, err := decodeNewznabChannel(dec, &ch)
+			if err != nil || full {
+				return ch, err
+			}
+		}
+	}
+}
+
+// decodeNewznabChannel reads one <channel> into ch. full is true once
+// maxNewznabItems items have been read; the rest of the reply is not read.
+func decodeNewznabChannel(dec *xml.Decoder, ch *newznabChannel) (full bool, err error) {
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return false, err
+		}
+		switch t := tok.(type) {
+		case xml.EndElement: // </channel>
+			return false, nil
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "item":
+				var item newznabItem
+				if err := dec.DecodeElement(&item, &t); err != nil {
+					return false, err
+				}
+				ch.Items = append(ch.Items, item)
+				if len(ch.Items) >= maxNewznabItems {
+					return true, nil
+				}
+			case "error":
+				if err := dec.DecodeElement(&ch.Error, &t); err != nil {
+					return false, err
+				}
+			default:
+				if err := dec.Skip(); err != nil {
+					return false, err
+				}
+			}
+		}
+	}
+}
 
 // --- Newznab XML response shapes ---
 // https://newznab.readthedocs.io/en/latest/misc/api/
@@ -287,9 +364,7 @@ func (item newznabItem) toResult(indexerName string) Result {
 			r.SizeBytes = n
 		}
 	}
-	if r.SizeBytes < 0 {
-		r.SizeBytes = 0
-	}
+	r.SizeBytes = saneSize(r.SizeBytes)
 	r.Title = shortenText(strings.Join(strings.Fields(r.Title), " "), maxTitleBytes)
 	if catStr := item.attr("category"); catStr != "" {
 		if n, err := strconv.Atoi(catStr); err == nil {
@@ -298,19 +373,20 @@ func (item newznabItem) toResult(indexerName string) Result {
 	}
 	if seeders := item.attr("seeders"); seeders != "" {
 		if n, err := strconv.Atoi(seeders); err == nil && n > 0 {
-			r.Seeders = n
+			r.Seeders = int(sane(int64(n)))
 		}
 	}
 	r.InfoHash = strings.ToLower(item.attr("infohash"))
 	if peers := item.attr("peers"); peers != "" {
 		if n, err := strconv.Atoi(peers); err == nil && n > 0 {
-			r.Peers = n
+			r.Peers = int(sane(int64(n)))
 		}
 	}
 	if item.PubDate != "" {
 		for _, layout := range pubDateLayouts {
 			if t, err := time.Parse(layout, strings.TrimSpace(item.PubDate)); err == nil {
-				r.PublishDate = t
+				// a date years off (year 9999) is no date at all
+				r.PublishDate = saneDate(t)
 				break
 			}
 		}

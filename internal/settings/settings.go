@@ -69,14 +69,15 @@ const (
 	KeyDownloadClientLinkRoot     = "downloadclient.link_root"           // symlinks from the client may be imported only when they lead into this folder (Decypharr's mount); unset = no symlinks
 
 	// Automation (RSS sync, scheduled search, hunting).
-	KeyAutomationEnabled = "automation.enabled"         // "0" disables; anything else (including unset) enables
-	KeyQualityProfile    = "library.quality_profile"    // legacy: an old preset key (any-1080p, ultra-hd, any); only read once to pick the initial default profile
-	KeyQualityLanguage   = "quality.language"           // the audio language wanted, as a name like "English" (the default when unset); a release clearly in another language only is not picked automatically
-	KeyInfoLanguage      = "info.language"              // the language titles, plots, genres and posters are read in, as a TMDB tag like "de-DE" (en-US when unset); file and folder names always use the English title
-	KeySubtitleAddons    = "subtitles.addons"           // subtitle add-ons (JSON list of {id, name, url}; the url can hold the person's own key for a site, so it is stored encrypted)
-	KeyDefaultSources    = "library.default_sources"    // usenet | torrent | both (default both)
-	KeyDefaultProfileID  = "library.default_profile_id" // id of the stored quality profile used by items with no profile of their own
-	KeyPresetsVersion    = "library.presets_version"    // revision of the built-in quality presets last applied; unset means never (set at start, not user-editable)
+	KeyAutomationEnabled  = "automation.enabled"            // "0" disables; anything else (including unset) enables
+	KeyQualityProfile     = "library.quality_profile"       // legacy: an old preset key (any-1080p, ultra-hd, any); only read once to pick the initial default profile
+	KeyQualityLanguage    = "quality.language"              // the audio language wanted, as a name like "English" (the default when unset); a release clearly in another language only is not picked automatically
+	KeyInfoLanguage       = "info.language"                 // the language titles, plots, genres and posters are read in, as a TMDB tag like "de-DE" (en-US when unset); file and folder names always use the English title
+	KeySubtitleAddons     = "subtitles.addons"              // subtitle add-ons (JSON list of {id, name, url}; the url can hold the person's own key for a site, so it is stored encrypted)
+	KeyDefaultSources     = "library.default_sources"       // usenet | torrent | both (default both)
+	KeyDefaultProfileID   = "library.default_profile_id"    // id of the stored quality profile used by items with no profile of their own
+	KeyDefaultTVProfileID = "library.default_profile_id_tv" // id of the quality profile shows with none of their own use; unset = the same default as movies
+	KeyPresetsVersion     = "library.presets_version"       // revision of the built-in quality presets last applied; unset means never (set at start, not user-editable)
 
 	// Phase 4 — subtitles module.
 	KeySubtitlesEnabled      = "subtitles.enabled"                // the master switch: "1" turns downloading subtitles on; unset or "0" leaves it off (upgrades from a version that had subtitles in use are switched on once, by a migration)
@@ -114,6 +115,9 @@ const (
 	// VPN at all yet — an opt-in kill switch, not an opt-out one.
 	KeyVPNRequireForTorrents = "vpn.require_for_torrents"
 
+	// Indexer traffic through the VPN. Off when unset.
+	KeyVPNRouteIndexers = "vpn.route_indexers" // "1" sends searches, RSS, release downloads, IRC announces and debrid through the VPN, and they wait while it isn't up. Home-network addresses still connect directly
+
 	// A SOCKS5 or HTTP proxy for some of Mediarium's traffic. The address
 	// (with any user name and password) is stored encrypted; "" means no
 	// proxy. proxy_for lists what goes through it: torrents, indexers and/or
@@ -141,7 +145,10 @@ const (
 
 	// A download keeps its place until it has been repaired, unpacked and
 	// imported; the others wait in line.
-	KeyDownloadsConcurrent = "downloads.concurrent" // how many downloads run at the same time, Usenet and torrents together: 1 to 5; unset = 1
+	KeyAppLinks            = "apps.links"             // JSON list of add-ons: other programs next to Mediarium with a link to each (name, address, how it opens)
+	KeyQuietUntil          = "automation.quiet_until" // RFC 3339: until then the heavy background jobs do nothing ("Quiet for a while"); unset = not quiet
+	KeyNewestFirst         = "downloads.newest_first" // "1": among the downloads the automatic searches added, newer releases start first; unset = in the order they were added
+	KeyDownloadsConcurrent = "downloads.concurrent"   // how many downloads run at the same time, Usenet and torrents together: 1 to 5; unset = 1
 
 	// When the person accepted the legal notice (RFC 3339); unset until then.
 	KeyLegalAcknowledgedAt = "legal.acknowledged_at"
@@ -154,6 +161,7 @@ const (
 	// Clean-up of the downloads working folder and of old history.
 	KeySpeedLimitMB         = "downloads.speed_limit_mb"       // download speed limit in MB/s for Usenet and torrents together; unset or "0" = no limit
 	KeySpeedLimitHours      = "downloads.speed_limit_hours"    // when the speed limit applies, "8-23" (from 8:00 to 23:00, server time); unset = all day
+	KeySpeedSchedule        = "downloads.speed_schedule"       // JSON list of speed rules (days, hours, limit); the first one that fits the moment sets the limit
 	KeyDownloadHours        = "downloads.hours"                // when new downloads may start, "1-7" (from 1:00 to 7:00, server time); outside it they wait in line. Unset = any time
 	KeyStallHours           = "downloads.stall_hours"          // hours a torrent may get no data before it is given up on (blocklisted and searched for again): 1 to 72, "0" = never; unset = 2 for the built-in client and 6 for a download client
 	KeyMinFreeGB            = "downloads.min_free_gb"          // no new download starts while the downloads folder has less free space than this many GB; unset = 5, "0" = off
@@ -161,6 +169,9 @@ const (
 	KeyRejectExecutables    = "downloads.reject_executables"   // "0" lets releases that hold programs or scripts (.exe, .scr, .bat...) through; anything else (including unset) rejects them
 	KeySkipDuplicates       = "downloads.skip_duplicates"      // "1" does not download a release twice (same NZB, or same name and size, for the same title); unset or "0" leaves it off
 	KeyPrecheck             = "downloads.precheck"             // "1" asks the news servers whether a sample of an NZB's articles exist before downloading it, and gives up at once on a release the PAR2 files could not repair; unset or "0" leaves it off
+	KeyDigestDay            = "notify.digest_day"              // the day of the weekly summary, "0" (Sunday) to "6"; unset = no summary
+	KeyDigestHour           = "notify.digest_hour"             // the hour it is sent (server time), "0" to "23"; unset = 9
+	KeyDigestSent           = "notify.digest_sent"             // when the last one was sent, RFC 3339 (kept by Mediarium, not a setting to edit)
 	KeyNotifyQuietHours     = "notify.quiet_hours"             // hours when everyday messages wait, "23-7" (server time); unset = none. Problems are always sent at once
 	KeyBackupAuto           = "backup.auto"                    // "0" turns the nightly backup into /config/backups off; anything else (including unset) leaves it on
 	KeyBackupKeep           = "backup.keep"                    // how many saved backups are kept in /config/backups; unset = 7

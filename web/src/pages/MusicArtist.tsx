@@ -22,7 +22,7 @@ import { removeOption } from '../diskUsage'
 import ReleaseNotice from '../components/ReleaseNotice'
 import type { Unanswered } from '../releaseHint'
 import { useDocumentTitle } from '../documentTitle'
-import { plural, t } from '../i18n'
+import { plural, t, st } from '../i18n'
 import '../music.css'
 
 type Tab = 'tracks' | 'releases' | 'events' | 'files'
@@ -173,7 +173,7 @@ function ArtistPage() {
     setBusy(a.id)
     try {
       const r = await api.searchNowAlbum(a.id)
-      toast.info(`${a.title}: ${r.message}`)
+      toast.info(`${a.title}: ${st(r.message)}`)
       setTimeout(load, 600)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

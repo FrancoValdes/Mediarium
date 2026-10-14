@@ -42,7 +42,7 @@ func (s *Server) handleDeleteMovieFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "This movie has no file to delete.")
 		return
 	}
-	n, trashed, err := s.discardFileWithSidecars(s.movieRootFor(m), m.FilePath, movieLabel(m))
+	n, trashed, err := s.discardFileWithSidecars(s.fileRoot(s.movieRootFor(m), m.FilePath), m.FilePath, movieLabel(m))
 	if err != nil {
 		writeError(w, http.StatusConflict, "Couldn't delete the file: "+err.Error())
 		return
@@ -139,7 +139,7 @@ func (s *Server) deleteEpisodeFiles(series library.Series, eps []library.Episode
 	root := s.seriesRootFor(series)
 	label := seriesLabel(series)
 	for _, f := range files {
-		n, trashed, err := s.discardFileWithSidecars(root, f, label)
+		n, trashed, err := s.discardFileWithSidecars(s.fileRoot(root, f), f, label)
 		if err != nil {
 			return answer, fmt.Errorf("couldn't delete %s: %w", filepath.Base(f), err)
 		}

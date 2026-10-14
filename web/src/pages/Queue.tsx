@@ -23,7 +23,7 @@ import { useModules } from '../ModulesContext'
 import { bulkState, groupQueue, RUNNING, stateNote, statusLabel, stillWaiting } from '../queueView'
 import { useLive } from '../useLive'
 import { etaText, nextSample, type RateSample } from '../transferRate'
-import { locale, plural, t, tx } from '../i18n'
+import { locale, plural, t, tx, st } from '../i18n'
 import { useUrlState } from '../useUrlState'
 import '../activity.css'
 
@@ -963,7 +963,7 @@ export default function Queue() {
                     <span className={`tl-icon tone-${e.tone}`}>
                       <Icon name={e.icon} size={16} />
                     </span>
-                    <span className="tl-msg">{a.link ? <Link to={a.link}>{a.message}</Link> : a.message}</span>
+                    <span className="tl-msg">{a.link ? <Link to={a.link}>{st(a.message)}</Link> : a.message}</span>
                     <time className="tl-time" title={new Date(a.createdAt).toLocaleString(locale())}>
                       {timeAgo(a.createdAt)}
                     </time>

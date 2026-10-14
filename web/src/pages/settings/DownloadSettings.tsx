@@ -14,9 +14,10 @@ import TorrentSection from './TorrentSection'
 import TorrentOptionsPanel from '../../components/TorrentOptionsPanel'
 import { useLive } from '../../useLive'
 import { useConfirm } from '../../components/ConfirmProvider'
-import { plural, t, tx } from '../../i18n'
+import { plural, t, tx, st } from '../../i18n'
 import InfoTip from '../../components/InfoTip'
 import TipLabel from '../../components/TipLabel'
+import SpeedSchedule from '../../components/SpeedSchedule'
 
 // Downloading: Mediarium downloads for itself. Usenet needs only your
 // provider's news-server account; torrents need nothing at all. There is no
@@ -109,6 +110,12 @@ export default function DownloadRulesSettings() {
           <Icon name="download" size={14} /> <TipLabel help="downloads#speed-and-space">{t('Speed, hours and free space')}</TipLabel>
         </legend>
         <SpeedAndSpaceCard />
+      </fieldset>
+      <fieldset className="group folders">
+        <legend>
+          <Icon name="moon" size={14} /> <TipLabel help="downloads#speed-schedule">{t('Speed schedule')}</TipLabel>
+        </legend>
+        <SpeedSchedule />
       </fieldset>
       <fieldset className="group folders">
         <legend>
@@ -289,6 +296,12 @@ function DownloadsAtOnceCard() {
     (saved) => (saved === 1 ? t('Saved: one download at a time.') : t('Saved: up to {n} downloads at the same time.', { n: saved })),
     1,
   )
+  const newest = useAutosaveSetting<boolean>(
+    (s) => s.newestFirst ?? false,
+    (v) => ({ newestFirst: v }),
+    (v) => (v ? t('Saved: newer releases start first.') : t('Saved: downloads start in the order they were added.')),
+    false,
+  )
   return (
     <div>
       <p style={{ color: 'var(--text-dim)', marginTop: 0 }}>
@@ -301,6 +314,11 @@ function DownloadsAtOnceCard() {
           </button>
         ))}
       </div>
+      <label className="inline-field" style={{ marginTop: 12 }}>
+        <input type="checkbox" checked={newest.value} disabled={!newest.loaded || newest.saving} onChange={(e) => void newest.change(e.target.checked)} />
+        {t('Start newer releases first')}
+      </label>
+      <p className="field-hint">{t('Among the downloads Mediarium finds by itself, the movie that came out (or the episode that aired) most recently starts first. What you add by hand, or move to the front, still goes first.')}</p>
     </div>
   )
 }
@@ -435,7 +453,7 @@ function StalledTorrentCard() {
   const stall = useAutosaveSetting<number>(
     (s) => s.torrentStallHours ?? -1,
     (v) => ({ torrentStallHours: v }),
-    (v) => (v < 0 ? t('Saved: a torrent is given up on after the usual time.') : v === 0 ? t('Saved: Mediarium never gives up on a torrent that gets no data.') : t('Saved: a torrent that gets no data for {n} hours is given up on.', { n: v })),
+    (v) => (v < 0 ? t('Saved: a torrent is given up on after the usual time.') : v === 0 ? t('Saved: Mediarium never gives up on a torrent that gets no data.') : plural(v, 'Saved: a torrent that gets no data for {n} hour is given up on.', 'Saved: a torrent that gets no data for {n} hours is given up on.')),
     -1,
   )
   return (
@@ -448,7 +466,7 @@ function StalledTorrentCard() {
               <option value={-1}>{t('the usual time (2 hours, 6 with a download client)')}</option>
               {STALL_HOURS.map((n) => (
                 <option key={n} value={n}>
-                  {n === 0 ? t('never') : n === 1 ? t('1 hour') : t('{n} hours', { n })}
+                  {n === 0 ? t('never') : plural(n, '1 hour', '{n} hours')}
                 </option>
               ))}
             </select>
@@ -490,7 +508,7 @@ function ConnectionProbe({ server, onApply }: { server: UsenetServer; onApply: (
       {error && <span className="error-text">{error}</span>}
       {result && (
         <span className="probe-result">
-          {result.message}
+          {st(result.message)}
           {result.refused && result.accepted > 0 && result.accepted !== server.connections && (
             <button className="primary btn-sm" onClick={() => void onApply(result.accepted)}>
               {t('Use {n}', { n: result.accepted })}

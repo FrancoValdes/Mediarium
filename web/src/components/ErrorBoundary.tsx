@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import BrandMark from './BrandMark'
 import { t } from '../i18n'
+import { withBase } from '../base'
 
 // Catches a page that crashes while it draws, so the person sees a short
 // message and a way forward instead of a blank white screen. `resetKey`
@@ -34,7 +35,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode; rese
           <button type="button" className="primary" onClick={() => window.location.reload()}>
             {t('Reload the page')}
           </button>
-          <a className="btn-link" href="/">
+          <a className="btn-link" href={withBase('/')}>
             {t('Go to the dashboard')}
           </a>
         </div>

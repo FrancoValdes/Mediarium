@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rdborg/mediarium/internal/netguard"
 )
 
 // --- a fake public site ---
@@ -281,9 +283,12 @@ func TestCardigannPrivateLoginSearchDownload(t *testing.T) {
 	}
 
 	// Test() logs in afresh and counts results
-	n, err := m.Test(context.Background(), inst)
-	if err != nil || n != 2 {
-		t.Errorf("test = %d, %v", n, err)
+	res, err := m.Test(context.Background(), inst)
+	if err != nil || res.Releases != 2 {
+		t.Errorf("test = %d, %v", res.Releases, err)
+	}
+	if res.ViaFlareSolverr {
+		t.Error("no Cloudflare check was passed, so FlareSolverr should not be reported")
 	}
 }
 
@@ -501,6 +506,13 @@ func TestCardigannCloudflareViaFlareSolverr(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Errorf("expected the clearance to be reused, FlareSolverr called %d times", calls.Load())
 	}
+	tr, err := m.Test(context.Background(), inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tr.ViaFlareSolverr {
+		t.Fatal("the test should say FlareSolverr passed the Cloudflare check")
+	}
 }
 
 func TestCardigannFlareSolverrFailure(t *testing.T) {
@@ -515,6 +527,29 @@ func TestCardigannFlareSolverrFailure(t *testing.T) {
 	_, err := m.Search(context.Background(), inst, "x", []int{2000})
 	if err == nil || !strings.Contains(err.Error(), "Timeout after 60.0 seconds") {
 		t.Fatalf("expected FlareSolverr's message, got %v", err)
+	}
+}
+
+// FlareSolverr's browser follows redirects by itself: a page that ended on
+// the cloud metadata address is thrown away, not read as search results.
+func TestCardigannFlareSolverrEndingOnABlockedAddress(t *testing.T) {
+	site := cloudflareSite(t)
+	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"status": "ok",
+			"solution": map[string]any{
+				"url": "http://169.254.169.254/latest/meta-data/", "status": 200, "userAgent": "FlareSolverr-Browser/1.0",
+				"cookies": []map[string]any{}, "response": publicResults,
+			},
+		})
+	}))
+	defer fs.Close()
+	m := fixtureManager(t, "fixturepublic")
+	m.FlareSolverrURL = func() string { return fs.URL }
+	inst := Instance{ID: 1, Name: "CF Site", Kind: KindCardigann, DefinitionID: "fixturepublic", BaseURL: site.URL}
+	res, err := m.Search(context.Background(), inst, "x", []int{2000})
+	if !errors.Is(err, netguard.ErrBlocked) || len(res) != 0 {
+		t.Fatalf("expected the page to be refused, got %d results, %v", len(res), err)
 	}
 }
 

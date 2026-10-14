@@ -26,6 +26,8 @@ Administrators see an **Import** button on the Ebooks and Audiobooks tabs. Press
 - An ebook folder with the same book in several formats counts once, with the best format.
 - When it's done you see how many were added, already there and not found. The list shows the ones not found, with the path on disk and how the name was read, so you can rename the folder and run it again. **Show all** lists everything.
 - Running it again is safe: books already in the library are skipped.
+- **Run the ... not found again** looks only at the books the last import did not find (or could not save), without reading the folders again. It is for when Open Library or Audible did not answer the first time (the message says so). If you renamed a folder to fix a name, use **Import again** instead, so the folders are read again. Scripts: `POST /api/books/import/retry`.
+- **Find it myself** (next to each book that was not found) opens a small search box. It starts with the title and author read from the folder; change them, pick the right book from the results (cover, title, author, year) and it is attached to that file, the same as an automatic match. Tick **Rename the file to match** to also move the file (or the audiobook's folder) to where Mediarium puts a book it downloads, `Author/Title (Year)`. It is off by default, nothing is overwritten, and if the new place is taken the book is added and the file stays where it is. Only administrators can do this. Scripts: `POST /api/books/import/match`.
 - It pauses briefly between lookups to go easy on Open Library, so a big folder takes a few minutes. You can leave the page; it carries on.
 
 ## Finding books on Discover
@@ -123,7 +125,7 @@ Downloading a better ebook later (an EPUB after a PDF) replaces the file. A wors
 
 - EPUB books are shown a page at a time (two side by side on a wide screen). Turn pages with the arrows at the sides, the arrow keys, Page Up / Page Down or the space bar, or by swiping on a touch screen.
 - **Contents** (the list button) jumps to a chapter. The slider at the bottom jumps to any place in the book and shows how far through you are. The first time a book is opened the percentages take a moment to work out; they're kept in that browser after that.
-- **Aa** sets the text size, the page colour (light, sepia or dark) and the font (book or plain). Your choice is remembered in that browser. The screen button goes full screen.
+- **Aa** sets the text size, the page colour (light, sepia or dark), the font (book or plain) and how a page turn looks: **Slide** (the page slides out and the next slides in), **Fade** or **None**, with a **Turn speed** (fast, normal or slow). The turn animation is switched off by itself when your device is set to reduce motion. Your choice is remembered in that browser. The screen button goes full screen.
 - PDF books open in the browser's own PDF viewer.
 - Kindle books (MOBI, AZW and AZW3) open in the reader too. Mediarium turns them into EPUB with its own converter the first time (in well under a second, one book at a time) and keeps that copy in its cache folder (`/config/cache/epub`), so your library folder is never changed and your e-reader or Kavita see no extra files. A freshly downloaded Kindle book is converted straight away in the background. Copies nobody opens for 90 days are removed. Books locked with DRM can't be converted; the reader says so and offers the original as a download.
 - Scripts inside a book never run.
@@ -223,6 +225,18 @@ To go back to Kobo's own store, put the old `api_endpoint` line back.
 - *The Kobo asks me to sign in again.* Sign in on the Kobo as usual; Mediarium passes that on to Kobo.
 
 **Not tested on a real Kobo yet.** Mediarium's Kobo sync follows the way Kobo's store talks to a device, as the open source servers that already do this (Calibre-Web, Komga) have worked out. It is tested here with a program that plays the part of a Kobo and replays those requests, not on a physical Kobo, because none was at hand. If you try it on yours, please say how it went on Mediarium's GitHub page, with the model and firmware version.
+
+## Comics
+
+Comics are books that are a pile of pictures: a `.cbz` (a ZIP of pages), a `.cbr` (a RAR) or a `.cb7` (a 7z). Put them in the ebooks folder, in any layout, and press **Import** (see [Importing the books you already have](#importing-the-books-you-already-have)).
+
+- A comic is added as it is: Mediarium doesn't look it up on Open Library. A `.cbz` that has a `ComicInfo.xml` inside (most comic tools write one) is named from it: the series, the number and the title ("Night Harbour #3: Origins"), with the writer as the author, the year and the series and issue number in the book's page. Without one, the file name is the name.
+- A folder with several comic files in it, the usual layout (`Batman/Batman (2016)/Batman 001.cbr`, `Batman 002.cbr`...), gives one book per file. The series and issue number are read from the file name (`Batman 001`, `Batman #12`, `Batman Issue 4`, `Saga v3`), and a file that is only a number (`001.cbz`) takes the folder's name as its series. The year in the folder name keeps two runs of a series apart.
+- The first page is the cover.
+- It opens in the reader like any book. You turn pages with the arrows, a swipe, a tap on the side of the page, Space or the slider. The view (**View** at the top) can be one page or two pages side by side (the cover stays alone), fitted to the whole page or to the width (scroll down the page), left to right or right to left. A comic marked as manga (`Manga` in its `ComicInfo.xml`) is read right to left by itself (**Automatic**); you can force either way. The page-turn animation is the same as in the ebook reader (**Slide**, **Fade** or **None**, and its speed).
+- Where you are is kept (page number), and a Kobo, OPDS app or another browser of yours finds the comic like any other book.
+- Mediarium goes by what the file really is, not its name: plenty of `.cbr` files are really ZIPs, and some `.cbz` files are RARs. A ZIP is read page by page from the file. A RAR or 7z can't be read that way, so Mediarium unpacks it once into its cache folder (`/config/cache/comics`, with the same size and path checks as a download) the first time you open it. A copy is removed after three weeks without it being opened, and when all the copies together take more than 2 GB, the ones opened longest ago go first (never one that is being read). A comic with a password, or with more than 20,000 files in it, isn't opened.
+- Downloading comics from indexers is not part of Mediarium. It reads and keeps the comics you have.
 
 ## Search, Wanted, the dashboard and Activity
 

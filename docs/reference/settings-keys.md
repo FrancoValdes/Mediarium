@@ -6,6 +6,7 @@ The keys the app stores in its settings table. You normally change these from th
 
 | Key | Notes |
 |---|---|
+| `apps.links` | JSON list of add-ons: other programs next to Mediarium with a link to each (name, address, how it opens) |
 | `audiobooks.path` | audiobooks library folder; falls back to the AUDIOBOOKS_DIR env default (/audiobooks) when unset |
 | `auth.ldap` | encrypted; sign-in with a directory (LDAP or Active Directory) (JSON: enabled, server, bind account and password, filters, attribute names, account rules). Off unless enabled is true. Only a signed-in browser session can read or set it, not an API key. MEDIARIUM_DISABLE_SSO=1 overrides it |
 | `auth.local_signin` | "0" turns the username and password form off (only possible once an administrator has signed in with another method); anything else (including unset) leaves it on |
@@ -16,6 +17,7 @@ The keys the app stores in its settings table. You normally change these from th
 | `auth.proxy_header` | the header a trusted reverse proxy puts the signed-in user name in (for example Remote-User); unset or empty leaves it off. Only a signed-in browser session can set it, not an API key |
 | `automation.enabled` | "0" disables; anything else (including unset) enables |
 | `automation.hunt_interval_hours` | hours between searches for missing items and better versions: 1 to 168; unset = 6 |
+| `automation.quiet_until` | RFC 3339: until then the heavy background jobs do nothing ("Quiet for a while"); unset = not quiet |
 | `automation.release_check_minutes` | minutes between checks of each indexer's newest releases: 5 to 1440; unset = 15 |
 | `backup.auto` | "0" turns the nightly backup into /config/backups off; anything else (including unset) leaves it on |
 | `backup.cloud` | encrypted; copies of the nightly backup in S3-style storage or a WebDAV folder (JSON: enabled, kind, storage details, passphrase, keep). Off unless enabled is true. Only a signed-in browser session can read or set it, not an API key |
@@ -42,6 +44,7 @@ The keys the app stores in its settings table. You normally change these from th
 | `downloads.concurrent` | how many downloads run at the same time, Usenet and torrents together: 1 to 5; unset = 1 |
 | `downloads.hours` | when new downloads may start, "1-7" (from 1:00 to 7:00, server time); outside it they wait in line. Unset = any time |
 | `downloads.min_free_gb` | no new download starts while the downloads folder has less free space than this many GB; unset = 5, "0" = off |
+| `downloads.newest_first` | "1": among the downloads the automatic searches added, newer releases start first; unset = in the order they were added |
 | `downloads.pause_while_streaming` | "1" pauses downloads while someone watches on Plex, Jellyfin or Emby |
 | `downloads.paused_for_streaming` | the ids of the downloads paused for a stream, as JSON |
 | `downloads.precheck` | "1" asks the news servers whether a sample of an NZB's articles exist before downloading it, and gives up at once on a release the PAR2 files could not repair; unset or "0" leaves it off |
@@ -50,12 +53,14 @@ The keys the app stores in its settings table. You normally change these from th
 | `downloads.skip_duplicates` | "1" does not download a release twice (same NZB, or same name and size, for the same title); unset or "0" leaves it off |
 | `downloads.speed_limit_hours` | when the speed limit applies, "8-23" (from 8:00 to 23:00, server time); unset = all day |
 | `downloads.speed_limit_mb` | download speed limit in MB/s for Usenet and torrents together; unset or "0" = no limit |
+| `downloads.speed_schedule` | JSON list of speed rules (days, hours, limit); the first one that fits the moment sets the limit |
 | `downloads.stall_hours` | hours a torrent may get no data before it is given up on (blocklisted and searched for again): 1 to 72, "0" = never; unset = 2 for the built-in client and 6 for a download client |
 | `ebooks.path` | ebooks library folder; falls back to the EBOOKS_DIR env default (/ebooks) when unset |
 | `flaresolverr.url` | e.g. http://flaresolverr:8191; unset = none |
 | `info.language` | the language titles, plots, genres and posters are read in, as a TMDB tag like "de-DE" (en-US when unset); file and folder names always use the English title |
 | `legal.acknowledged_at` |  |
 | `library.default_profile_id` | id of the stored quality profile used by items with no profile of their own |
+| `library.default_profile_id_tv` | id of the quality profile shows with none of their own use; unset = the same default as movies |
 | `library.default_sources` | usenet \| torrent \| both (default both) |
 | `library.downloads_path` |  |
 | `library.episode_name_format` | token string, used when preset=custom |
@@ -95,6 +100,9 @@ The keys the app stores in its settings table. You normally change these from th
 | `music.path` | music library folder; falls back to the MUSIC_DIR env default (/music) when unset |
 | `network.proxy` | e.g. "socks5://user:pass@10.0.0.2:1080" |
 | `network.proxy_for` | e.g. "torrents,indexers" |
+| `notify.digest_day` | the day of the weekly summary, "0" (Sunday) to "6"; unset = no summary |
+| `notify.digest_hour` | the hour it is sent (server time), "0" to "23"; unset = 9 |
+| `notify.digest_sent` | when the last one was sent, RFC 3339 (kept by Mediarium, not a setting to edit) |
 | `notify.on_problems` | "1" sends a notification (to the targets that listen for Health) when a new error is added to the problem log; unset or "0" sends none |
 | `notify.quiet_hours` | hours when everyday messages wait, "23-7" (server time); unset = none. Problems are always sent at once |
 | `notify.vapid_key` | this server's key for push notifications (encrypted; made on first start) |
@@ -148,5 +156,6 @@ The keys the app stores in its settings table. You normally change these from th
 | `updates.latest` | the newest release the last check found (JSON; set by the app, not user-editable) |
 | `updates.notified_version` | the version the "new version" message was last sent for (set by the app, not user-editable) |
 | `vpn.require_for_torrents` |  |
+| `vpn.route_indexers` | "1" sends searches, RSS, release downloads, IRC announces and debrid through the VPN, and they wait while it isn't up. Home-network addresses still connect directly |
 | `watched.status` | the last read and cleanup (JSON; set by the app, not user-editable) |
 | `watched.sync` | "1" reads what's been watched from Plex, Jellyfin and Emby every six hours; unset or "0" leaves it off |

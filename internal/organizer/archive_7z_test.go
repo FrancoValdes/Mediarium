@@ -267,6 +267,83 @@ func TestExtractDoesNotWriteThroughAnExistingLink(t *testing.T) {
 	}
 }
 
+// An encrypted ZIP is opened by 7z when there is a password, and refused
+// ("password protected") when there is none.
+func TestExtractEncryptedZipNeedsThePassword(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "release.zip")
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.CreateHeader(&zip.FileHeader{Name: "movie.mkv", Method: zip.Store, Flags: 0x1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte("not really encrypted"))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, archive, buf.Bytes())
+
+	ex := fake7z(t, listing7z("movie.mkv|4|A -rw-r--r--"), "printf data > movie.mkv")
+	if err := ex.Extract(archive, filepath.Join(root, "none")); !errors.Is(err, organizer.ErrPasswordProtected) {
+		t.Fatalf("with no password the release is refused: %v", err)
+	}
+	if got := entriesIn(t, filepath.Join(root, "none")); len(got) != 0 {
+		t.Fatalf("nothing is unpacked without the password: %v", got)
+	}
+
+	ex.Password = "secret"
+	dest := filepath.Join(root, "with")
+	if err := ex.Extract(archive, dest); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTestFile(t, filepath.Join(dest, "movie.mkv")); got != "data" {
+		t.Errorf("movie.mkv = %q", got)
+	}
+}
+
+// With the real 7z tool: a ZIP made with a password opens with that password
+// (both the old ZipCrypto and AES), and a wrong or missing one is "password
+// protected".
+func TestExtractReal7zEncryptedZip(t *testing.T) {
+	ex := organizer.NewExtractor()
+	if !ex.Available() {
+		t.Skip("7z binary not available on this machine")
+	}
+	for _, method := range []string{"ZipCrypto", "AES256"} {
+		t.Run(method, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "src")
+			if err := os.MkdirAll(src, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeTestFile(t, filepath.Join(src, "movie.mkv"), []byte("the movie"))
+			archive := filepath.Join(dir, "release.zip")
+			cmd := exec.Command("7z", "a", "-tzip", "-psecret", "-mem="+method, archive, "movie.mkv")
+			cmd.Dir = src
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("build the fixture: %v: %s", err, out)
+			}
+			none := &organizer.Extractor{BinaryPath: ex.BinaryPath}
+			if err := none.Extract(archive, filepath.Join(dir, "a")); !errors.Is(err, organizer.ErrPasswordProtected) {
+				t.Fatalf("no password: %v", err)
+			}
+			wrong := &organizer.Extractor{BinaryPath: ex.BinaryPath, Password: "nope"}
+			if err := wrong.Extract(archive, filepath.Join(dir, "b")); !errors.Is(err, organizer.ErrPasswordProtected) {
+				t.Fatalf("wrong password: %v", err)
+			}
+			right := &organizer.Extractor{BinaryPath: ex.BinaryPath, Password: "secret"}
+			dest := filepath.Join(dir, "c")
+			if err := right.Extract(archive, dest); err != nil {
+				t.Fatalf("right password: %v", err)
+			}
+			if got := readTestFile(t, filepath.Join(dest, "movie.mkv")); got != "the movie" {
+				t.Errorf("movie.mkv = %q", got)
+			}
+		})
+	}
+}
+
 // With the real 7z tool: a .7z made with a password opens with that password,
 // whether only the files are encrypted or the file names too.
 func TestExtractReal7zEncrypted7z(t *testing.T) {
