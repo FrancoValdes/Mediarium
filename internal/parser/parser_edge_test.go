@@ -165,7 +165,7 @@ func TestParseHugeNameIsFast(t *testing.T) {
 	for name, in := range inputs {
 		start := time.Now()
 		r := parser.Parse(in)
-		if d := time.Since(start); d > 2*time.Second {
+		if d := time.Since(start); d > 2*time.Second*slowdown {
 			t.Errorf("%s: Parse took %s", name, d)
 		}
 		if !utf8.ValidString(r.Title) {

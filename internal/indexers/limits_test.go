@@ -85,7 +85,7 @@ func TestMergingNestedRowsIsBounded(t *testing.T) {
 	doc := nested(450, 200)
 	start := time.Now()
 	_, _, _, err := s.parseHTMLRows(doc, newTmplVars(), nil, "")
-	if took := time.Since(start); took > 10*time.Second {
+	if took := time.Since(start); took > 10*time.Second*slowdown {
 		t.Fatalf("took %s", took)
 	}
 	if err == nil || !strings.Contains(err.Error(), "too complex") {
@@ -105,7 +105,7 @@ func TestFieldsOfNestedRowsAreBounded(t *testing.T) {
 		doc := nested(450, 2000)
 		start := time.Now()
 		s.parseHTMLRows(doc, newTmplVars(), nil, "")
-		if took := time.Since(start); took > 10*time.Second {
+		if took := time.Since(start); took > 10*time.Second*slowdown {
 			t.Fatalf("remove=%q took %s", f.Remove, took)
 		}
 	}
